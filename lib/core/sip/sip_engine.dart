@@ -53,9 +53,22 @@ class CallEvent {
   final String message;
 }
 
+/// Stato linea di un interno via SIP BLF (dialog event package, RFC 4235).
+/// `unknown` finché la subscription non è attiva o se il PBX la rifiuta:
+/// mai verde per deduzione (docs/sip-e-blf.md).
+enum BlfStatus { unknown, idle, ringing, busy }
+
+class BlfEvent {
+  const BlfEvent(this.number, this.status, [this.reason = '']);
+  final String number;
+  final BlfStatus status;
+  final String reason;
+}
+
 abstract class SipEngine {
   Stream<RegistrationEvent> get registrations;
   Stream<CallEvent> get calls;
+  Stream<BlfEvent> get dialogs;
 
   /// Avvia il motore. [dataDir] è privata dell'app; [debug] abilita il log
   /// completo del motore (SIP incluso) su file in `logDir`.
@@ -72,6 +85,11 @@ abstract class SipEngine {
   Future<void> hangup();
   Future<void> setMicMuted(bool muted);
   Future<void> sendDtmf(String digit);
+
+  /// Sostituisce l'insieme degli interni osservati via SUBSCRIBE `dialog`.
+  /// Va chiamato a registrazione avvenuta; le subscription non più presenti
+  /// vengono chiuse.
+  Future<void> watchDialogs(Set<String> numbers);
 
   Future<void> stop();
 }
