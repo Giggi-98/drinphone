@@ -48,6 +48,13 @@ class FakeSipEngine implements SipEngine {
     log.add('audio ${current.$1}|${current.$2}|${current.$3}');
   }
 
+  CallOptions options = const CallOptions();
+  @override
+  Future<void> setCallOptions(CallOptions o) async {
+    options = o;
+    log.add('options ${o.encryption.name}');
+  }
+
   @override
   Future<void> hold(int id) async => log.add('hold $id');
   @override

@@ -75,6 +75,7 @@ class Settings {
     this.favorites = const [],
     this.audio = const ('', '', ''),
     this.callWith = '',
+    this.callOptions = const CallOptions(),
   });
 
   /// Id del profilo nato dalla configurazione senza profili (file storici).
@@ -110,6 +111,9 @@ class Settings {
 
   /// Account SIP per le chiamate a numeri liberi ("Chiama con"); '' = principale.
   final String callWith;
+
+  /// Globale: cifratura media, keep-alive, DTMF (Preferenze > Avanzate).
+  final CallOptions callOptions;
 
   /// Il profilo attivo come [Profile].
   Profile get active => Profile(
@@ -156,6 +160,7 @@ class Settings {
       favorites: t.favorites,
       audio: audio,
       callWith: t.callWith,
+      callOptions: callOptions,
     );
   }
 
@@ -172,6 +177,7 @@ class Settings {
     List<String>? favorites,
     (String, String, String)? audio,
     String? callWith,
+    CallOptions? callOptions,
   }) => Settings(
     profileId: profileId,
     profileName: profileName ?? this.profileName,
@@ -186,6 +192,7 @@ class Settings {
     favorites: favorites ?? this.favorites,
     audio: audio ?? this.audio,
     callWith: callWith ?? this.callWith,
+    callOptions: callOptions ?? this.callOptions,
   );
 }
 
@@ -201,6 +208,7 @@ class SettingsStore {
   static String _passwordKey(String id) =>
       id == 'main' ? 'sip_password' : 'sip_password_$id';
   static const _idsKey = 'sip_password_ids';
+  static String _turnKey(String id) => 'turn_password_$id';
 
   Future<SipAccount> _accountFrom(Map<String, dynamic> a, String id) async =>
       SipAccount(
@@ -213,6 +221,21 @@ class SettingsStore {
           a['transport'] as String? ?? 'udp',
         ),
         displayName: a['displayName'] as String? ?? '',
+        proxy: a['proxy'] as String? ?? '',
+        registrar: a['registrar'] as String? ?? '',
+        authUser: a['authUser'] as String? ?? '',
+        realm: a['realm'] as String? ?? '',
+        expires: a['expires'] as int? ?? 0,
+        registerEnabled: a['registerEnabled'] as bool? ?? true,
+        hideCallerId: a['hideCallerId'] as bool? ?? false,
+        voicemailCode: a['voicemailCode'] as String? ?? '',
+        stunServer: a['stunServer'] as String? ?? '',
+        ice: a['ice'] as bool? ?? false,
+        turn: a['turn'] as bool? ?? false,
+        turnUser: a['turnUser'] as String? ?? '',
+        turnPassword: a['turn'] == true
+            ? await _secure.read(key: _turnKey(id)) ?? ''
+            : '',
       );
 
   Future<Profile> _profileFrom(Map<String, dynamic> j, String id) async {
@@ -299,6 +322,14 @@ class SettingsStore {
         j['audioRinger'] as String? ?? '',
       ),
       pbx: active?.pbx ?? const [],
+      callOptions: CallOptions(
+        encryption:
+            MediaEncryption.values.asNameMap()[j['mediaEncryption']] ??
+            MediaEncryption.none,
+        encryptionMandatory: j['encryptionMandatory'] as bool? ?? false,
+        keepAlive: j['keepAlive'] as bool? ?? true,
+        dtmfInfo: j['dtmfInfo'] as bool? ?? false,
+      ),
     );
   }
 
@@ -315,6 +346,18 @@ class SettingsStore {
           'domain': a.domain,
           'transport': a.transport.name,
           'displayName': a.displayName,
+          'proxy': a.proxy,
+          'registrar': a.registrar,
+          'authUser': a.authUser,
+          'realm': a.realm,
+          'expires': a.expires,
+          'registerEnabled': a.registerEnabled,
+          'hideCallerId': a.hideCallerId,
+          'voicemailCode': a.voicemailCode,
+          'stunServer': a.stunServer,
+          'ice': a.ice,
+          'turn': a.turn,
+          'turnUser': a.turnUser,
         },
     ],
     'extensions': [for (final e in p.extensions) e.toJson()],
@@ -336,11 +379,17 @@ class SettingsStore {
         .split(',')
         .where((x) => x.isNotEmpty);
     for (final old in previous) {
-      if (!ids.contains(old)) await _secure.delete(key: _passwordKey(old));
+      if (!ids.contains(old)) {
+        await _secure.delete(key: _passwordKey(old));
+        await _secure.delete(key: _turnKey(old));
+      }
     }
     if (!ids.contains('main')) await _secure.delete(key: _passwordKey('main'));
     for (final a in all) {
       await _secure.write(key: _passwordKey(a.id), value: a.password);
+      a.turn && a.turnPassword.isNotEmpty
+          ? await _secure.write(key: _turnKey(a.id), value: a.turnPassword)
+          : await _secure.delete(key: _turnKey(a.id));
     }
     await _secure.write(key: _idsKey, value: ids.join(','));
     final file = File(path);
@@ -360,6 +409,10 @@ class SettingsStore {
         'audioCapture': s.audio.$1,
         'audioPlayback': s.audio.$2,
         'audioRinger': s.audio.$3,
+        'mediaEncryption': s.callOptions.encryption.name,
+        'encryptionMandatory': s.callOptions.encryptionMandatory,
+        'keepAlive': s.callOptions.keepAlive,
+        'dtmfInfo': s.callOptions.dtmfInfo,
       }),
     );
   }

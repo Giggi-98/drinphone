@@ -544,6 +544,86 @@ class LinphoneFfiEngine implements SipEngine {
         Void Function(Pointer<Void>, Int32),
         void Function(Pointer<Void>, int)
       >('linphone_account_params_set_transport');
+  // --- account avanzato: route, scadenza, privacy, realm, NAT.
+  late final _bctbx = DynamicLibrary.open(
+    Platform.isWindows
+        ? '${File(Platform.resolvedExecutable).parent.path}'
+              '${Platform.pathSeparator}bctoolbox.dll'
+        : 'libbctoolbox.so',
+  );
+  late final _listNew = _bctbx.lookupFunction<_PP, _PP>('bctbx_list_new');
+  late final _listFree = _bctbx.lookupFunction<_PP, _PP>('bctbx_list_free');
+  late final _setRoutes = _lib.lookupFunction<_IntPP, _IntPPDart>(
+    'linphone_account_params_set_routes_addresses',
+  );
+  late final _setExpires = _lib
+      .lookupFunction<
+        Void Function(Pointer<Void>, Int32),
+        void Function(Pointer<Void>, int)
+      >('linphone_account_params_set_expires');
+  late final _setPrivacy = _lib
+      .lookupFunction<
+        Void Function(Pointer<Void>, Uint32),
+        void Function(Pointer<Void>, int)
+      >('linphone_account_params_set_privacy');
+  late final _setNatPolicy = _lib.lookupFunction<_VoidPP, _VoidPPDart>(
+    'linphone_account_params_set_nat_policy',
+  );
+  late final _createNatPolicy = _lib.lookupFunction<_PP, _PP>(
+    'linphone_core_create_nat_policy',
+  );
+  late final _natPolicyUnref = _lib.lookupFunction<_VoidP, _VoidPDart>(
+    'linphone_nat_policy_unref',
+  );
+  late final _natSetServer = _lib.lookupFunction<_VoidPS, _VoidPSDart>(
+    'linphone_nat_policy_set_stun_server',
+  );
+  late final _natSetUser = _lib.lookupFunction<_VoidPS, _VoidPSDart>(
+    'linphone_nat_policy_set_stun_server_username',
+  );
+  late final _natStun = _lib
+      .lookupFunction<
+        Void Function(Pointer<Void>, Uint8),
+        void Function(Pointer<Void>, int)
+      >('linphone_nat_policy_enable_stun');
+  late final _natIce = _lib
+      .lookupFunction<
+        Void Function(Pointer<Void>, Uint8),
+        void Function(Pointer<Void>, int)
+      >('linphone_nat_policy_enable_ice');
+  late final _natTurn = _lib
+      .lookupFunction<
+        Void Function(Pointer<Void>, Uint8),
+        void Function(Pointer<Void>, int)
+      >('linphone_nat_policy_enable_turn');
+
+  // --- opzioni globali delle chiamate.
+  late final _setMediaEncryption = _lib
+      .lookupFunction<
+        Int32 Function(Pointer<Void>, Int32),
+        int Function(Pointer<Void>, int)
+      >('linphone_core_set_media_encryption');
+  late final _setEncryptionMandatory = _lib
+      .lookupFunction<
+        Void Function(Pointer<Void>, Uint8),
+        void Function(Pointer<Void>, int)
+      >('linphone_core_set_media_encryption_mandatory');
+  late final _enableKeepAlive = _lib
+      .lookupFunction<
+        Void Function(Pointer<Void>, Uint8),
+        void Function(Pointer<Void>, int)
+      >('linphone_core_enable_keep_alive');
+  late final _useInfoDtmf = _lib
+      .lookupFunction<
+        Void Function(Pointer<Void>, Uint8),
+        void Function(Pointer<Void>, int)
+      >('linphone_core_set_use_info_for_dtmf');
+  late final _useRfc2833Dtmf = _lib
+      .lookupFunction<
+        Void Function(Pointer<Void>, Uint8),
+        void Function(Pointer<Void>, int)
+      >('linphone_core_set_use_rfc2833_for_dtmf');
+
   late final _enableRegister = _lib
       .lookupFunction<
         Void Function(Pointer<Void>, Uint8),
@@ -704,17 +784,33 @@ class LinphoneFfiEngine implements SipEngine {
 
   Pointer<Void> _addSipAccount(SipAccount account) => using((a) {
     final host = account.host;
+    Pointer<Utf8> opt(String s) =>
+        s.isEmpty ? nullptr : s.toNativeUtf8(allocator: a);
     final auth = _createAuthInfo(
       _factory,
       account.username.toNativeUtf8(allocator: a),
-      nullptr,
+      opt(account.authUser),
       account.password.toNativeUtf8(allocator: a),
       nullptr,
-      nullptr,
+      opt(account.realm),
       host.toNativeUtf8(allocator: a),
     );
     _addAuthInfo(_core, auth);
     _authInfoUnref(auth);
+    // Credenziali TURN: auth info con l'utente della NAT policy.
+    if (account.turn && account.turnUser.isNotEmpty) {
+      final t = _createAuthInfo(
+        _factory,
+        account.turnUser.toNativeUtf8(allocator: a),
+        nullptr,
+        account.turnPassword.toNativeUtf8(allocator: a),
+        nullptr,
+        nullptr,
+        nullptr,
+      );
+      _addAuthInfo(_core, t);
+      _authInfoUnref(t);
+    }
 
     final identity = _createAddress(
       _factory,
@@ -729,9 +825,11 @@ class LinphoneFfiEngine implements SipEngine {
         account.displayName.toNativeUtf8(allocator: a),
       );
     }
+    // Registrar: dominio, o server indicato a parte.
     final server = _createAddress(
       _factory,
-      'sip:${account.domain}'.toNativeUtf8(allocator: a),
+      'sip:${account.registrar.isNotEmpty ? account.registrar : account.domain}'
+          .toNativeUtf8(allocator: a),
     );
     if (server == nullptr) {
       _addressUnref(identity);
@@ -742,7 +840,48 @@ class LinphoneFfiEngine implements SipEngine {
     _setServer(params, server);
     // LinphoneTransportType: Udp 0, Tcp 1, Tls 2 (types.h).
     _setTransport(params, account.transport.index);
-    _enableRegister(params, 1);
+    _enableRegister(params, account.registerEnabled ? 1 : 0);
+    if (account.expires > 0) _setExpires(params, account.expires);
+    // LinphonePrivacyId = 0x8 (types.h).
+    if (account.hideCallerId) _setPrivacy(params, 0x8);
+    // Proxy in uscita come route: REGISTER e chiamate passano di lì, la
+    // Request-URI resta il registrar/dominio.
+    if (account.proxy.isNotEmpty) {
+      final t = account.transport == SipTransport.udp
+          ? ''
+          : ';transport=${account.transport.name}';
+      final route = _createAddress(
+        _factory,
+        'sip:${account.proxy}$t;lr'.toNativeUtf8(allocator: a),
+      );
+      if (route == nullptr) {
+        _paramsUnref(params);
+        _addressUnref(server);
+        _addressUnref(identity);
+        throw ArgumentError('Proxy in uscita non valido');
+      }
+      final list = _listNew(route);
+      _setRoutes(params, list);
+      _listFree(list);
+      _addressUnref(route);
+    }
+    // NAT: STUN/TURN e ICE per account (contro l'audio a senso unico).
+    if (account.stunServer.isNotEmpty || account.ice || account.turn) {
+      final nat = _createNatPolicy(_core);
+      if (account.stunServer.isNotEmpty) {
+        _natSetServer(nat, account.stunServer.toNativeUtf8(allocator: a));
+        _natStun(nat, 1);
+      }
+      if (account.turn) {
+        _natTurn(nat, 1);
+        if (account.turnUser.isNotEmpty) {
+          _natSetUser(nat, account.turnUser.toNativeUtf8(allocator: a));
+        }
+      }
+      if (account.ice) _natIce(nat, 1);
+      _setNatPolicy(params, nat);
+      _natPolicyUnref(nat);
+    }
     final acc = _createAccount(_core, params);
     // Casella vocale: il PBX invia NOTIFY message-summary sull'account.
     _mwiCb ??= NativeCallable<_MwiCb>.isolateLocal(_onMwi);
@@ -756,6 +895,15 @@ class LinphoneFfiEngine implements SipEngine {
     _addressUnref(identity);
     return acc; // ref di createAccount: rilasciata alla prossima setAccounts
   });
+
+  @override
+  Future<void> setCallOptions(CallOptions o) async {
+    _setMediaEncryption(_core, o.encryption.index);
+    _setEncryptionMandatory(_core, o.encryptionMandatory ? 1 : 0);
+    _enableKeepAlive(_core, o.keepAlive ? 1 : 0);
+    _useRfc2833Dtmf(_core, o.dtmfInfo ? 0 : 1);
+    _useInfoDtmf(_core, o.dtmfInfo ? 1 : 0);
+  }
 
   @override
   Future<int?> dial(String number, {String? accountId}) async {

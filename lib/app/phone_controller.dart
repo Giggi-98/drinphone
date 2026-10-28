@@ -171,6 +171,7 @@ class PhoneController extends ChangeNotifier {
       if (settings.accounts.isNotEmpty) {
         await _engine.setAccounts(settings.accounts);
       }
+      await _engine.setCallOptions(settings.callOptions);
       // Dispositivi audio scelti in Preferenze > Audio ('' = predefinito).
       final (cap, play, ring) = settings.audio;
       await _engine.setAudioDevices(capture: cap, playback: play, ringer: ring);
@@ -494,6 +495,7 @@ class PhoneController extends ChangeNotifier {
         debugLog: settings.debugLog,
         lang: settings.lang,
         audio: settings.audio,
+        callOptions: settings.callOptions,
       ),
     );
     return true;
@@ -586,8 +588,19 @@ class PhoneController extends ChangeNotifier {
 
   Future<void> refreshOwnDetail() async => primaryConnection?.refreshDetail();
 
-  /// Ascolto messaggi: si chiama il codice funzione della casella vocale.
-  Future<void> callVoicemail() => dial(settings.voicemailCode);
+  /// Ascolto messaggi: codice dell'account in uso, altrimenti del profilo.
+  Future<void> callVoicemail() {
+    final own = outgoingAccount?.voicemailCode ?? '';
+    return dial(own.isNotEmpty ? own : settings.voicemailCode);
+  }
+
+  /// Opzioni globali delle chiamate (Preferenze > Avanzate).
+  Future<void> setCallOptions(CallOptions o) async {
+    settings = settings.copyWith(callOptions: o);
+    await _store.save(settings);
+    if (engineError == null) await _engine.setCallOptions(o);
+    notifyListeners();
+  }
 
   /// Chiave di gruppo per la vista Preferiti.
   static const favoritesGroup = '*favorites';

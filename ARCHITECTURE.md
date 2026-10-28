@@ -146,6 +146,16 @@ spikes/f0a/                         spike F0-A (non prodotto)
   Integrazione PBX. `PhoneController.switchProfile/createProfile/deleteProfile`:
   mai durante una chiamata; elimina = credenziali DPAPI delle sue connessioni,
   registro, contatti. Menu in alto a destra.
+- **Account avanzato** (`IMPLEMENTATO`, `DA VALIDARE` campo per campo su PBX/trunk) —
+  finestra account, sezione "Avanzate": proxy in uscita (route `sip:<proxy>;lr`,
+  lista via `bctbx_list_new` di `bctoolbox.dll`), registrar, utente di
+  autenticazione e realm (auth info), intervallo di registrazione, registrazione
+  attiva sì/no, `Privacy: id`, codice casella per account, NAT policy per account
+  (STUN, ICE, TURN con credenziali in auth info). Password TURN nello storage
+  sicuro (`turn_password_<id>`).
+- **Opzioni globali chiamate** (Preferenze > Avanzate) — cifratura media
+  (`linphone_core_set_media_encryption[_mandatory]`: in 5.5 non esiste per
+  account), keep-alive, DTMF RFC 2833 / SIP INFO; applicate all'avvio.
 - **Procedura guidata** (`IMPLEMENTATO`, `features/setup/`) — al primo avvio
   (nessun account in nessun profilo) e da "Nuovo profilo…": lingua → tipo e nome →
   account (con stato di registrazione) → API (solo Yeastar, facoltative) → audio.

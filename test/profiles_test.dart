@@ -179,4 +179,97 @@ void main() {
     expect(reloaded.allAccounts.map((a) => a.password), ['uno']);
     await phone.shutdown();
   });
+
+  test(
+    'account avanzato e opzioni globali: salvati, TURN nello storage sicuro',
+    () async {
+      FlutterSecureStorage.setMockInitialValues({});
+      final store = SettingsStore(path);
+      await store.save(
+        const Settings(
+          callOptions: CallOptions(
+            encryption: MediaEncryption.srtp,
+            encryptionMandatory: true,
+            keepAlive: false,
+            dtmfInfo: true,
+          ),
+          accounts: [
+            SipAccount(
+              username: '705',
+              password: 'p',
+              domain: 'me.drin.cloud',
+              proxy: 'sbc.drin.cloud:5060',
+              registrar: 'reg.drin.cloud',
+              authUser: 'auth705',
+              realm: 'drin',
+              expires: 300,
+              registerEnabled: false,
+              hideCallerId: true,
+              voicemailCode: '*97',
+              stunServer: 'stun.drin.cloud:3478',
+              ice: true,
+              turn: true,
+              turnUser: 'tu',
+              turnPassword: 'turn-secret',
+            ),
+          ],
+        ),
+      );
+      expect(await File(path).readAsString(), isNot(contains('turn-secret')));
+      var s = await store.load();
+      final a = s.account!;
+      expect(
+        [
+          a.proxy,
+          a.registrar,
+          a.authUser,
+          a.realm,
+          a.voicemailCode,
+          a.stunServer,
+          a.turnUser,
+        ],
+        [
+          'sbc.drin.cloud:5060',
+          'reg.drin.cloud',
+          'auth705',
+          'drin',
+          '*97',
+          'stun.drin.cloud:3478',
+          'tu',
+        ],
+      );
+      expect(
+        [a.expires, a.registerEnabled, a.hideCallerId, a.ice, a.turn],
+        [300, false, true, true, true],
+      );
+      expect(a.turnPassword, 'turn-secret');
+      expect(s.callOptions.encryption, MediaEncryption.srtp);
+      expect(s.callOptions.encryptionMandatory, isTrue);
+      expect(s.callOptions.keepAlive, isFalse);
+      expect(s.callOptions.dtmfInfo, isTrue);
+
+      final engine = FakeSipEngine();
+      final phone = PhoneController(
+        engine,
+        store,
+        engineDataDir: tmp.path,
+        logDir: tmp.path,
+      );
+      await phone.init();
+      expect(engine.options.encryption, MediaEncryption.srtp);
+      // Account tolto: via anche la password TURN.
+      await phone.removeAccount('main');
+      s = await store.load();
+      expect(s.accounts, isEmpty);
+      await store.save(
+        const Settings(
+          accounts: [
+            SipAccount(username: '705', password: 'p', domain: 'x', turn: true),
+          ],
+        ),
+      );
+      expect((await store.load()).account!.turnPassword, '');
+      await phone.shutdown();
+    },
+  );
 }

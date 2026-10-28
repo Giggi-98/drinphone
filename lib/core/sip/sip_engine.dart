@@ -12,6 +12,19 @@ class SipAccount {
     required this.domain,
     this.transport = SipTransport.udp,
     this.displayName = '',
+    this.proxy = '',
+    this.registrar = '',
+    this.authUser = '',
+    this.realm = '',
+    this.expires = 0,
+    this.registerEnabled = true,
+    this.hideCallerId = false,
+    this.voicemailCode = '',
+    this.stunServer = '',
+    this.ice = false,
+    this.turn = false,
+    this.turnUser = '',
+    this.turnPassword = '',
   });
 
   /// Identificativo locale dell'account (il primo è `main`).
@@ -29,9 +42,90 @@ class SipAccount {
   final SipTransport transport;
   final String displayName;
 
+  // --- Avanzate (finestra account, come i softphone SIP classici).
+
+  /// Proxy in uscita (route): `host[:porta]`; '' = diretto al registrar.
+  final String proxy;
+
+  /// Registrar se diverso dal dominio: `host[:porta]`; '' = [domain].
+  final String registrar;
+
+  /// Utente di autenticazione ("login") se diverso da [username].
+  final String authUser;
+  final String realm;
+
+  /// Secondi tra le registrazioni; 0 = default del motore.
+  final int expires;
+
+  /// Account configurato ma non registrato (solo per chiamare via proxy, o sospeso).
+  final bool registerEnabled;
+
+  /// Header `Privacy: id` sulle chiamate (rispettato se PBX/trunk lo supportano).
+  final bool hideCallerId;
+
+  /// Codice casella vocale di questo account; '' = quello del profilo.
+  final String voicemailCode;
+
+  /// NAT: server STUN/TURN `host[:porta]`, ICE, TURN con credenziali.
+  final String stunServer;
+  final bool ice;
+  final bool turn;
+  final String turnUser;
+
+  /// Segreto: solo nello storage sicuro, mai nel JSON né nei log.
+  final String turnPassword;
+
+  SipAccount copyWith({String? id, String? password, String? turnPassword}) =>
+      SipAccount(
+        id: id ?? this.id,
+        pbxId: pbxId,
+        username: username,
+        password: password ?? this.password,
+        domain: domain,
+        transport: transport,
+        displayName: displayName,
+        proxy: proxy,
+        registrar: registrar,
+        authUser: authUser,
+        realm: realm,
+        expires: expires,
+        registerEnabled: registerEnabled,
+        hideCallerId: hideCallerId,
+        voicemailCode: voicemailCode,
+        stunServer: stunServer,
+        ice: ice,
+        turn: turn,
+        turnUser: turnUser,
+        turnPassword: turnPassword ?? this.turnPassword,
+      );
+
   // Mai includere la password: questa stringa finisce nei log.
   @override
   String toString() => 'SipAccount($username@$domain, ${transport.name})';
+}
+
+/// Cifratura dei media: in liblinphone 5.5 vale per tutta l'app (non per
+/// account). Valori nell'ordine di `LinphoneMediaEncryption`.
+enum MediaEncryption { none, srtp, zrtp, dtls }
+
+/// Opzioni globali delle chiamate (Preferenze > Avanzate).
+class CallOptions {
+  const CallOptions({
+    this.encryption = MediaEncryption.none,
+    this.encryptionMandatory = false,
+    this.keepAlive = true,
+    this.dtmfInfo = false,
+  });
+  final MediaEncryption encryption;
+
+  /// Rifiuta le chiamate senza la cifratura scelta.
+  final bool encryptionMandatory;
+
+  /// Pacchetti periodici sulla segnalazione per tenere aperto il NAT.
+  final bool keepAlive;
+
+  /// DTMF via SIP INFO invece di RFC 2833 (nel flusso RTP).
+  final bool dtmfInfo;
 }
 
 enum RegistrationStatus { none, progress, ok, cleared, failed }
@@ -142,6 +236,9 @@ abstract class SipEngine {
     String? playback,
     String? ringer,
   });
+
+  /// Opzioni globali: cifratura media, keep-alive, metodo DTMF.
+  Future<void> setCallOptions(CallOptions options);
 
   /// Attesa / ripresa (re-INVITE sendonly/sendrecv).
   Future<void> hold(int id);

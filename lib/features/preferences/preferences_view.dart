@@ -29,6 +29,7 @@ class PreferencesView extends StatelessWidget {
       if (phone.isYeastar)
         (tr('Integrazione PBX'), PbxConnectionsPanel(phone: phone)),
       (tr('Lingua'), _LanguageTab(phone: phone)),
+      (tr('Avanzate'), _AdvancedTab(phone: phone)),
       (tr('Diagnostica'), _DiagnosticsTab(phone: phone)),
     ];
     return DefaultTabController(
@@ -360,9 +361,46 @@ class _AccountEditorState extends State<AccountEditor> {
   late SipTransport _transport = widget.account?.transport ?? SipTransport.udp;
   late String _pbxId = widget.account?.pbxId ?? '';
 
+  // Avanzate.
+  late final _proxy = TextEditingController(text: widget.account?.proxy);
+  late final _registrar = TextEditingController(
+    text: widget.account?.registrar,
+  );
+  late final _authUser = TextEditingController(text: widget.account?.authUser);
+  late final _realm = TextEditingController(text: widget.account?.realm);
+  late final _expires = TextEditingController(
+    text: (widget.account?.expires ?? 0) > 0
+        ? '${widget.account!.expires}'
+        : '',
+  );
+  late final _vm = TextEditingController(text: widget.account?.voicemailCode);
+  late final _stun = TextEditingController(text: widget.account?.stunServer);
+  late final _turnUser = TextEditingController(text: widget.account?.turnUser);
+  late final _turnPassword = TextEditingController(
+    text: widget.account?.turnPassword,
+  );
+  late bool _register = widget.account?.registerEnabled ?? true;
+  late bool _hideId = widget.account?.hideCallerId ?? false;
+  late bool _ice = widget.account?.ice ?? false;
+  late bool _turn = widget.account?.turn ?? false;
+
   @override
   void dispose() {
-    for (final c in [_name, _user, _password, _domain]) {
+    for (final c in [
+      _name,
+      _user,
+      _password,
+      _domain,
+      _proxy,
+      _registrar,
+      _authUser,
+      _realm,
+      _expires,
+      _vm,
+      _stun,
+      _turnUser,
+      _turnPassword,
+    ]) {
       c.dispose();
     }
     super.dispose();
@@ -370,6 +408,147 @@ class _AccountEditorState extends State<AccountEditor> {
 
   String? _required(String? v) =>
       (v == null || v.trim().isEmpty) ? tr('Obbligatorio') : null;
+
+  String? _seconds(String? v) {
+    final t = v?.trim() ?? '';
+    if (t.isEmpty) return null;
+    final n = int.tryParse(t);
+    return n == null || n < 30 || n > 86400
+        ? tr('Da 30 a 86400 secondi')
+        : null;
+  }
+
+  Widget _group(DrinColors c, String title) => Padding(
+    padding: const EdgeInsets.only(top: 14, bottom: 6),
+    child: Text(
+      title,
+      style: TextStyle(
+        fontSize: 12,
+        fontWeight: FontWeight.w700,
+        letterSpacing: 0.6,
+        color: c.muted,
+      ),
+    ),
+  );
+
+  Widget _field(TextEditingController t, String label, [String hint = '']) =>
+      Padding(
+        padding: const EdgeInsets.only(bottom: 10),
+        child: TextFormField(
+          controller: t,
+          decoration: InputDecoration(
+            labelText: label,
+            hintText: hint.isEmpty ? null : hint,
+          ),
+        ),
+      );
+
+  Widget _switch(
+    String label,
+    bool v,
+    ValueChanged<bool> on, [
+    String sub = '',
+  ]) => SwitchListTile(
+    dense: true,
+    contentPadding: EdgeInsets.zero,
+    title: Text(label),
+    subtitle: sub.isEmpty ? null : Text(sub),
+    value: v,
+    onChanged: on,
+  );
+
+  /// Voci tecniche, chiuse per default (come i softphone SIP classici).
+  Widget _advanced(DrinColors c) => ExpansionTile(
+    tilePadding: EdgeInsets.zero,
+    childrenPadding: EdgeInsets.zero,
+    shape: const Border(),
+    collapsedShape: const Border(),
+    initiallyExpanded:
+        widget.account != null &&
+        (widget.account!.proxy.isNotEmpty ||
+            widget.account!.registrar.isNotEmpty ||
+            widget.account!.authUser.isNotEmpty ||
+            widget.account!.stunServer.isNotEmpty ||
+            widget.account!.turn ||
+            widget.account!.ice),
+    title: Text(tr('Avanzate')),
+    expandedCrossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      _group(c, tr('SERVER')),
+      _field(
+        _proxy,
+        tr('Proxy in uscita'),
+        tr('sbc.esempio.it:5060 (vuoto = diretto)'),
+      ),
+      _field(
+        _registrar,
+        tr('Server registrar'),
+        tr('vuoto = come il server SIP'),
+      ),
+      _field(
+        _authUser,
+        tr('Utente di autenticazione'),
+        tr('vuoto = come l’utente'),
+      ),
+      _field(_realm, tr('Realm'), tr('vuoto = quello proposto dal server')),
+      _group(c, tr('REGISTRAZIONE')),
+      Padding(
+        padding: const EdgeInsets.only(bottom: 10),
+        child: TextFormField(
+          controller: _expires,
+          validator: _seconds,
+          keyboardType: TextInputType.number,
+          decoration: InputDecoration(
+            labelText: tr('Intervallo di registrazione (s)'),
+            hintText: tr('vuoto = 3600'),
+          ),
+        ),
+      ),
+      _switch(
+        tr('Registrazione attiva'),
+        _register,
+        (v) => setState(() => _register = v),
+        tr('Spenta: l’account non si registra (solo chiamate in uscita)'),
+      ),
+      _group(c, tr('CHIAMATE')),
+      _switch(
+        tr('Nascondi ID chiamante'),
+        _hideId,
+        (v) => setState(() => _hideId = v),
+        tr('Privacy: id, se PBX o trunk lo rispettano'),
+      ),
+      _field(
+        _vm,
+        tr('Codice casella vocale'),
+        tr('vuoto = quello del profilo'),
+      ),
+      _group(c, tr('RETE / NAT')),
+      _field(_stun, tr('Server STUN/TURN'), tr('stun.esempio.it:3478')),
+      _switch(
+        tr('ICE'),
+        _ice,
+        (v) => setState(() => _ice = v),
+        tr('Prova più percorsi per l’audio (con STUN/TURN)'),
+      ),
+      _switch(
+        tr('TURN'),
+        _turn,
+        (v) => setState(() => _turn = v),
+        tr('Audio tramite relay, per reti molto chiuse'),
+      ),
+      if (_turn) ...[
+        _field(_turnUser, tr('Utente TURN')),
+        Padding(
+          padding: const EdgeInsets.only(bottom: 10),
+          child: TextFormField(
+            controller: _turnPassword,
+            obscureText: true,
+            decoration: InputDecoration(labelText: tr('Password TURN')),
+          ),
+        ),
+      ],
+    ],
+  );
 
   Future<void> _save() async {
     if (!_form.currentState!.validate()) return;
@@ -382,6 +561,19 @@ class _AccountEditorState extends State<AccountEditor> {
         domain: _domain.text.trim(),
         transport: _transport,
         displayName: _name.text.trim(),
+        proxy: _proxy.text.trim(),
+        registrar: _registrar.text.trim(),
+        authUser: _authUser.text.trim(),
+        realm: _realm.text.trim(),
+        expires: int.tryParse(_expires.text.trim()) ?? 0,
+        registerEnabled: _register,
+        hideCallerId: _hideId,
+        voicemailCode: _vm.text.trim(),
+        stunServer: _stun.text.trim(),
+        ice: _ice,
+        turn: _turn,
+        turnUser: _turn ? _turnUser.text.trim() : '',
+        turnPassword: _turn ? _turnPassword.text : '',
       ),
     );
     if (mounted) Navigator.of(context).pop();
@@ -397,73 +589,83 @@ class _AccountEditorState extends State<AccountEditor> {
         widget.account == null ? tr('Aggiungi account') : tr('Account SIP'),
       ),
       content: SizedBox(
-        width: 440,
+        width: 460,
         child: Form(
           key: _form,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextFormField(
-                controller: _name,
-                decoration: InputDecoration(labelText: tr('Nome visualizzato')),
-              ),
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: _user,
-                validator: _required,
-                decoration: InputDecoration(labelText: tr('Utente / interno')),
-              ),
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: _password,
-                validator: _required,
-                obscureText: true,
-                decoration: InputDecoration(labelText: tr('Password')),
-              ),
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: _domain,
-                validator: _required,
-                decoration: InputDecoration(
-                  labelText: tr('Server SIP'),
-                  hintText: tr('pbx.esempio.it oppure 192.168.1.10:5060'),
-                ),
-              ),
-              const SizedBox(height: 12),
-              DropdownButtonFormField<SipTransport>(
-                initialValue: _transport,
-                decoration: InputDecoration(labelText: tr('Trasporto')),
-                items: [
-                  for (final t in SipTransport.values)
-                    DropdownMenuItem(
-                      value: t,
-                      child: Text(t.name.toUpperCase()),
-                    ),
-                ],
-                onChanged: (t) => setState(() => _transport = t!),
-              ),
-              // Profili SIP generici: nessuna connessione PBX da collegare.
-              if (widget.phone.isYeastar) const SizedBox(height: 12),
-              if (widget.phone.isYeastar)
-                DropdownButtonFormField<String>(
-                  initialValue: conns.any((x) => x.id == _pbxId) ? _pbxId : '',
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextFormField(
+                  controller: _name,
                   decoration: InputDecoration(
-                    labelText: tr('PBX collegato'),
-                    helperText: tr(
-                      'I suoi interni si chiamano con questo account',
-                    ),
+                    labelText: tr('Nome visualizzato'),
                   ),
-                  items: [
-                    DropdownMenuItem(
-                      value: '',
-                      child: Text(tr('Automatico (stesso host)')),
-                    ),
-                    for (final x in conns)
-                      DropdownMenuItem(value: x.id, child: Text(x.label)),
-                  ],
-                  onChanged: (v) => setState(() => _pbxId = v ?? ''),
                 ),
-            ],
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: _user,
+                  validator: _required,
+                  decoration: InputDecoration(
+                    labelText: tr('Utente / interno'),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: _password,
+                  validator: _required,
+                  obscureText: true,
+                  decoration: InputDecoration(labelText: tr('Password')),
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: _domain,
+                  validator: _required,
+                  decoration: InputDecoration(
+                    labelText: tr('Server SIP'),
+                    hintText: tr('pbx.esempio.it oppure 192.168.1.10:5060'),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<SipTransport>(
+                  initialValue: _transport,
+                  decoration: InputDecoration(labelText: tr('Trasporto')),
+                  items: [
+                    for (final t in SipTransport.values)
+                      DropdownMenuItem(
+                        value: t,
+                        child: Text(t.name.toUpperCase()),
+                      ),
+                  ],
+                  onChanged: (t) => setState(() => _transport = t!),
+                ),
+                // Profili SIP generici: nessuna connessione PBX da collegare.
+                if (widget.phone.isYeastar) const SizedBox(height: 12),
+                if (widget.phone.isYeastar)
+                  DropdownButtonFormField<String>(
+                    initialValue: conns.any((x) => x.id == _pbxId)
+                        ? _pbxId
+                        : '',
+                    decoration: InputDecoration(
+                      labelText: tr('PBX collegato'),
+                      helperText: tr(
+                        'I suoi interni si chiamano con questo account',
+                      ),
+                    ),
+                    items: [
+                      DropdownMenuItem(
+                        value: '',
+                        child: Text(tr('Automatico (stesso host)')),
+                      ),
+                      for (final x in conns)
+                        DropdownMenuItem(value: x.id, child: Text(x.label)),
+                    ],
+                    onChanged: (v) => setState(() => _pbxId = v ?? ''),
+                  ),
+                const SizedBox(height: 8),
+                _advanced(c),
+              ],
+            ),
           ),
         ),
       ),
@@ -996,6 +1198,119 @@ class _FeaturesTab extends StatelessWidget {
 }
 
 // -------------------------------------------------------------------- Lingua
+
+/// Opzioni globali delle chiamate: in liblinphone 5.5 valgono per tutta l'app.
+class _AdvancedTab extends StatelessWidget {
+  const _AdvancedTab({required this.phone});
+  final PhoneController phone;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.drin;
+    final o = phone.settings.callOptions;
+    void set({
+      MediaEncryption? encryption,
+      bool? mandatory,
+      bool? keepAlive,
+      bool? dtmfInfo,
+    }) => phone.setCallOptions(
+      CallOptions(
+        encryption: encryption ?? o.encryption,
+        encryptionMandatory: mandatory ?? o.encryptionMandatory,
+        keepAlive: keepAlive ?? o.keepAlive,
+        dtmfInfo: dtmfInfo ?? o.dtmfInfo,
+      ),
+    );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _Card(
+          title: tr('Cifratura audio'),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SizedBox(
+                width: 380,
+                child: DropdownButtonFormField<MediaEncryption>(
+                  initialValue: o.encryption,
+                  decoration: InputDecoration(labelText: tr('Cifratura media')),
+                  items: [
+                    for (final e in MediaEncryption.values)
+                      DropdownMenuItem(
+                        value: e,
+                        child: Text(switch (e) {
+                          MediaEncryption.none => tr('Nessuna'),
+                          MediaEncryption.srtp => 'SRTP (SDES)',
+                          MediaEncryption.zrtp => 'ZRTP',
+                          MediaEncryption.dtls => 'DTLS-SRTP',
+                        }),
+                      ),
+                  ],
+                  onChanged: (e) => set(encryption: e),
+                ),
+              ),
+              const SizedBox(height: 6),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: Text(tr('Obbligatoria')),
+                subtitle: Text(
+                  tr(
+                    'Rifiuta le chiamate che il PBX non cifra allo stesso modo',
+                  ),
+                ),
+                value: o.encryptionMandatory,
+                onChanged: o.encryption == MediaEncryption.none
+                    ? null
+                    : (v) => set(mandatory: v),
+              ),
+              Text(
+                tr(
+                  'Vale per tutti gli account e per le nuove chiamate. SRTP '
+                  'richiede di solito il trasporto TLS; se il PBX non usa la '
+                  'stessa cifratura la chiamata cade o resta muta: provala.',
+                ),
+                style: TextStyle(fontSize: 12, color: c.muted),
+              ),
+            ],
+          ),
+        ),
+        _Card(
+          title: tr('Rete e toni'),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: Text(tr('Keep-alive')),
+                subtitle: Text(
+                  tr('Tiene aperto il NAT tra una registrazione e l’altra'),
+                ),
+                value: o.keepAlive,
+                onChanged: (v) => set(keepAlive: v),
+              ),
+              const SizedBox(height: 6),
+              SizedBox(
+                width: 380,
+                child: DropdownButtonFormField<bool>(
+                  initialValue: o.dtmfInfo,
+                  decoration: InputDecoration(labelText: tr('Toni DTMF')),
+                  items: [
+                    DropdownMenuItem(
+                      value: false,
+                      child: Text(tr('RFC 2833 (nel flusso audio)')),
+                    ),
+                    DropdownMenuItem(value: true, child: Text(tr('SIP INFO'))),
+                  ],
+                  onChanged: (v) => set(dtmfInfo: v),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
 
 class _LanguageTab extends StatelessWidget {
   const _LanguageTab({required this.phone});
