@@ -341,34 +341,34 @@ void main() {
     skip: !Platform.isWindows,
   );
 
-  test(
-    'migrazione da connessione singola: credenziali e interni manuali conservati',
-    () async {
-      FlutterSecureStorage.setMockInitialValues({});
-      final sep = Platform.pathSeparator;
-      ApiCredentialStore storeFor(String id) =>
-          ApiCredentialStore('${tmp.path}${sep}api-$id.dpapi');
-      await storeFor(PhoneController.legacyConnectionId).save(
-        ApiCredentials(baseUrl: pbx.baseUrl, clientId: _id, clientSecret: _secret),
-      );
-      final settings = SettingsStore('${tmp.path}${sep}s.json');
-      await settings.save(
-        const Settings(extensions: [Extension('Manuale', '400')]),
-      );
-      final phone = PhoneController(
-        FakeSipEngine(),
-        settings,
-        engineDataDir: tmp.path,
-        logDir: tmp.path,
-        apiStoreFor: storeFor,
-      );
-      await phone.init();
-      expect(phone.connections.single.id, 'default');
-      final saved = await settings.load();
-      expect(saved.pbx.single.id, 'default');
-      expect(saved.extensions.single.number, '400');
-      await phone.shutdown();
-    },
-    skip: !Platform.isWindows,
-  );
+  test('migrazione da connessione singola: credenziali e interni manuali conservati', () async {
+    FlutterSecureStorage.setMockInitialValues({});
+    final sep = Platform.pathSeparator;
+    ApiCredentialStore storeFor(String id) =>
+        ApiCredentialStore('${tmp.path}${sep}api-$id.dpapi');
+    await storeFor(PhoneController.legacyConnectionId).save(
+      ApiCredentials(
+        baseUrl: pbx.baseUrl,
+        clientId: _id,
+        clientSecret: _secret,
+      ),
+    );
+    final settings = SettingsStore('${tmp.path}${sep}s.json');
+    await settings.save(
+      const Settings(extensions: [Extension('Manuale', '400')]),
+    );
+    final phone = PhoneController(
+      FakeSipEngine(),
+      settings,
+      engineDataDir: tmp.path,
+      logDir: tmp.path,
+      apiStoreFor: storeFor,
+    );
+    await phone.init();
+    expect(phone.connections.single.id, 'default');
+    final saved = await settings.load();
+    expect(saved.pbx.single.id, 'default');
+    expect(saved.extensions.single.number, '400');
+    await phone.shutdown();
+  }, skip: !Platform.isWindows);
 }

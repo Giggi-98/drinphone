@@ -17,6 +17,7 @@ class AppPaths {
   String get engineData => '$root${_s}linphone';
   String get logs => '$root${_s}logs';
   String get settingsFile => '$root${_s}settings.json';
+  String get historyFile => '$root${_s}history.json';
 
   /// Un file DPAPI per connessione PBX; `default` = file della versione
   /// a connessione singola.

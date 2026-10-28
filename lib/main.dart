@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 import 'app/phone_controller.dart';
 import 'app/theme.dart';
 import 'core/app_paths.dart';
+import 'core/call_history.dart';
+import 'core/platform/window_attention.dart';
 import 'core/security/api_credential_store.dart';
 import 'core/security/settings_store.dart';
 import 'core/sip/linphone_ffi_engine.dart';
@@ -19,6 +21,8 @@ Future<void> main() async {
     engineDataDir: paths.engineData,
     logDir: paths.logs,
     // DPAPI esiste solo su Windows: altrove niente integrazione API per ora.
+    historyStore: CallHistoryStore(paths.historyFile),
+    onIncomingCall: WindowAttention.instance.request,
     apiStoreFor: Platform.isWindows
         ? (id) => ApiCredentialStore(paths.apiCredentialsFileFor(id))
         : null,

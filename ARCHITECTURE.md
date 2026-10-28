@@ -62,6 +62,14 @@ spikes/f0a/                         spike F0-A (non prodotto)
   ogni 60 s per la presenza. Interni del PBX uniti a quelli manuali
   (senza il proprio, max 100 in BLF). Solo Windows. Credenziali in
   `ApiCredentialStore` (DPAPI, sola scrittura dalla UI, DECISIONS 2026-10-28 bis).
+- **Cronologia** (`IMPLEMENTATO`) — `CallHistoryStore` (`lib/core/call_history.dart`):
+  `history.json` locale, ultime 200 chiamate, salvataggi in coda; persa = entrante
+  non risposta. Vista `features/history/`.
+- **Ricerca** — il campo in alto filtra la griglia per nome/numero; Invio chiama
+  il numero o l'unico interno trovato.
+- **Attenzione chiamata entrante** (Windows) — `WindowAttention` (user32 via FFI):
+  ripristina la finestra, `SetForegroundWindow`, `FlashWindowEx` sulla barra.
+  Nessuna notifica toast (servirebbe un plugin/WinRT).
 - **SettingsStore** — `settings.json` (utente, dominio, trasporto, interni, flag
   debug) + password in `flutter_secure_storage`.
 - **UI** — `ChangeNotifier` senza librerie di stato. Sezioni: Interni (lista locale,
@@ -95,6 +103,8 @@ commerciale, `docs/licenze-e-compliance.md`). Toolchain: VS 2022 Build Tools 17.
   quei file abort o nessuna scheda audio (F0-A punti 2 e 6).
 - Log di debug = messaggi SIP completi (numeri, header Authorization digest). Non
   contengono la password in chiaro ma vanno trattati come dati personali.
+- `history.json` contiene numeri e nomi in chiaro (dati personali locali): da
+  includere nella policy privacy prima di distribuire.
 - Il log su file è bufferizzato: con kill del processo le ultime righe si perdono.
 - Nessun STUN/ICE configurato: audio unidirezionale probabile dietro NAT (F2).
 - TLS: CA di `share/linphone/rootca.pem` dell'SDK; nessun pinning.

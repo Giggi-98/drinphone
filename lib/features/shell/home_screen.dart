@@ -10,6 +10,7 @@ import '../account/account_dialog.dart';
 import '../account/api_dialog.dart';
 import '../call/call_panel.dart';
 import '../call/keypad.dart';
+import '../history/history_view.dart';
 
 /// Struttura a pannelli (proposta D): barra sezioni, barra composizione con
 /// tastierino a comparsa, griglia interni. Gruppi: assenti di default (DECISIONS).
@@ -24,6 +25,7 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   final _dial = TextEditingController();
   bool _keypadOpen = false;
+  bool _historyOpen = false;
   late final AppLifecycleListener _lifecycle;
 
   PhoneController get p => widget.phone;
@@ -60,8 +62,18 @@ class _HomeScreenState extends State<HomeScreen> {
     setState(() {});
   }
 
+  // Invio nel campo: un numero si chiama; un nome chiama l'unico interno trovato.
+  void _submit(String text) {
+    final t = text.trim();
+    if (RegExp(r'^[0-9*#+]+$').hasMatch(t)) return _call(t);
+    final found = p.visibleExtensions.where(p.isCallable).toList();
+    if (found.length == 1) _call(found.single.number);
+  }
+
   void _call(String number) {
     p.dial(number);
+    _dial.clear();
+    p.setQuery('');
     setState(() => _keypadOpen = false);
   }
 
@@ -84,6 +96,9 @@ class _HomeScreenState extends State<HomeScreen> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _Sidebar(
+            historyOpen: _historyOpen,
+            missed: p.history.where((r) => r.missed).length,
+            onSection: (history) => setState(() => _historyOpen = history),
             onSettings: _openAccount,
             onApi: p.apiAvailable ? _openApi : null,
           ),
@@ -103,7 +118,9 @@ class _HomeScreenState extends State<HomeScreen> {
                         action: ('Configura', _openAccount),
                       ),
                     Expanded(
-                      child: _ExtensionsView(phone: p, onCall: _call),
+                      child: _historyOpen
+                          ? HistoryView(phone: p, onCall: _call)
+                          : _ExtensionsView(phone: p, onCall: _call),
                     ),
                   ],
                 ),
@@ -221,14 +238,20 @@ class _HomeScreenState extends State<HomeScreen> {
                 Expanded(
                   child: TextField(
                     controller: _dial,
-                    onSubmitted: _call,
+                    onSubmitted: _submit,
+                    onChanged: (v) {
+                      p.setQuery(v);
+                      if (_historyOpen && v.isNotEmpty) {
+                        setState(() => _historyOpen = false);
+                      }
+                    },
                     style: TextStyle(
                       fontFamily: monoFont,
                       fontSize: 15,
                       color: c.text,
                     ),
                     decoration: InputDecoration(
-                      hintText: 'Numero o interno',
+                      hintText: 'Numero, interno o nome',
                       // Il segnaposto eredita il monospazio del campo: lo riporta al testo normale.
                       hintStyle: TextStyle(
                         fontFamily: 'Segoe UI',
@@ -338,7 +361,18 @@ class _HomeScreenState extends State<HomeScreen> {
 }
 
 class _Sidebar extends StatelessWidget {
-  const _Sidebar({required this.onSettings, required this.onApi});
+  const _Sidebar({
+    required this.historyOpen,
+    required this.missed,
+    required this.onSection,
+    required this.onSettings,
+    required this.onApi,
+  });
+  final bool historyOpen;
+
+  /// Chiamate perse in cronologia (badge).
+  final int missed;
+  final ValueChanged<bool> onSection;
   final VoidCallback onSettings;
   final VoidCallback? onApi;
 
@@ -426,7 +460,18 @@ class _Sidebar extends StatelessWidget {
               ],
             ),
           ),
-          item(Icons.people_outline, 'Interni', true, () {}),
+          item(
+            Icons.people_outline,
+            'Interni',
+            !historyOpen,
+            () => onSection(false),
+          ),
+          item(
+            Icons.history,
+            missed > 0 ? 'Cronologia · $missed perse' : 'Cronologia',
+            historyOpen,
+            () => onSection(true),
+          ),
           const Spacer(),
           if (onApi != null)
             item(Icons.hub_outlined, 'Integrazione PBX', false, onApi),
@@ -520,7 +565,9 @@ class _ExtensionsView extends StatelessWidget {
             children: [
               Flexible(
                 child: Text(
-                  _groupTitle(),
+                  phone.query.isEmpty
+                      ? _groupTitle()
+                      : 'Ricerca «${phone.query}» in ${_groupTitle()}',
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     fontSize: 18,

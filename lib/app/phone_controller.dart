@@ -3,6 +3,7 @@ import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 
+import '../core/call_history.dart';
 import '../core/pbx/pbx_connection.dart';
 import '../core/pbx/yeastar_api.dart';
 import '../core/security/api_credential_store.dart';
@@ -18,8 +19,31 @@ class PhoneController extends ChangeNotifier {
     required this.engineDataDir,
     required this.logDir,
     this.apiStoreFor,
+    this.historyStore,
+    this.onIncomingCall,
     YeastarApi Function(ApiCredentials)? apiFactory,
   }) : _apiFactory = apiFactory ?? YeastarApi.new;
+
+  final CallHistoryStore? historyStore;
+
+  /// Chiamata entrante: richiamo di attenzione della piattaforma (finestra davanti).
+  final void Function()? onIncomingCall;
+
+  /// Cronologia, più recenti per prime.
+  List<CallRecord> history = [];
+
+  /// Testo del campo in alto: filtra la griglia per nome o numero.
+  String query = '';
+
+  // Salvataggi della cronologia in coda: mai due scritture del file insieme.
+  Future<void> _historySaving = Future.value();
+
+  /// Completa quando l'ultima scrittura della cronologia è finita.
+  Future<void> get historySaved => _historySaving;
+
+  // Chiamata in corso, per la cronologia.
+  DateTime? _callStart;
+  bool _callAnswered = false;
 
   final SipEngine _engine;
   final SettingsStore _store;
@@ -59,6 +83,7 @@ class PhoneController extends ChangeNotifier {
 
   Future<void> init() async {
     settings = await _store.load();
+    history = await historyStore?.load() ?? [];
     _subs.add(_engine.registrations.listen(_onRegistration));
     _subs.add(_engine.calls.listen(_onCall));
     _subs.add(_engine.dialogs.listen(_onDialog));
@@ -222,8 +247,23 @@ class PhoneController extends ChangeNotifier {
   bool isCallable(Extension e) =>
       e.source.isEmpty || e.source == primaryConnection?.id;
 
-  /// Interni della griglia secondo il gruppo selezionato.
+  void setQuery(String q) {
+    query = q.trim();
+    notifyListeners();
+  }
+
+  /// Interni della griglia: gruppo selezionato, poi filtro di ricerca.
   List<Extension> get visibleExtensions {
+    final q = query.toLowerCase();
+    final list = _groupExtensions;
+    if (q.isEmpty) return list;
+    return [
+      for (final e in list)
+        if (e.number.contains(q) || e.name.toLowerCase().contains(q)) e,
+    ];
+  }
+
+  List<Extension> get _groupExtensions {
     final g = selectedGroup;
     if (g == null) return allExtensions;
     final parts = g.split(':');
@@ -364,7 +404,14 @@ class PhoneController extends ChangeNotifier {
     debugPrint(
       '[drinphone] chiamata ${e.direction.name} ${e.phase.name} ${e.message}',
     );
+    if (call == null && e.phase == CallPhase.incoming) onIncomingCall?.call();
+    if (call == null) {
+      _callStart = DateTime.now();
+      _callAnswered = false;
+    }
+    if (e.phase == CallPhase.active) _callAnswered = true;
     if (e.phase == CallPhase.ended || e.phase == CallPhase.error) {
+      _record(e);
       if (e.phase == CallPhase.error) {
         notice = 'Chiamata non riuscita: ${e.message}';
       }
@@ -379,6 +426,42 @@ class PhoneController extends ChangeNotifier {
         callConnectedAt = DateTime.now();
       }
       call = e;
+    }
+    notifyListeners();
+  }
+
+  void _record(CallEvent e) {
+    final start = _callStart ?? DateTime.now();
+    final connected = callConnectedAt;
+    history = [
+      CallRecord(
+        number: e.remoteNumber.isNotEmpty
+            ? e.remoteNumber
+            : (call?.remoteNumber ?? ''),
+        name: e.remoteName.isNotEmpty ? e.remoteName : (call?.remoteName ?? ''),
+        direction: e.direction,
+        start: start,
+        seconds: connected == null
+            ? 0
+            : DateTime.now().difference(connected).inSeconds,
+        answered: _callAnswered,
+      ),
+      ...history,
+    ].take(CallHistoryStore.maxRecords).toList();
+    _callStart = null;
+    final store = historyStore;
+    final snapshot = history;
+    if (store != null) {
+      _historySaving = _historySaving.then((_) => store.save(snapshot));
+    }
+  }
+
+  Future<void> clearHistory() async {
+    history = [];
+    final store = historyStore;
+    if (store != null) {
+      _historySaving = _historySaving.then((_) => store.clear());
+      await _historySaving;
     }
     notifyListeners();
   }
