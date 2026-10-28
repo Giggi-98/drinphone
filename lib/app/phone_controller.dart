@@ -191,7 +191,9 @@ class PhoneController extends ChangeNotifier {
     if (storeFor == null) return;
     var infos = settings.pbx;
     // Migrazione dalla versione a connessione singola.
-    if (infos.isEmpty && storeFor(legacyConnectionId).isSet) {
+    if (infos.isEmpty &&
+        settings.profileId == Settings.defaultProfileId &&
+        storeFor(legacyConnectionId).isSet) {
       infos = const [PbxConnectionInfo(legacyConnectionId, 'PBX')];
       settings = settings.copyWith(pbx: infos);
       await _store.save(settings);
@@ -463,6 +465,92 @@ class PhoneController extends ChangeNotifier {
   Future<void> setVoicemailCode(String code) async {
     settings = settings.copyWith(voicemailCode: code.trim());
     await _store.save(settings);
+    notifyListeners();
+  }
+
+  // ---------------------------------------------------------------- profili
+
+  /// Cambia profilo (mai durante una chiamata): un profilo attivo alla volta,
+  /// DECISIONS "Profili". Restituisce false se non è stato possibile.
+  Future<bool> switchProfile(String id) async {
+    if (calls.isNotEmpty || id == settings.profileId) return false;
+    await _loadProfile(settings.switchTo(id));
+    return true;
+  }
+
+  /// Nuovo profilo vuoto, subito attivo.
+  Future<bool> createProfile(String name, ProfileKind kind) async {
+    if (calls.isNotEmpty) return false;
+    final id = List.generate(
+      8,
+      (_) => Random.secure().nextInt(16).toRadixString(16),
+    ).join();
+    await _loadProfile(
+      Settings(
+        profileId: id,
+        profileName: name.trim(),
+        profileKind: kind,
+        others: [...settings.others, settings.active],
+        debugLog: settings.debugLog,
+        lang: settings.lang,
+        audio: settings.audio,
+      ),
+    );
+    return true;
+  }
+
+  /// Primo avvio: nessun account in nessun profilo → procedura guidata.
+  bool get needsSetup =>
+      settings.allAccounts.isEmpty && settings.others.isEmpty;
+
+  /// Nome e (nella procedura guidata) tipo del profilo attivo.
+  Future<void> renameProfile(String name, {ProfileKind? kind}) async {
+    if (name.trim().isEmpty) return;
+    settings = settings.copyWith(profileName: name.trim(), profileKind: kind);
+    await _store.save(settings);
+    notifyListeners();
+  }
+
+  /// Elimina un profilo non attivo con le sue credenziali API, il registro e
+  /// i contatti; le password SIP spariscono al salvataggio.
+  Future<void> deleteProfile(String id) async {
+    final p = settings.others.where((x) => x.id == id).firstOrNull;
+    if (p == null) return;
+    for (final c in p.pbx) {
+      await apiStoreFor?.call(c.id).clear();
+    }
+    await historyStoreFor?.call(id).clear();
+    await personalStoreFor?.call(id).clear();
+    settings = settings.copyWith(
+      others: [
+        for (final x in settings.others)
+          if (x.id != id) x,
+      ],
+    );
+    await _store.save(settings);
+    notifyListeners();
+  }
+
+  /// Ferma il profilo attivo e avvia [next]: account, connessioni PBX,
+  /// registro e contatti.
+  Future<void> _loadProfile(Settings next) async {
+    for (final c in connections) {
+      await c.stop();
+    }
+    connections.clear();
+    selectedGroup = null;
+    registrations.clear();
+    blf.clear();
+    _mwiNew = 0;
+    _mwiOld = 0;
+    settings = next;
+    await _store.save(settings);
+    history = await historyStore?.load() ?? [];
+    personal = await personalStoreFor?.call(settings.profileId).load() ?? [];
+    if (engineError == null) await _engine.setAccounts(settings.accounts);
+    await _startConnections();
+    _assignVoicemail();
+    await _syncDialogs();
     notifyListeners();
   }
 

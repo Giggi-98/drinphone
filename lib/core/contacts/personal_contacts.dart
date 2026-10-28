@@ -67,6 +67,11 @@ class PersonalContactsStore {
     }
   }
 
+  Future<void> clear() async {
+    final f = File(path);
+    if (await f.exists()) await f.delete();
+  }
+
   Future<void> save(List<PersonalContact> list) async {
     final f = File(path);
     await f.parent.create(recursive: true);

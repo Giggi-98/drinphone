@@ -152,6 +152,10 @@ void main() {
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
     await tester.pumpWidget(DrinPhoneApp(phone: phone));
+    // Installazione vuota: procedura guidata, rimandabile.
+    expect(find.text('Benvenuto in DrinPhone'), findsOneWidget);
+    await tester.tap(find.text('Configura più tardi'));
+    await tester.pumpAndSettle();
     expect(find.text('Nessun account SIP configurato.'), findsOneWidget);
 
     engine.callsCtl.add(

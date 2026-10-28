@@ -24,7 +24,7 @@ class PreferencesView extends StatelessWidget {
       (tr('Utente'), _UserTab(phone: phone)),
       if (phone.isYeastar) (tr('Presenza'), _PresenceTab(phone: phone)),
       (tr('Casella vocale'), _VoicemailTab(phone: phone)),
-      (tr('Audio'), _AudioTab(phone: phone)),
+      (tr('Audio'), AudioSettings(phone: phone)),
       (tr('Funzionalità'), const _FeaturesTab()),
       if (phone.isYeastar)
         (tr('Integrazione PBX'), PbxConnectionsPanel(phone: phone)),
@@ -442,25 +442,27 @@ class _AccountEditorState extends State<AccountEditor> {
                 ],
                 onChanged: (t) => setState(() => _transport = t!),
               ),
-              const SizedBox(height: 12),
-              DropdownButtonFormField<String>(
-                initialValue: conns.any((x) => x.id == _pbxId) ? _pbxId : '',
-                decoration: InputDecoration(
-                  labelText: tr('PBX collegato'),
-                  helperText: tr(
-                    'I suoi interni si chiamano con questo account',
+              // Profili SIP generici: nessuna connessione PBX da collegare.
+              if (widget.phone.isYeastar) const SizedBox(height: 12),
+              if (widget.phone.isYeastar)
+                DropdownButtonFormField<String>(
+                  initialValue: conns.any((x) => x.id == _pbxId) ? _pbxId : '',
+                  decoration: InputDecoration(
+                    labelText: tr('PBX collegato'),
+                    helperText: tr(
+                      'I suoi interni si chiamano con questo account',
+                    ),
                   ),
+                  items: [
+                    DropdownMenuItem(
+                      value: '',
+                      child: Text(tr('Automatico (stesso host)')),
+                    ),
+                    for (final x in conns)
+                      DropdownMenuItem(value: x.id, child: Text(x.label)),
+                  ],
+                  onChanged: (v) => setState(() => _pbxId = v ?? ''),
                 ),
-                items: [
-                  DropdownMenuItem(
-                    value: '',
-                    child: Text(tr('Automatico (stesso host)')),
-                  ),
-                  for (final x in conns)
-                    DropdownMenuItem(value: x.id, child: Text(x.label)),
-                ],
-                onChanged: (v) => setState(() => _pbxId = v ?? ''),
-              ),
             ],
           ),
         ),
@@ -834,15 +836,16 @@ class _VoicemailTabState extends State<_VoicemailTab> {
 
 // -------------------------------------------------------------------- Audio
 
-class _AudioTab extends StatefulWidget {
-  const _AudioTab({required this.phone});
+/// Microfono, altoparlante e suoneria (anche nella procedura guidata).
+class AudioSettings extends StatefulWidget {
+  const AudioSettings({super.key, required this.phone});
   final PhoneController phone;
 
   @override
-  State<_AudioTab> createState() => _AudioTabState();
+  State<AudioSettings> createState() => _AudioSettingsState();
 }
 
-class _AudioTabState extends State<_AudioTab> {
+class _AudioSettingsState extends State<AudioSettings> {
   late List<SoundDevice> _devices = widget.phone.soundDevices();
 
   Widget _picker(

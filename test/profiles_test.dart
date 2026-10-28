@@ -1,10 +1,15 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:drinphone/app/phone_controller.dart';
+import 'package:drinphone/core/call_history.dart';
+import 'package:drinphone/core/contacts/personal_contacts.dart';
 import 'package:drinphone/core/security/settings_store.dart';
 import 'package:drinphone/core/sip/sip_engine.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+import 'fake_sip_engine.dart';
 
 void main() {
   late Directory tmp;
@@ -116,4 +121,62 @@ void main() {
       expect(loaded.profiles.map((p) => p.name), ['Econnet', 'Trunk']);
     },
   );
+
+  test('controller: nuovo profilo, cambio, eliminazione con pulizia', () async {
+    FlutterSecureStorage.setMockInitialValues({});
+    final sep = Platform.pathSeparator;
+    final store = SettingsStore(path);
+    await store.save(
+      const Settings(
+        profileName: 'Econnet',
+        accounts: [
+          SipAccount(username: '305', password: 'uno', domain: 'a.test'),
+        ],
+      ),
+    );
+    final engine = FakeSipEngine();
+    String hist(String id) => '${tmp.path}${sep}history-$id.json';
+    final phone = PhoneController(
+      engine,
+      store,
+      engineDataDir: tmp.path,
+      logDir: tmp.path,
+      historyStoreFor: (id) => CallHistoryStore(hist(id)),
+      personalStoreFor: (id) =>
+          PersonalContactsStore('${tmp.path}${sep}contacts-$id.json'),
+    );
+    await phone.init();
+    expect(phone.needsSetup, isFalse);
+    expect(engine.accounts.single.username, '305');
+
+    expect(await phone.createProfile('Trunk', ProfileKind.sip), isTrue);
+    final trunk = phone.settings.profileId;
+    expect(phone.isYeastar, isFalse);
+    expect(engine.accounts, isEmpty);
+    await phone.saveAccount(
+      SipAccount(
+        id: phone.newAccountId(),
+        username: '0612345',
+        password: 'due',
+        domain: 'voip.test',
+      ),
+    );
+    // Id diverso da `main`, che è già del profilo Econnet.
+    expect(phone.settings.account!.id, isNot('main'));
+    await phone.savePersonal(
+      const PersonalContact(id: 'x', name: 'Casa', numbers: [('Casa', '06 1')]),
+    );
+
+    expect(await phone.switchProfile('default'), isTrue);
+    expect(engine.accounts.single.username, '305');
+    expect(phone.personal, isEmpty);
+    expect(phone.settings.others.single.name, 'Trunk');
+
+    await phone.deleteProfile(trunk);
+    expect(phone.settings.others, isEmpty);
+    expect(File('${tmp.path}${sep}contacts-$trunk.json').existsSync(), isFalse);
+    final reloaded = await store.load();
+    expect(reloaded.allAccounts.map((a) => a.password), ['uno']);
+    await phone.shutdown();
+  });
 }

@@ -26,6 +26,8 @@ lib/features/account/               editor account SIP, pannello connessioni PBX
 lib/features/preferences/           Preferenze a schede (utente, audio, PBX, lingua…)
 lib/features/live/                  Live Calls: chiamate in corso del PBX + colonna BLF
 lib/features/contacts|history|voicemail/  rubrica, registro chiamate, casella vocale
+lib/features/setup/                 procedura guidata (primo avvio, nuovo profilo)
+lib/core/contacts/                  contatti personali + import CSV/vCard
 test/                               controller e UI con FakeSipEngine
 windows/                            runner Flutter; CMake installa l'SDK accanto all'exe
 tool/fetch_linphone_sdk.ps1         scarica SDK in third_party/ (non versionato)
@@ -124,7 +126,7 @@ spikes/f0a/                         spike F0-A (non prodotto)
   (anello = stato linea, badge = presenza, testo nei tooltip); pagine (60 interni,
   50 contatti/registro); ricerca con popup sotto il campo (frecce/Invio/Esc).
 - **Registro chiamate** (`IMPLEMENTATO`) — `CallHistoryStore` (`lib/core/call_history.dart`):
-  `history.json` locale, ultime 200 chiamate, salvataggi in coda; persa = entrante
+  `history[-<profilo>].json` locale, per profilo, ultime 200 chiamate, salvataggi in coda; persa = entrante
   non risposta. Vista `features/history/` con filtri tipo (tutte/in arrivo/perse/
   in uscita), periodo (oggi/7/30 giorni/tutto) e nome/numero.
 - **Ricerca** — il campo in alto filtra la griglia per nome/numero; Invio chiama
@@ -132,8 +134,28 @@ spikes/f0a/                         spike F0-A (non prodotto)
 - **Attenzione chiamata entrante** (Windows) — `WindowAttention` (user32 via FFI):
   ripristina la finestra, `SetForegroundWindow`, `FlashWindowEx` sulla barra.
   Nessuna notifica toast (servirebbe un plugin/WinRT).
-- **SettingsStore** — `settings.json` (utente, dominio, trasporto, interni, flag
-  debug) + password in `flutter_secure_storage`.
+- **Profili** (`IMPLEMENTATO`; cambio profilo `DA VALIDARE` sul PBX: un-REGISTER
+  degli account lasciati) — DECISIONS "Profili". `Settings`: i campi per-profilo
+  (account, connessioni PBX, interni manuali, preferiti, "Chiama con", codice
+  casella) sono quelli del profilo **attivo**, gli altri in `others`; globali
+  lingua, audio, diagnostica. `settings.json` = `{activeProfile, profiles[…]}`;
+  file senza profili letto come profilo `default` ("Econnet" se aveva API) e
+  copiato in `settings.v1.json` alla prima riscrittura. Password SIP di **tutti**
+  i profili in `flutter_secure_storage` (chiave per id account, unico). Tipo
+  `yeastar` / `sip`: i profili SIP generici non mostrano Live Calls, Presenza,
+  Integrazione PBX. `PhoneController.switchProfile/createProfile/deleteProfile`:
+  mai durante una chiamata; elimina = credenziali DPAPI delle sue connessioni,
+  registro, contatti. Menu in alto a destra.
+- **Procedura guidata** (`IMPLEMENTATO`, `features/setup/`) — al primo avvio
+  (nessun account in nessun profilo) e da "Nuovo profilo…": lingua → tipo e nome →
+  account (con stato di registrazione) → API (solo Yeastar, facoltative) → audio.
+- **Contatti personali** (`IMPLEMENTATO`, `core/contacts/`) — per profilo,
+  `contacts[-<profilo>].json` in chiaro come il registro; nome, azienda, email,
+  numeri con etichetta. Import CSV (virgola/punto e virgola, intestazioni it/en,
+  Outlook/Google) e vCard 2.1/3.0/4.0 (righe piegate, fax esclusi), anteprima e
+  doppioni per numero (`sameNumber`). In Rubrica, ricerca e nome del chiamante.
+- **SettingsStore** — `settings.json` (profili, come sopra) + password in
+  `flutter_secure_storage`.
 - **UI** — `ChangeNotifier` senza librerie di stato. Sezioni: Interni (lista locale,
   pallino e testo da BLF SIP + presenza Yeastar; pannello reparti solo se il PBX
   li fornisce, sola lettura), Live Calls, Rubrica, Registro chiamate, Casella
@@ -159,7 +181,8 @@ spikes/f0a/                         spike F0-A (non prodotto)
   `linphone_logging_service` a livello Debug su `logs/linphone.log` (rotazione 10 MB).
 
 ## 5. Dipendenze
-Flutter 3.47.8 / Dart 3.13.7; `ffi` ^2.2.0; `flutter_secure_storage` ^11.2.0
+Flutter 3.47.8 / Dart 3.13.7; `ffi` ^2.2.0; `file_selector` ^1.1.0 (scelta del
+file da importare, plugin flutter.dev); `flutter_secure_storage` ^11.2.0
 (Windows: richiede componente VS "C++ ATL"); linphone-sdk-win64 5.5.39 (GPLv3 /
 commerciale, `docs/licenze-e-compliance.md`). Toolchain: VS 2022 Build Tools 17.14
 (C++ + ATL), Windows SDK 10.0.26100.

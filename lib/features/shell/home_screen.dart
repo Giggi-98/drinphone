@@ -12,6 +12,7 @@ import '../contacts/contacts_view.dart';
 import '../history/history_view.dart';
 import '../live/live_calls_view.dart';
 import '../preferences/preferences_view.dart';
+import '../setup/setup_wizard.dart';
 import '../voicemail/voicemail_view.dart';
 import 'search_box.dart';
 import 'widgets.dart';
@@ -75,10 +76,88 @@ class _HomeScreenState extends State<HomeScreen> {
     _section = _Section.preferences;
   });
 
+  /// Primo avvio rimandato con "Configura più tardi" (fino al riavvio).
+  bool _setupLater = false;
+
+  void _newProfile() => Navigator.of(context).push(
+    MaterialPageRoute<void>(
+      builder: (ctx) => SetupWizard(
+        phone: p,
+        firstRun: false,
+        onDone: () => Navigator.of(ctx).pop(),
+      ),
+    ),
+  );
+
+  Future<void> _switchProfile(String id) async {
+    if (!await p.switchProfile(id) && mounted && p.calls.isNotEmpty) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(tr('Non durante una chiamata'))));
+    }
+    setState(() => _section = _Section.extensions);
+  }
+
+  Future<void> _renameProfile() async {
+    final ctl = TextEditingController(text: p.settings.profileName);
+    final name = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(tr('Rinomina profilo')),
+        content: TextField(controller: ctl, autofocus: true),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(tr('Annulla')),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, ctl.text),
+            child: Text(tr('Salva')),
+          ),
+        ],
+      ),
+    );
+    ctl.dispose();
+    if (name != null) await p.renameProfile(name);
+  }
+
+  Future<void> _deleteProfile(Profile prof) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(tr('Eliminare il profilo {n}?', {'n': prof.name})),
+        content: Text(
+          tr(
+            'Si cancellano i suoi account, le credenziali API, il registro '
+            'chiamate e i contatti personali.',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(tr('Annulla')),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(tr('Elimina')),
+          ),
+        ],
+      ),
+    );
+    if (ok == true) await p.deleteProfile(prof.id);
+  }
+
   @override
   Widget build(BuildContext context) {
     final c = context.drin;
     final call = p.call;
+    if (p.needsSetup && !_setupLater && p.engineError == null) {
+      return SetupWizard(
+        phone: p,
+        firstRun: true,
+        onDone: () => setState(() => _setupLater = true),
+      );
+    }
     return Scaffold(
       body: Row(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -319,9 +398,62 @@ class _HomeScreenState extends State<HomeScreen> {
           const Spacer(),
           SearchBox(phone: p, onCall: _call),
           const SizedBox(width: 12),
-          InkWell(
-            onTap: _openPreferences,
-            borderRadius: BorderRadius.circular(10),
+          // Profili (DECISIONS "Profili"): uno attivo alla volta.
+          PopupMenuButton<String>(
+            tooltip: tr('Profili'),
+            position: PopupMenuPosition.under,
+            onSelected: (v) => switch (v) {
+              '+new' => _newProfile(),
+              '+rename' => _renameProfile(),
+              '+prefs' => _openPreferences(),
+              _ when v.startsWith('-') => _deleteProfile(
+                p.settings.others.firstWhere((x) => x.id == v.substring(1)),
+              ),
+              _ => _switchProfile(v),
+            },
+            itemBuilder: (_) => [
+              for (final prof in p.settings.profiles)
+                PopupMenuItem(
+                  value: prof.id,
+                  enabled: prof.id == p.settings.profileId || p.calls.isEmpty,
+                  child: Row(
+                    children: [
+                      Icon(
+                        prof.kind == ProfileKind.yeastar
+                            ? Icons.hub_outlined
+                            : Icons.dialpad_rounded,
+                        size: 18,
+                        color: c.muted,
+                      ),
+                      const SizedBox(width: 10),
+                      Text(prof.name.isEmpty ? tr('Profilo') : prof.name),
+                      const SizedBox(width: 8),
+                      Text(
+                        prof.kind == ProfileKind.yeastar
+                            ? tr('Yeastar')
+                            : tr('SIP generico'),
+                        style: TextStyle(fontSize: 12, color: c.muted),
+                      ),
+                      const SizedBox(width: 12),
+                      if (prof.id == p.settings.profileId)
+                        Icon(Icons.check_rounded, size: 18, color: c.accent),
+                    ],
+                  ),
+                ),
+              const PopupMenuDivider(),
+              PopupMenuItem(value: '+new', child: Text(tr('Nuovo profilo…'))),
+              PopupMenuItem(
+                value: '+rename',
+                child: Text(tr('Rinomina profilo…')),
+              ),
+              for (final prof in p.settings.others)
+                PopupMenuItem(
+                  value: '-${prof.id}',
+                  child: Text(tr('Elimina profilo {n}…', {'n': prof.name})),
+                ),
+              const PopupMenuDivider(),
+              PopupMenuItem(value: '+prefs', child: Text(tr('Preferenze'))),
+            ],
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
               child: Row(
@@ -351,11 +483,17 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                       ),
                       Text(
-                        account?.domain ?? tr('Configura'),
+                        [
+                          if (p.settings.profileName.isNotEmpty)
+                            p.settings.profileName,
+                          account?.domain ?? tr('Configura'),
+                        ].join(' · '),
                         style: TextStyle(fontSize: 12, color: c.muted),
                       ),
                     ],
                   ),
+                  const SizedBox(width: 4),
+                  Icon(Icons.expand_more_rounded, size: 18, color: c.muted),
                 ],
               ),
             ),
