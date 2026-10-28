@@ -16,7 +16,7 @@ Verifica: test automatici contro un finto PBX locale e DPAPI reale su Windows.
 | Credenziali/token nei log | OK | `ApiCredentials.toString()` senza ID/Secret; `YeastarApiException` riporta solo operazione e `errcode` (test: niente URL né Secret nel messaggio); `debugPrint` solo conteggi |
 | Buffer DPAPI in memoria | PARZIALE | Il buffer restituito da DPAPI viene azzerato e liberato con `LocalFree`; le stringhe Dart restano in memoria finché il GC non le raccoglie |
 | TLS verso il PBX | OK | `HttpClient` con verifica certificati standard, nessun `badCertificateCallback`; la UI accetta solo `https://` |
-| Superficie API usata | OK | Solo `get_token`, `refresh_token`, `del_token`, `extension/list` (GET) |
+| Superficie API usata | OK | Solo lettura: `get_token`, `refresh_token`, `del_token`, `extension/list`, `organization/list`, `company_contact/list`, `vm/get` (proprio interno), WebSocket `subscribe` (eventi 30007/30008/30009/30022). Nessuna chiamata di scrittura o call control |
 | Consumo token (max 8/app) | OK | Un token per sessione, refresh a 25 min, `del_token` all'uscita (test); un solo nuovo `get_token` se il refresh fallisce, niente loop |
 | WebSocket eventi | OK | Token nell'URL `wss://…?access_token=` per specifica: l'URL non è mai loggato, gli errori di connessione riportano solo il tipo (`WebSocketException`), i log eventi solo tipo e nomi dei campi (test) |
 | Blocco IP per tentativi falliti | RESIDUO | Credenziali errate → un tentativo per avvio o salvataggio; nessun retry automatico |
