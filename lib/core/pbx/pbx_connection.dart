@@ -4,6 +4,7 @@
 import 'dart:async';
 import 'dart:math';
 
+import '../../app/l10n.dart';
 import '../security/api_credential_store.dart';
 import 'yeastar_api.dart';
 
@@ -30,7 +31,13 @@ class PbxConnection {
 
   /// Rubrica aziendale; vuota se l'API non la espone o non è autorizzata.
   List<PbxContact> contacts = const [];
-  String status = 'Non connessa';
+
+  /// Interno di cui leggere la casella vocale (l'account SIP); null = nessuno.
+  String? voicemailOf;
+
+  /// Messaggi in casella; null = non letti dall'API (non disponibile o errore).
+  List<PbxVoicemail>? voicemail;
+  String status = tr('Non connessa');
   bool ok = false;
   bool syncing = false;
   DateTime? lastSync;
@@ -67,8 +74,8 @@ class PbxConnection {
     if (creds == null) {
       ok = false;
       status = store.isSet
-          ? 'Credenziali non leggibili su questo PC'
-          : 'Credenziali mancanti';
+          ? tr('Credenziali non leggibili su questo PC')
+          : tr('Credenziali mancanti');
       onUpdate(this, false);
       return;
     }
@@ -122,23 +129,41 @@ class PbxConnection {
         }
         _orgsAt = DateTime.now();
       }
-      final fp = _fingerprintOf(ext, newOrgs, newContacts);
+      // Casella vocale a ogni giro: è ciò che l'utente si aspetta di vedere subito.
+      final vmOf = voicemailOf;
+      List<PbxVoicemail>? newVm;
+      if (vmOf != null && vmOf.isNotEmpty) {
+        try {
+          newVm = await api.listVoicemail(vmOf);
+        } catch (e) {
+          optionalErrors.add('casella vocale: ${_short(e)}');
+        }
+      }
+      final fp =
+          '${_fingerprintOf(ext, newOrgs, newContacts)}\n'
+          '${newVm?.map((m) => '${m.id}|${m.read}').join(',')}';
       changed = fp != _fingerprint;
       _fingerprint = fp;
       directory = ext;
       orgs = newOrgs;
       contacts = newContacts;
+      voicemail = newVm;
       lastSync = DateTime.now();
       _failures = 0;
       ok = true;
-      status =
-          'Sincronizzata · ${ext.length} interni, ${newOrgs.length} reparti, '
-          '${newContacts.length} contatti';
+      status = tr('Sincronizzata · {e} interni, {o} reparti, {c} contatti', {
+        'e': ext.length,
+        'o': newOrgs.length,
+        'c': newContacts.length,
+      });
     } catch (e) {
       // e non contiene URL né token (YeastarApiException), solo operazione e codice.
       _failures++;
       ok = false;
-      status = 'Errore: $e · nuovo tentativo tra ${_nextDelay().inMinutes} min';
+      status = tr('Errore: {e} · nuovo tentativo tra {m} min', {
+        'e': e,
+        'm': _nextDelay().inMinutes,
+      });
     } finally {
       syncing = false;
       if (!_stopped) _timer = Timer(_nextDelay(), sync);

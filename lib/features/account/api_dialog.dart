@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../app/l10n.dart';
 import '../../app/phone_controller.dart';
 import '../../app/theme.dart';
 import '../../core/pbx/pbx_connection.dart';
@@ -11,9 +12,11 @@ class ApiDialog extends StatelessWidget {
   final PhoneController phone;
 
   String _ago(DateTime? t) {
-    if (t == null) return 'mai';
+    if (t == null) return tr('mai');
     String two(int n) => n.toString().padLeft(2, '0');
-    return 'alle ${two(t.hour)}:${two(t.minute)}:${two(t.second)}';
+    return tr('alle {t}', {
+      't': '${two(t.hour)}:${two(t.minute)}:${two(t.second)}',
+    });
   }
 
   @override
@@ -23,7 +26,7 @@ class ApiDialog extends StatelessWidget {
       listenable: phone,
       builder: (context, _) => AlertDialog(
         backgroundColor: c.surface,
-        title: const Text('Integrazione PBX Yeastar (API)'),
+        title: Text(tr('Integrazione PBX Yeastar (API)')),
         content: SizedBox(
           width: 560,
           child: Column(
@@ -34,7 +37,7 @@ class ApiDialog extends StatelessWidget {
                 Padding(
                   padding: const EdgeInsets.symmetric(vertical: 12),
                   child: Text(
-                    'Nessun PBX collegato.',
+                    tr('Nessun PBX collegato.'),
                     style: TextStyle(color: c.muted),
                   ),
                 ),
@@ -54,7 +57,7 @@ class ApiDialog extends StatelessWidget {
                     builder: (_) => _CredentialsDialog(phone: phone),
                   ),
                   icon: const Icon(Icons.add, size: 16),
-                  label: const Text('Aggiungi PBX'),
+                  label: Text(tr('Aggiungi PBX')),
                 ),
               ),
             ],
@@ -63,7 +66,7 @@ class ApiDialog extends StatelessWidget {
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Chiudi'),
+            child: Text(tr('Chiudi')),
           ),
         ],
       ),
@@ -109,7 +112,9 @@ class _ConnectionTile extends StatelessWidget {
               ),
               if (primary)
                 Tooltip(
-                  message: 'PBX dell\'account SIP: interni chiamabili e in BLF',
+                  message: tr(
+                    'PBX dell\'account SIP: interni chiamabili e in BLF',
+                  ),
                   child: Container(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 8,
@@ -120,7 +125,7 @@ class _ConnectionTile extends StatelessWidget {
                       borderRadius: BorderRadius.circular(999),
                     ),
                     child: Text(
-                      'Account SIP',
+                      tr('Account SIP'),
                       style: TextStyle(fontSize: 11, color: c.accent),
                     ),
                   ),
@@ -131,7 +136,7 @@ class _ConnectionTile extends StatelessWidget {
           Text(conn.host, style: TextStyle(fontSize: 12, color: c.muted)),
           const SizedBox(height: 4),
           Text(
-            '${conn.status} · ultima lettura $lastSync',
+            '${conn.status} · ${tr('ultima lettura')} $lastSync',
             style: TextStyle(
               fontSize: 12,
               color: conn.ok ? c.okText : c.busyText,
@@ -151,7 +156,7 @@ class _ConnectionTile extends StatelessWidget {
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
                     : const Icon(Icons.sync, size: 16),
-                label: const Text('Sincronizza ora'),
+                label: Text(tr('Sincronizza ora')),
               ),
               OutlinedButton.icon(
                 onPressed: () => showDialog<void>(
@@ -159,12 +164,12 @@ class _ConnectionTile extends StatelessWidget {
                   builder: (_) => _CredentialsDialog(phone: phone, conn: conn),
                 ),
                 icon: const Icon(Icons.key_outlined, size: 16),
-                label: const Text('Credenziali'),
+                label: Text(tr('Credenziali')),
               ),
               TextButton.icon(
                 onPressed: () => phone.removeConnection(conn),
                 icon: Icon(Icons.delete_outline, size: 16, color: c.busyText),
-                label: Text('Rimuovi', style: TextStyle(color: c.busyText)),
+                label: Text(tr('Rimuovi'), style: TextStyle(color: c.busyText)),
               ),
             ],
           ),
@@ -207,13 +212,13 @@ class _CredentialsDialogState extends State<_CredentialsDialog> {
 
   String? _validateUrl(String? v) {
     final u = Uri.tryParse(v?.trim() ?? '');
-    if (u == null || u.host.isEmpty) return 'URL non valido';
-    if (u.scheme != 'https') return 'Serve https://';
+    if (u == null || u.host.isEmpty) return tr('URL non valido');
+    if (u.scheme != 'https') return tr('Serve https://');
     return null;
   }
 
   String? _required(String? v) =>
-      (v == null || v.trim().isEmpty) ? 'Obbligatorio' : null;
+      (v == null || v.trim().isEmpty) ? tr('Obbligatorio') : null;
 
   Future<void> _save() async {
     if (!_form.currentState!.validate()) return;
@@ -242,11 +247,13 @@ class _CredentialsDialogState extends State<_CredentialsDialog> {
   Widget build(BuildContext context) {
     final c = context.drin;
     final hint = widget.conn == null
-        ? 'Da Integrations > API sul PBX'
-        : 'Impostato · scrivi per sostituire';
+        ? tr('Da Integrations > API sul PBX')
+        : tr('Impostato · scrivi per sostituire');
     return AlertDialog(
       backgroundColor: c.surface,
-      title: Text(widget.conn == null ? 'Aggiungi PBX' : 'Credenziali PBX'),
+      title: Text(
+        widget.conn == null ? tr('Aggiungi PBX') : tr('Credenziali PBX'),
+      ),
       content: SizedBox(
         width: 460,
         child: Form(
@@ -258,14 +265,14 @@ class _CredentialsDialogState extends State<_CredentialsDialog> {
               TextFormField(
                 controller: _label,
                 validator: _required,
-                decoration: const InputDecoration(labelText: 'Nome'),
+                decoration: InputDecoration(labelText: tr('Nome')),
               ),
               const SizedBox(height: 12),
               TextFormField(
                 controller: _baseUrl,
                 validator: _validateUrl,
-                decoration: const InputDecoration(
-                  labelText: 'Indirizzo API del PBX',
+                decoration: InputDecoration(
+                  labelText: tr('Indirizzo API del PBX'),
                   hintText:
                       'https://pbx.esempio.it oppure https://10.0.0.5:8088',
                 ),
@@ -296,8 +303,10 @@ class _CredentialsDialogState extends State<_CredentialsDialog> {
               ),
               const SizedBox(height: 12),
               Text(
-                'Accesso amministrativo al PBX: cifrate su questo PC per il '
-                'tuo utente Windows, mai mostrate né scritte nei log.',
+                tr(
+                  'Accesso amministrativo al PBX: cifrate su questo PC per il '
+                  'tuo utente Windows, mai mostrate né scritte nei log.',
+                ),
                 style: TextStyle(fontSize: 12, color: c.muted),
               ),
             ],
@@ -307,11 +316,11 @@ class _CredentialsDialogState extends State<_CredentialsDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Annulla'),
+          child: Text(tr('Annulla')),
         ),
         FilledButton(
           onPressed: _saving ? null : _save,
-          child: Text(_saving ? 'Connessione…' : 'Salva e connetti'),
+          child: Text(_saving ? tr('Connessione…') : tr('Salva e connetti')),
         ),
       ],
     );

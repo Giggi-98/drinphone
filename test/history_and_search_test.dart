@@ -58,14 +58,15 @@ void main() {
         ),
       );
 
-  test('ricerca per nome o numero, senza distinzione maiuscole', () {
-    phone.setQuery('paolo');
-    expect(phone.visibleExtensions.map((e) => e.number), ['301']);
-    phone.setQuery('21');
-    expect(phone.visibleExtensions.map((e) => e.number), ['210']);
-    phone.setQuery('');
-    expect(phone.visibleExtensions.length, 2);
-  });
+  test(
+    'ricerca: popup con interni per nome o numero, prima a inizio parola',
+    () {
+      expect(phone.search('paolo').map((h) => h.number), ['301']);
+      expect(phone.search('21').map((h) => h.number), ['210']);
+      expect(phone.search('rIUn').single.name, 'Sala Riunioni');
+      expect(phone.search(''), isEmpty);
+    },
+  );
 
   test(
     'entrante non risposta = persa; richiamo attenzione una volta',

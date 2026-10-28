@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 
+import '../../app/l10n.dart';
 import '../../app/phone_controller.dart';
 import '../../app/theme.dart';
 import '../../core/call_history.dart';
 import '../../core/sip/sip_engine.dart';
+import '../shell/widgets.dart';
 
-/// Cronologia chiamate locale (CallHistoryStore).
+/// Registro chiamate locale (CallHistoryStore), a pagine.
 class HistoryView extends StatefulWidget {
   const HistoryView({super.key, required this.phone, required this.onCall});
   final PhoneController phone;
@@ -17,6 +19,8 @@ class HistoryView extends StatefulWidget {
 
 class _HistoryViewState extends State<HistoryView> {
   bool _onlyMissed = false;
+  int _page = 0;
+  static const pageSize = 50;
 
   static String _two(int n) => n.toString().padLeft(2, '0');
 
@@ -26,15 +30,17 @@ class _HistoryViewState extends State<HistoryView> {
     final day = DateTime(t.year, t.month, t.day);
     final today = DateTime(now.year, now.month, now.day);
     final diff = today.difference(day).inDays;
-    if (diff == 0) return 'Oggi $time';
-    if (diff == 1) return 'Ieri $time';
+    if (diff == 0) return tr('Oggi {t}', {'t': time});
+    if (diff == 1) return tr('Ieri {t}', {'t': time});
     return '${_two(t.day)}/${_two(t.month)}/${t.year} $time';
   }
 
   String _duration(CallRecord r) {
-    if (!r.answered) return r.missed ? 'Persa' : 'Non risposta';
+    if (!r.answered) return r.missed ? tr('Persa') : tr('Non risposta');
     final m = r.seconds ~/ 60;
-    return m > 0 ? '$m min ${_two(r.seconds % 60)} s' : '${r.seconds} s';
+    return m > 0
+        ? tr('{m} min {s} s', {'m': m, 's': _two(r.seconds % 60)})
+        : tr('{s} s', {'s': r.seconds});
   }
 
   Widget _chip(DrinColors c, String label, bool on, VoidCallback onTap) =>
@@ -45,10 +51,10 @@ class _HistoryViewState extends State<HistoryView> {
           customBorder: const StadiumBorder(),
           onTap: onTap,
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
             child: Text(
               label,
-              style: TextStyle(fontSize: 13, color: on ? c.accent : c.text),
+              style: TextStyle(fontSize: 12, color: on ? c.accent : c.text),
             ),
           ),
         ),
@@ -62,13 +68,16 @@ class _HistoryViewState extends State<HistoryView> {
       for (final r in p.history)
         if (!_onlyMissed || r.missed) r,
     ];
+    final pages = (list.length + pageSize - 1) ~/ pageSize;
+    if (_page >= pages && pages > 0) _page = pages - 1;
+    final slice = Pager.slice(list, _page, pageSize);
     return Container(
       margin: const EdgeInsets.all(16),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: c.surface,
         border: Border.all(color: c.border),
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(14),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -76,64 +85,69 @@ class _HistoryViewState extends State<HistoryView> {
           Row(
             children: [
               Text(
-                'Cronologia',
+                tr('Registro chiamate'),
                 style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w600,
+                  fontSize: 20,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: -0.2,
                   color: c.text,
                 ),
               ),
               const SizedBox(width: 16),
-              _chip(
-                c,
-                'Tutte',
-                !_onlyMissed,
-                () => setState(() => _onlyMissed = false),
-              ),
+              _chip(c, tr('Tutte'), !_onlyMissed, () {
+                setState(() {
+                  _onlyMissed = false;
+                  _page = 0;
+                });
+              }),
               const SizedBox(width: 6),
-              _chip(
-                c,
-                'Perse',
-                _onlyMissed,
-                () => setState(() => _onlyMissed = true),
-              ),
+              _chip(c, tr('Perse'), _onlyMissed, () {
+                setState(() {
+                  _onlyMissed = true;
+                  _page = 0;
+                });
+              }),
               const Spacer(),
               if (p.history.isNotEmpty)
-                TextButton.icon(
+                IconButton(
+                  tooltip: tr('Svuota registro'),
                   onPressed: p.clearHistory,
-                  icon: Icon(
-                    Icons.delete_sweep_outlined,
-                    size: 18,
-                    color: c.muted,
-                  ),
-                  label: Text('Svuota', style: TextStyle(color: c.muted)),
+                  icon: Icon(Icons.delete_sweep_outlined, color: c.muted),
                 ),
             ],
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 10),
           Expanded(
             child: list.isEmpty
                 ? Center(
                     child: Text(
                       _onlyMissed
-                          ? 'Nessuna chiamata persa.'
-                          : 'Nessuna chiamata.',
+                          ? tr('Nessuna chiamata persa.')
+                          : tr('Nessuna chiamata.'),
                       style: TextStyle(color: c.muted),
                     ),
                   )
                 : ListView.separated(
-                    itemCount: list.length,
+                    itemCount: slice.length,
                     separatorBuilder: (_, _) =>
                         Divider(color: c.border, height: 1),
                     itemBuilder: (_, i) {
-                      final r = list[i];
+                      final r = slice[i];
                       final (icon, color, kind) = r.missed
-                          ? (Icons.call_missed, c.busyText, 'Persa')
+                          ? (Icons.call_missed_rounded, c.busyText, tr('Persa'))
                           : r.direction == CallDirection.incoming
-                          ? (Icons.call_received, c.okText, 'In arrivo')
-                          : (Icons.call_made, c.accent, 'In uscita');
+                          ? (
+                              Icons.call_received_rounded,
+                              c.okText,
+                              tr('In arrivo'),
+                            )
+                          : (
+                              Icons.call_made_rounded,
+                              c.accent,
+                              tr('In uscita'),
+                            );
                       return SizedBox(
-                        height: 60,
+                        height: 56,
                         child: Row(
                           children: [
                             const SizedBox(width: 4),
@@ -151,18 +165,14 @@ class _HistoryViewState extends State<HistoryView> {
                                     r.name.isNotEmpty ? r.name : r.number,
                                     overflow: TextOverflow.ellipsis,
                                     style: TextStyle(
-                                      fontWeight: FontWeight.w500,
+                                      fontWeight: FontWeight.w600,
                                       color: r.missed ? c.busyText : c.text,
                                     ),
                                   ),
                                   if (r.name.isNotEmpty)
                                     Text(
                                       r.number,
-                                      style: TextStyle(
-                                        fontFamily: monoFont,
-                                        fontSize: 12,
-                                        color: c.muted,
-                                      ),
+                                      style: mono(c.muted, size: 12),
                                     ),
                                 ],
                               ),
@@ -181,18 +191,24 @@ class _HistoryViewState extends State<HistoryView> {
                                 style: TextStyle(fontSize: 13, color: c.muted),
                               ),
                             ),
-                            IconButton(
-                              tooltip: 'Richiama',
+                            CallIconButton(
+                              tooltip: tr('Richiama {n}', {'n': r.number}),
                               onPressed: p.canDial && r.number.isNotEmpty
                                   ? () => widget.onCall(r.number)
                                   : null,
-                              icon: Icon(Icons.call, size: 18, color: c.accent),
                             ),
                           ],
                         ),
                       );
                     },
                   ),
+          ),
+          const SizedBox(height: 8),
+          Pager(
+            total: list.length,
+            page: _page,
+            pageSize: pageSize,
+            onPage: (i) => setState(() => _page = i),
           ),
         ],
       ),

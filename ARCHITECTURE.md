@@ -67,7 +67,19 @@ spikes/f0a/                         spike F0-A (non prodotto)
   `features/contacts/` con filtro per phonebook e un pulsante Chiama per numero
   (fax esclusi). `nameFor(numero)` dà il nome del chiamante da interni e rubrica
   (cifre finali se ≥ 7 cifre). Errori di reparti/rubrica non bloccano gli interni.
-- **Cronologia** (`IMPLEMENTATO`) — `CallHistoryStore` (`lib/core/call_history.dart`):
+- **Casella vocale** (`IMPLEMENTATO`, verificata sul pilota via API) — `vm/get` del
+  proprio interno a ogni sync (60 s) sulla connessione del PBX dell'account;
+  ripiego SIP MWI (`message-summary`, callback account + NOTIFY). Yeastar via RAS
+  invia NOTIFY fuori dialogo senza `Message-Account` (liblinphone non lo abbina)
+  e risponde 500 alla SUBSCRIBE esplicita: lì vale solo l'API. Ascolto = chiamata
+  al codice configurabile (default `*2`).
+- **Lingua** — `tr('testo italiano')` + `l10n_en.dart`; scelta in Impostazioni,
+  immediata (rebuild di MaterialApp) e salvata in `settings.json`; un test
+  verifica che ogni chiave abbia la traduzione.
+- **UI** — Segoe UI Variable + Cascadia Mono; schede compatte a simboli
+  (anello = stato linea, badge = presenza, testo nei tooltip); pagine (60 interni,
+  50 contatti/registro); ricerca con popup sotto il campo (frecce/Invio/Esc).
+- **Registro chiamate** (`IMPLEMENTATO`) — `CallHistoryStore` (`lib/core/call_history.dart`):
   `history.json` locale, ultime 200 chiamate, salvataggi in coda; persa = entrante
   non risposta. Vista `features/history/`.
 - **Ricerca** — il campo in alto filtra la griglia per nome/numero; Invio chiama

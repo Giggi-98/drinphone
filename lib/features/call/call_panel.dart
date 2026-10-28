@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../../app/l10n.dart';
 import '../../app/phone_controller.dart';
 import '../../app/theme.dart';
 import '../../core/sip/sip_engine.dart';
@@ -38,16 +39,16 @@ class _CallPanelState extends State<CallPanel> {
     final since = widget.phone.callConnectedAt;
     switch (widget.call.phase) {
       case CallPhase.incoming:
-        return 'Chiamata in arrivo';
+        return tr('Chiamata in arrivo');
       case CallPhase.outgoing:
-        return 'Chiamata in corso…';
+        return tr('Chiamata in corso…');
       case CallPhase.paused:
-        return 'In attesa';
+        return tr('In attesa');
       default:
-        if (since == null) return 'In linea';
+        if (since == null) return tr('In linea');
         final d = DateTime.now().difference(since);
         String two(int n) => n.toString().padLeft(2, '0');
-        return 'In linea · ${two(d.inMinutes)}:${two(d.inSeconds % 60)}';
+        return '${tr('In linea')} · ${two(d.inMinutes)}:${two(d.inSeconds % 60)}';
     }
   }
 
@@ -91,7 +92,7 @@ class _CallPanelState extends State<CallPanel> {
           ),
           const SizedBox(height: 12),
           Text(
-            title.isEmpty ? 'Sconosciuto' : title,
+            title.isEmpty ? tr('Sconosciuto') : title,
             style: TextStyle(
               fontSize: 22,
               fontWeight: FontWeight.w600,
@@ -109,11 +110,19 @@ class _CallPanelState extends State<CallPanel> {
             Row(
               children: [
                 Expanded(
-                  child: _bigButton('Rispondi', DrinColors.callGreen, p.answer),
+                  child: _bigButton(
+                    tr('Rispondi'),
+                    DrinColors.callGreen,
+                    p.answer,
+                  ),
                 ),
                 const SizedBox(width: 10),
                 Expanded(
-                  child: _bigButton('Rifiuta', DrinColors.hangupRed, p.hangup),
+                  child: _bigButton(
+                    tr('Rifiuta'),
+                    DrinColors.hangupRed,
+                    p.hangup,
+                  ),
                 ),
               ],
             )
@@ -124,7 +133,7 @@ class _CallPanelState extends State<CallPanel> {
                   Expanded(
                     child: _toggle(
                       context,
-                      p.muted ? 'Riattiva' : 'Muto',
+                      p.muted ? tr('Riattiva') : tr('Muto'),
                       p.muted,
                       Icons.mic_off_outlined,
                       p.toggleMute,
@@ -134,7 +143,7 @@ class _CallPanelState extends State<CallPanel> {
                   Expanded(
                     child: _toggle(
                       context,
-                      'Tastiera',
+                      tr('Tastiera'),
                       _dtmfOpen,
                       Icons.dialpad,
                       () => setState(() => _dtmfOpen = !_dtmfOpen),
@@ -162,7 +171,7 @@ class _CallPanelState extends State<CallPanel> {
               ),
             ],
             const SizedBox(height: 16),
-            _bigButton('Riaggancia', DrinColors.hangupRed, p.hangup),
+            _bigButton(tr('Riaggancia'), DrinColors.hangupRed, p.hangup),
           ],
         ],
       ),

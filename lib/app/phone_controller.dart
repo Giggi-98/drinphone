@@ -4,6 +4,7 @@ import 'dart:math';
 import 'package:flutter/foundation.dart';
 
 import '../core/call_history.dart';
+import 'l10n.dart';
 import '../core/pbx/pbx_connection.dart';
 import '../core/pbx/yeastar_api.dart';
 import '../core/security/api_credential_store.dart';
@@ -32,8 +33,18 @@ class PhoneController extends ChangeNotifier {
   /// Cronologia, più recenti per prime.
   List<CallRecord> history = [];
 
-  /// Testo del campo in alto: filtra la griglia per nome o numero.
-  String query = '';
+  // Contatori SIP MWI (per PBX che inviano message-summary abbinabile).
+  int _mwiNew = 0;
+  int _mwiOld = 0;
+
+  /// Messaggi in casella letti via API dal PBX dell'account; null = non disponibili.
+  List<PbxVoicemail>? get voicemailMessages => primaryConnection?.voicemail;
+
+  /// Casella vocale: dall'API se disponibile, altrimenti da SIP MWI.
+  int get voicemailNew =>
+      voicemailMessages?.where((m) => !m.read).length ?? _mwiNew;
+  int get voicemailOld =>
+      voicemailMessages?.where((m) => m.read).length ?? _mwiOld;
 
   // Salvataggi della cronologia in coda: mai due scritture del file insieme.
   Future<void> _historySaving = Future.value();
@@ -83,10 +94,21 @@ class PhoneController extends ChangeNotifier {
 
   Future<void> init() async {
     settings = await _store.load();
+    appLang.value = AppLang.fromCode(settings.lang);
     history = await historyStore?.load() ?? [];
     _subs.add(_engine.registrations.listen(_onRegistration));
     _subs.add(_engine.calls.listen(_onCall));
     _subs.add(_engine.dialogs.listen(_onDialog));
+    _subs.add(
+      _engine.voicemail.listen((v) {
+        debugPrint(
+          '[drinphone] casella vocale ${v.newMessages}/${v.oldMessages}',
+        );
+        _mwiNew = v.newMessages;
+        _mwiOld = v.oldMessages;
+        notifyListeners();
+      }),
+    );
     try {
       engineVersion = await _engine.start(
         dataDir: engineDataDir,
@@ -119,8 +141,10 @@ class PhoneController extends ChangeNotifier {
       await _store.save(settings);
     }
     for (final i in infos) {
-      final c = _newConnection(i.id, i.label);
-      connections.add(c);
+      connections.add(_newConnection(i.id, i.label));
+    }
+    _assignVoicemail();
+    for (final c in connections) {
       await c.start();
     }
   }
@@ -133,6 +157,14 @@ class PhoneController extends ChangeNotifier {
     onUpdate: _onConnectionUpdate,
   );
 
+  /// Solo il PBX dell'account SIP legge la casella, quella del proprio interno.
+  void _assignVoicemail() {
+    final primary = primaryConnection;
+    for (final c in connections) {
+      c.voicemailOf = c == primary ? settings.account?.username : null;
+    }
+  }
+
   void _onConnectionUpdate(PbxConnection c, bool directoryChanged) {
     if (!c.syncing && (!c.ok || c.optionalErrors.isNotEmpty)) {
       debugPrint(
@@ -142,7 +174,8 @@ class PhoneController extends ChangeNotifier {
     if (directoryChanged) {
       debugPrint(
         '[drinphone] pbx ${c.id}: ${c.directory.length} interni, '
-        '${c.orgs.length} reparti, ${c.contacts.length} contatti',
+        '${c.orgs.length} reparti, ${c.contacts.length} contatti, '
+        '${c.voicemail?.length ?? '-'} messaggi in casella',
       );
       final g = selectedGroup;
       if (g != null && !_groupExists(g)) selectedGroup = null;
@@ -170,6 +203,7 @@ class PhoneController extends ChangeNotifier {
     final c = _newConnection(id, label);
     await c.store.save(creds);
     connections.add(c);
+    _assignVoicemail();
     await _saveConnectionList();
     await c.start();
     return c;
@@ -226,7 +260,10 @@ class PhoneController extends ChangeNotifier {
     if (connections.isEmpty) return '';
     if (connections.length == 1) return connections.first.status;
     final ok = connections.where((c) => c.ok).length;
-    return '$ok/${connections.length} PBX sincronizzati';
+    return tr('{ok}/{n} PBX sincronizzati', {
+      'ok': ok,
+      'n': connections.length,
+    });
   }
 
   void selectGroup(String? key) {
@@ -252,23 +289,62 @@ class PhoneController extends ChangeNotifier {
   bool isCallable(Extension e) =>
       e.source.isEmpty || e.source == primaryConnection?.id;
 
-  void setQuery(String q) {
-    query = q.trim();
+  /// Risultati per il popup di ricerca: interni, poi contatti della rubrica.
+  /// Prima le corrispondenze a inizio parola o numero.
+  List<SearchHit> search(String text, {int limit = 8}) {
+    final q = text.trim().toLowerCase();
+    if (q.isEmpty) return const [];
+    final digits = _digits(q);
+    int rank(String name, String number) {
+      final n = name.toLowerCase();
+      if (number.startsWith(q) || n.startsWith(q)) return 0;
+      if (n.split(RegExp(r'\s+')).any((w) => w.startsWith(q))) return 1;
+      if (n.contains(q) ||
+          (digits.isNotEmpty && _digits(number).contains(digits))) {
+        return 2;
+      }
+      return -1;
+    }
+
+    final hits = <(int, SearchHit)>[];
+    for (final e in allExtensions) {
+      final r = rank(e.name, e.number);
+      if (r >= 0) hits.add((r, SearchHit(e.name, e.number, extension: e)));
+    }
+    for (final c in connections) {
+      for (final x in c.contacts) {
+        for (final (label, number) in x.numbers) {
+          final r = rank('${x.name} ${x.company}', number);
+          if (r >= 0) {
+            hits.add((r + 3, SearchHit(x.name, number, label: label)));
+            break;
+          }
+        }
+        if (hits.length > 200) break;
+      }
+    }
+    hits.sort((a, b) => a.$1.compareTo(b.$1));
+    return [for (final h in hits.take(limit)) h.$2];
+  }
+
+  Future<void> setLanguage(AppLang lang) async {
+    appLang.value = lang;
+    settings = settings.copyWith(lang: lang.name);
+    await _store.save(settings);
     notifyListeners();
   }
 
-  /// Interni della griglia: gruppo selezionato, poi filtro di ricerca.
-  List<Extension> get visibleExtensions {
-    final q = query.toLowerCase();
-    final list = _groupExtensions;
-    if (q.isEmpty) return list;
-    return [
-      for (final e in list)
-        if (e.number.contains(q) || e.name.toLowerCase().contains(q)) e,
-    ];
+  Future<void> setVoicemailCode(String code) async {
+    settings = settings.copyWith(voicemailCode: code.trim());
+    await _store.save(settings);
+    notifyListeners();
   }
 
-  List<Extension> get _groupExtensions {
+  /// Ascolto messaggi: si chiama il codice funzione della casella vocale.
+  Future<void> callVoicemail() => dial(settings.voicemailCode);
+
+  /// Interni della griglia secondo il gruppo selezionato.
+  List<Extension> get visibleExtensions {
     final g = selectedGroup;
     if (g == null) return allExtensions;
     final parts = g.split(':');
@@ -315,9 +391,9 @@ class PhoneController extends ChangeNotifier {
 
   bool isManual(Extension e) => settings.extensions.contains(e);
 
-  /// Rubrica aziendale di tutti i PBX, con il filtro di ricerca del campo in alto.
-  List<(PbxConnection, PbxContact)> get visibleContacts {
-    final q = query.toLowerCase();
+  /// Rubrica aziendale di tutti i PBX filtrata da [filter] (nome, azienda, cifre).
+  List<(PbxConnection, PbxContact)> contactsMatching(String filter) {
+    final q = filter.trim().toLowerCase();
     return [
       for (final c in connections)
         for (final x in c.contacts)
@@ -360,6 +436,7 @@ class PhoneController extends ChangeNotifier {
   Future<void> saveAccount(SipAccount account, {required bool debugLog}) async {
     settings = settings.copyWith(account: account, debugLog: debugLog);
     await _store.save(settings);
+    _assignVoicemail();
     if (engineError == null) await _engine.register(account);
     notifyListeners();
   }
@@ -458,7 +535,7 @@ class PhoneController extends ChangeNotifier {
     if (e.phase == CallPhase.ended || e.phase == CallPhase.error) {
       _record(e);
       if (e.phase == CallPhase.error) {
-        notice = 'Chiamata non riuscita: ${e.message}';
+        notice = tr('Chiamata non riuscita: {m}', {'m': e.message});
       }
       call = null;
       callConnectedAt = null;
@@ -535,4 +612,17 @@ class PhoneController extends ChangeNotifier {
     _engine.stop();
     super.dispose();
   }
+}
+
+/// Una riga del popup di ricerca: un interno o un numero della rubrica.
+class SearchHit {
+  const SearchHit(this.name, this.number, {this.extension, this.label = ''});
+  final String name;
+  final String number;
+
+  /// Interno della griglia (per stato e chiamabilità); null = contatto rubrica.
+  final Extension? extension;
+
+  /// Etichetta del numero in rubrica (Ufficio, Cellulare…).
+  final String label;
 }

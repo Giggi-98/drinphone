@@ -33,11 +33,20 @@ class Settings {
     this.debugLog = false,
     this.extensions = const [],
     this.pbx = const [],
+    this.lang = 'it',
+    this.voicemailCode = '*2',
   });
   final SipAccount? account;
   final bool debugLog;
   final List<Extension> extensions;
   final List<PbxConnectionInfo> pbx;
+
+  /// Codice lingua dell'interfaccia (`it`, `en`).
+  final String lang;
+
+  /// Codice funzione per ascoltare la casella vocale. `*2` è il default di
+  /// Yeastar P-Series: configurabile, non universale (docs/sip-e-blf.md).
+  final String voicemailCode;
 
   Settings copyWith({
     SipAccount? account,
@@ -45,11 +54,15 @@ class Settings {
     bool? debugLog,
     List<Extension>? extensions,
     List<PbxConnectionInfo>? pbx,
+    String? lang,
+    String? voicemailCode,
   }) => Settings(
     account: clearAccount ? null : (account ?? this.account),
     debugLog: debugLog ?? this.debugLog,
     extensions: extensions ?? this.extensions,
     pbx: pbx ?? this.pbx,
+    lang: lang ?? this.lang,
+    voicemailCode: voicemailCode ?? this.voicemailCode,
   );
 }
 
@@ -87,6 +100,8 @@ class SettingsStore {
         for (final e in (j['extensions'] as List? ?? const []))
           Extension.fromJson(e as Map<String, dynamic>),
       ],
+      lang: j['lang'] as String? ?? 'it',
+      voicemailCode: j['voicemailCode'] as String? ?? '*2',
       pbx: [
         for (final c in (j['pbx'] as List? ?? const []))
           PbxConnectionInfo(
@@ -117,6 +132,8 @@ class SettingsStore {
           },
         'debugLog': s.debugLog,
         'extensions': [for (final e in s.extensions) e.toJson()],
+        'lang': s.lang,
+        'voicemailCode': s.voicemailCode,
         'pbx': [
           for (final c in s.pbx) {'id': c.id, 'label': c.label},
         ],

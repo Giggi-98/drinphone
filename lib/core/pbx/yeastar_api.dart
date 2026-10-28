@@ -59,6 +59,26 @@ class PbxContact {
   final List<String> phonebooks;
 }
 
+/// Messaggio in casella vocale (vm/get).
+class PbxVoicemail {
+  const PbxVoicemail({
+    required this.id,
+    required this.callerName,
+    required this.callerNumber,
+    required this.time,
+    required this.seconds,
+    required this.read,
+  });
+  final String id;
+  final String callerName;
+  final String callerNumber;
+
+  /// Formato del PBX, es. `2024/04/23 10:49:15`.
+  final String time;
+  final int seconds;
+  final bool read;
+}
+
 class PbxOrg {
   const PbxOrg({
     required this.id,
@@ -283,6 +303,27 @@ class YeastarApi {
       final total = j['total_number'] as int? ?? out.length;
       if (data.isEmpty || out.length >= total) return out;
     }
+  }
+
+  /// Messaggi della casella vocale di un interno (più recenti per primi).
+  Future<List<PbxVoicemail>> listVoicemail(String number) async {
+    final j = await _call(
+      'vm/get',
+      'GET',
+      _uri('vm/get', {'number': number, 'page': '1', 'page_size': '200'}),
+    );
+    return [
+      for (final m
+          in (j['data'] as List? ?? const []).cast<Map<String, dynamic>>())
+        PbxVoicemail(
+          id: '${m['msg_id'] ?? ''}',
+          callerName: '${m['name'] ?? ''}',
+          callerNumber: '${m['number'] ?? ''}',
+          time: '${m['time'] ?? ''}',
+          seconds: (m['duration'] as num?)?.toInt() ?? 0,
+          read: m['is_read'] == 1,
+        ),
+    ]..sort((a, b) => b.time.compareTo(a.time));
   }
 
   /// Revoca il token: alla chiusura, per non consumare uno degli 8 slot.

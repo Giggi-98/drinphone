@@ -288,9 +288,12 @@ void main() {
       expect(mario.phonebooks, ['Fornitori']);
       expect(phone.nameFor('+390255501234'), 'Mario Rossi');
       expect(phone.nameFor('350'), 'Jack Egards');
-      phone.setQuery('forn');
-      expect(phone.visibleContacts.single.$2.name, 'Mario Rossi');
-      phone.setQuery('');
+      expect(phone.contactsMatching('forn').single.$2.name, 'Mario Rossi');
+      final hit = phone.search('mario').single;
+      expect(
+        (hit.name, hit.number, hit.label),
+        ('Mario Rossi', '02 5550 1234', 'Ufficio'),
+      );
       expect(phone.allExtensions.map((e) => e.number), ['400', '301', '350']);
       expect(phone.isManual(phone.allExtensions.first), isTrue);
       expect(phone.isManual(phone.allExtensions.last), isFalse);

@@ -2,6 +2,7 @@ import 'dart:ui' show AppExitResponse;
 
 import 'package:flutter/material.dart';
 
+import '../../app/l10n.dart';
 import '../../app/phone_controller.dart';
 import '../../app/theme.dart';
 import '../../core/security/settings_store.dart';
@@ -9,12 +10,14 @@ import '../../core/sip/sip_engine.dart';
 import '../account/account_dialog.dart';
 import '../account/api_dialog.dart';
 import '../call/call_panel.dart';
-import '../call/keypad.dart';
 import '../contacts/contacts_view.dart';
 import '../history/history_view.dart';
+import '../voicemail/voicemail_view.dart';
+import 'search_box.dart';
+import 'widgets.dart';
 
-/// Struttura a pannelli (proposta D): barra sezioni, barra composizione con
-/// tastierino a comparsa, griglia interni. Gruppi: assenti di default (DECISIONS).
+/// Struttura a pannelli (proposta D): barra sezioni, ricerca con popup e
+/// tastierino, contenuto della sezione. Gruppi: assenti di default (DECISIONS).
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key, required this.phone});
   final PhoneController phone;
@@ -23,11 +26,9 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-enum _Section { extensions, contacts, history }
+enum _Section { extensions, contacts, history, voicemail }
 
 class _HomeScreenState extends State<HomeScreen> {
-  final _dial = TextEditingController();
-  bool _keypadOpen = false;
   _Section _section = _Section.extensions;
   late final AppLifecycleListener _lifecycle;
 
@@ -37,10 +38,10 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     p.addListener(_onPhone);
-    // Chiudendo la finestra: revoca token API, un-REGISTER, flush del log.
     _lifecycle = AppLifecycleListener(
       // Rientro nella finestra: riallinea i dati PBX (saltato se letti da < 10 s).
       onResume: () => p.resync(force: false),
+      // Chiudendo la finestra: revoca token API, un-REGISTER, flush del log.
       onExitRequested: () async {
         await p.shutdown();
         return AppExitResponse.exit;
@@ -52,7 +53,6 @@ class _HomeScreenState extends State<HomeScreen> {
   void dispose() {
     _lifecycle.dispose();
     p.removeListener(_onPhone);
-    _dial.dispose();
     super.dispose();
   }
 
@@ -65,22 +65,9 @@ class _HomeScreenState extends State<HomeScreen> {
     setState(() {});
   }
 
-  // Invio nel campo: un numero si chiama; un nome chiama l'unico interno trovato.
-  void _submit(String text) {
-    final t = text.trim();
-    if (RegExp(r'^[0-9*#+]+$').hasMatch(t)) return _call(t);
-    final found = p.visibleExtensions.where(p.isCallable).toList();
-    if (found.length == 1) _call(found.single.number);
-  }
+  void _call(String number) => p.dial(number);
 
-  void _call(String number) {
-    p.dial(number);
-    _dial.clear();
-    p.setQuery('');
-    setState(() => _keypadOpen = false);
-  }
-
-  void _openAccount() => showDialog<void>(
+  void _openSettings() => showDialog<void>(
     context: context,
     builder: (_) => AccountDialog(phone: p),
   );
@@ -101,8 +88,9 @@ class _HomeScreenState extends State<HomeScreen> {
           _Sidebar(
             section: _section,
             missed: p.history.where((r) => r.missed).length,
+            voicemailNew: p.voicemailNew,
             onSection: (s) => setState(() => _section = s),
-            onSettings: _openAccount,
+            onSettings: _openSettings,
             onApi: p.apiAvailable ? _openApi : null,
           ),
           Expanded(
@@ -113,12 +101,17 @@ class _HomeScreenState extends State<HomeScreen> {
                   children: [
                     _topBar(c),
                     if (p.engineError != null)
-                      _banner(c, 'Motore SIP non avviato: ${p.engineError}'),
+                      _banner(
+                        c,
+                        tr('Motore SIP non avviato: {e}', {
+                          'e': p.engineError!,
+                        }),
+                      ),
                     if (p.engineError == null && p.settings.account == null)
                       _banner(
                         c,
-                        'Nessun account SIP configurato.',
-                        action: ('Configura', _openAccount),
+                        tr('Nessun account SIP configurato.'),
+                        action: (tr('Configura'), _openSettings),
                       ),
                     Expanded(
                       child: switch (_section) {
@@ -134,34 +127,14 @@ class _HomeScreenState extends State<HomeScreen> {
                           phone: p,
                           onCall: _call,
                         ),
+                        _Section.voicemail => VoicemailView(
+                          phone: p,
+                          onCall: _call,
+                        ),
                       },
                     ),
                   ],
                 ),
-                if (_keypadOpen)
-                  Positioned(
-                    top: 64,
-                    right: 140,
-                    child: Container(
-                      width: 300,
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: c.surface,
-                        borderRadius: BorderRadius.circular(14),
-                        border: Border.all(color: c.border),
-                        boxShadow: const [
-                          BoxShadow(
-                            color: Color(0x47000000),
-                            blurRadius: 32,
-                            offset: Offset(0, 12),
-                          ),
-                        ],
-                      ),
-                      child: Keypad(
-                        onKey: (d) => setState(() => _dial.text += d),
-                      ),
-                    ),
-                  ),
                 if (call != null)
                   Positioned(
                     right: 24,
@@ -187,6 +160,8 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
         child: Row(
           children: [
+            Icon(Icons.info_outline_rounded, size: 18, color: c.ringing),
+            const SizedBox(width: 10),
             Expanded(
               child: Text(text, style: TextStyle(color: c.text)),
             ),
@@ -199,10 +174,10 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _topBar(DrinColors c) {
     final reg = p.registration;
     final (dot, label) = switch (reg.status) {
-      RegistrationStatus.ok => (c.ok, 'Registrato'),
-      RegistrationStatus.progress => (c.ringing, 'Registrazione…'),
-      RegistrationStatus.failed => (c.busy, 'Errore registrazione'),
-      _ => (c.muted, 'Non registrato'),
+      RegistrationStatus.ok => (c.ok, tr('Registrato')),
+      RegistrationStatus.progress => (c.ringing, tr('Registrazione…')),
+      RegistrationStatus.failed => (c.busy, tr('Errore registrazione')),
+      _ => (c.muted, tr('Non registrato')),
     };
     final account = p.settings.account;
     return Container(
@@ -216,108 +191,45 @@ class _HomeScreenState extends State<HomeScreen> {
           Tooltip(
             message: reg.message,
             child: Container(
-              height: 40,
+              height: 36,
               padding: const EdgeInsets.symmetric(horizontal: 12),
               decoration: BoxDecoration(
+                color: c.field,
                 border: Border.all(color: c.border),
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: BorderRadius.circular(999),
               ),
               child: Row(
                 children: [
                   Container(
-                    width: 9,
-                    height: 9,
+                    width: 8,
+                    height: 8,
                     decoration: BoxDecoration(
                       color: dot,
                       shape: BoxShape.circle,
                     ),
                   ),
                   const SizedBox(width: 8),
-                  Text(label, style: TextStyle(color: c.text)),
+                  Text(label, style: TextStyle(fontSize: 13, color: c.text)),
                 ],
               ),
             ),
           ),
           const Spacer(),
-          Container(
-            width: 380,
-            padding: const EdgeInsets.fromLTRB(12, 4, 4, 4),
-            decoration: BoxDecoration(
-              color: c.field,
-              border: Border.all(color: c.border),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _dial,
-                    onSubmitted: _submit,
-                    onChanged: (v) {
-                      p.setQuery(v);
-                      // La ricerca vale per interni e rubrica: dalla
-                      // cronologia si torna agli interni.
-                      if (_section == _Section.history && v.isNotEmpty) {
-                        setState(() => _section = _Section.extensions);
-                      }
-                    },
-                    style: TextStyle(
-                      fontFamily: monoFont,
-                      fontSize: 15,
-                      color: c.text,
-                    ),
-                    decoration: InputDecoration(
-                      hintText: 'Numero, interno o nome',
-                      // Il segnaposto eredita il monospazio del campo: lo riporta al testo normale.
-                      hintStyle: TextStyle(
-                        fontFamily: 'Segoe UI',
-                        fontSize: 14,
-                        color: c.muted,
-                      ),
-                      border: InputBorder.none,
-                      enabledBorder: InputBorder.none,
-                      filled: false,
-                    ),
-                  ),
-                ),
-                _iconButton(
-                  c,
-                  Icons.dialpad,
-                  'Tastierino',
-                  c.keyBtn,
-                  c.accent,
-                  () => setState(() => _keypadOpen = !_keypadOpen),
-                ),
-                const SizedBox(width: 4),
-                _iconButton(
-                  c,
-                  Icons.call,
-                  'Chiama',
-                  DrinColors.callGreen,
-                  Colors.white,
-                  p.canDial ? () => _call(_dial.text) : null,
-                ),
-              ],
-            ),
-          ),
+          SearchBox(phone: p, onCall: _call),
           const SizedBox(width: 12),
           InkWell(
-            onTap: _openAccount,
-            borderRadius: BorderRadius.circular(8),
+            onTap: _openSettings,
+            borderRadius: BorderRadius.circular(10),
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
               child: Row(
                 children: [
                   CircleAvatar(
-                    radius: 16,
+                    radius: 17,
                     backgroundColor: c.avatar,
                     child: Text(
                       account?.username ?? '?',
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                        color: c.text,
-                      ),
+                      style: mono(c.text, size: 11, weight: FontWeight.w700),
                     ),
                   ),
                   const SizedBox(width: 10),
@@ -327,17 +239,17 @@ class _HomeScreenState extends State<HomeScreen> {
                     children: [
                       Text(
                         account == null
-                            ? 'Nessun account'
+                            ? tr('Nessun account')
                             : (account.displayName.isNotEmpty
                                   ? account.displayName
                                   : account.username),
                         style: TextStyle(
-                          fontWeight: FontWeight.w500,
+                          fontWeight: FontWeight.w600,
                           color: c.text,
                         ),
                       ),
                       Text(
-                        account?.domain ?? 'Configura',
+                        account?.domain ?? tr('Configura'),
                         style: TextStyle(fontSize: 12, color: c.muted),
                       ),
                     ],
@@ -350,44 +262,20 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
   }
-
-  Widget _iconButton(
-    DrinColors c,
-    IconData icon,
-    String tip,
-    Color bg,
-    Color fg,
-    VoidCallback? onTap,
-  ) => Tooltip(
-    message: tip,
-    child: Material(
-      color: onTap == null ? c.keyBtn : bg,
-      borderRadius: BorderRadius.circular(8),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(8),
-        onTap: onTap,
-        child: SizedBox(
-          width: 36,
-          height: 36,
-          child: Icon(icon, size: 18, color: onTap == null ? c.muted : fg),
-        ),
-      ),
-    ),
-  );
 }
 
 class _Sidebar extends StatelessWidget {
   const _Sidebar({
     required this.section,
     required this.missed,
+    required this.voicemailNew,
     required this.onSection,
     required this.onSettings,
     required this.onApi,
   });
   final _Section section;
-
-  /// Chiamate perse in cronologia (badge).
   final int missed;
+  final int voicemailNew;
   final ValueChanged<_Section> onSection;
   final VoidCallback onSettings;
   final VoidCallback? onApi;
@@ -399,8 +287,9 @@ class _Sidebar extends StatelessWidget {
       IconData icon,
       String label,
       bool selected,
-      VoidCallback? onTap,
-    ) => Padding(
+      VoidCallback? onTap, {
+      Widget? trailing,
+    }) => Padding(
       padding: const EdgeInsets.only(bottom: 4),
       child: Material(
         color: selected ? c.keyBtn : Colors.transparent,
@@ -412,8 +301,16 @@ class _Sidebar extends StatelessWidget {
             height: 44,
             child: Row(
               children: [
-                const SizedBox(width: 12),
-                Icon(icon, size: 18, color: selected ? c.accent : c.text),
+                Container(
+                  width: 3,
+                  height: 20,
+                  decoration: BoxDecoration(
+                    color: selected ? c.accent : Colors.transparent,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Icon(icon, size: 20, color: selected ? c.accent : c.muted),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Text(
@@ -425,6 +322,8 @@ class _Sidebar extends StatelessWidget {
                     ),
                   ),
                 ),
+                ?trailing,
+                const SizedBox(width: 10),
               ],
             ),
           ),
@@ -432,7 +331,7 @@ class _Sidebar extends StatelessWidget {
       ),
     );
     return Container(
-      width: 216,
+      width: 228,
       padding: const EdgeInsets.fromLTRB(12, 20, 12, 20),
       decoration: BoxDecoration(
         color: c.side,
@@ -442,22 +341,23 @@ class _Sidebar extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(10, 0, 10, 20),
+            padding: const EdgeInsets.fromLTRB(10, 0, 10, 24),
             child: Row(
               children: [
                 Container(
-                  width: 28,
-                  height: 28,
+                  width: 30,
+                  height: 30,
                   alignment: Alignment.center,
                   decoration: BoxDecoration(
-                    border: Border.all(color: c.accent, width: 2),
-                    borderRadius: BorderRadius.circular(8),
+                    color: c.accent.withValues(alpha: 0.14),
+                    border: Border.all(color: c.accent, width: 1.5),
+                    borderRadius: BorderRadius.circular(9),
                   ),
                   child: Text(
                     'D',
                     style: TextStyle(
                       color: c.accent,
-                      fontWeight: FontWeight.w700,
+                      fontWeight: FontWeight.w800,
                     ),
                   ),
                 ),
@@ -467,8 +367,9 @@ class _Sidebar extends StatelessWidget {
                     'DrinPhone',
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w600,
+                      fontSize: 19,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: -0.2,
                       color: c.text,
                     ),
                   ),
@@ -477,37 +378,58 @@ class _Sidebar extends StatelessWidget {
             ),
           ),
           item(
-            Icons.people_outline,
-            'Interni',
+            Icons.people_alt_outlined,
+            tr('Interni'),
             section == _Section.extensions,
             () => onSection(_Section.extensions),
           ),
           item(
             Icons.contacts_outlined,
-            'Rubrica',
+            tr('Rubrica'),
             section == _Section.contacts,
             () => onSection(_Section.contacts),
           ),
           item(
-            Icons.history,
-            missed > 0 ? 'Cronologia · $missed perse' : 'Cronologia',
+            Icons.history_rounded,
+            tr('Registro chiamate'),
             section == _Section.history,
             () => onSection(_Section.history),
+            trailing: CountBadge(missed, alert: true),
+          ),
+          item(
+            Icons.voicemail_rounded,
+            tr('Casella vocale'),
+            section == _Section.voicemail,
+            () => onSection(_Section.voicemail),
+            trailing: CountBadge(voicemailNew, alert: true),
           ),
           const Spacer(),
           if (onApi != null)
-            item(Icons.hub_outlined, 'Integrazione PBX', false, onApi),
-          item(Icons.tune, 'Impostazioni', false, onSettings),
+            item(Icons.hub_outlined, tr('Integrazione PBX'), false, onApi),
+          item(Icons.tune_rounded, tr('Impostazioni'), false, onSettings),
         ],
       ),
     );
   }
 }
 
-class _ExtensionsView extends StatelessWidget {
+class _ExtensionsView extends StatefulWidget {
   const _ExtensionsView({required this.phone, required this.onCall});
   final PhoneController phone;
   final ValueChanged<String> onCall;
+
+  @override
+  State<_ExtensionsView> createState() => _ExtensionsViewState();
+}
+
+class _ExtensionsViewState extends State<_ExtensionsView> {
+  int _page = 0;
+  String? _pageGroup;
+
+  PhoneController get phone => widget.phone;
+
+  /// Schede per pagina: abbastanza per riempire uno schermo grande.
+  static const pageSize = 60;
 
   Future<void> _add(BuildContext context) async {
     final name = TextEditingController();
@@ -515,7 +437,7 @@ class _ExtensionsView extends StatelessWidget {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Aggiungi interno'),
+        title: Text(tr('Aggiungi interno')),
         content: SizedBox(
           width: 360,
           child: Column(
@@ -523,14 +445,12 @@ class _ExtensionsView extends StatelessWidget {
             children: [
               TextField(
                 controller: name,
-                decoration: const InputDecoration(labelText: 'Nome'),
+                decoration: InputDecoration(labelText: tr('Nome')),
               ),
               const SizedBox(height: 12),
               TextField(
                 controller: number,
-                decoration: const InputDecoration(
-                  labelText: 'Numero / interno',
-                ),
+                decoration: InputDecoration(labelText: tr('Numero / interno')),
               ),
             ],
           ),
@@ -538,11 +458,11 @@ class _ExtensionsView extends StatelessWidget {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Annulla'),
+            child: Text(tr('Annulla')),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Aggiungi'),
+            child: Text(tr('Aggiungi')),
           ),
         ],
       ),
@@ -559,10 +479,10 @@ class _ExtensionsView extends StatelessWidget {
 
   String _groupTitle() {
     final g = phone.selectedGroup;
-    if (g == null) return 'Tutti gli interni';
+    if (g == null) return tr('Tutti gli interni');
     final parts = g.split(':');
     final conn = phone.connections.where((c) => c.id == parts[0]).firstOrNull;
-    if (conn == null) return 'Tutti gli interni';
+    if (conn == null) return tr('Tutti gli interni');
     if (parts.length == 1) return conn.label;
     return conn.orgs.where((o) => '${o.id}' == parts[1]).firstOrNull?.name ??
         conn.label;
@@ -571,14 +491,22 @@ class _ExtensionsView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = context.drin;
+    // Cambio gruppo: si riparte dalla prima pagina.
+    if (_pageGroup != phone.selectedGroup) {
+      _pageGroup = phone.selectedGroup;
+      _page = 0;
+    }
     final list = phone.visibleExtensions;
+    final pages = (list.length + pageSize - 1) ~/ pageSize;
+    if (_page >= pages && pages > 0) _page = pages - 1;
+    final slice = Pager.slice(list, _page, pageSize);
     final grid = Container(
       margin: const EdgeInsets.all(16),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: c.surface,
         border: Border.all(color: c.border),
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(14),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -587,28 +515,30 @@ class _ExtensionsView extends StatelessWidget {
             children: [
               Flexible(
                 child: Text(
-                  phone.query.isEmpty
-                      ? _groupTitle()
-                      : 'Ricerca «${phone.query}» in ${_groupTitle()}',
+                  _groupTitle(),
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w600,
+                    fontSize: 20,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: -0.2,
                     color: c.text,
                   ),
                 ),
               ),
-              const SizedBox(width: 16),
-              Text(
-                '${list.length} interni',
-                style: TextStyle(fontSize: 13, color: c.muted),
-              ),
+              const SizedBox(width: 12),
+              CountBadge(list.length),
               const Spacer(),
-              OutlinedButton.icon(
-                onPressed: () => _add(context),
-                icon: const Icon(Icons.add, size: 16),
-                label: const Text('Aggiungi interno'),
-              ),
+              // Aggiunta manuale solo nel contesto "Tutti gli interni".
+              if (phone.selectedGroup == null)
+                IconButton.filledTonal(
+                  tooltip: tr('Aggiungi interno'),
+                  style: IconButton.styleFrom(
+                    backgroundColor: c.keyBtn,
+                    foregroundColor: c.accent,
+                  ),
+                  onPressed: () => _add(context),
+                  icon: const Icon(Icons.person_add_alt_1_rounded, size: 20),
+                ),
             ],
           ),
           const SizedBox(height: 14),
@@ -616,46 +546,55 @@ class _ExtensionsView extends StatelessWidget {
             child: list.isEmpty
                 ? Center(
                     child: Text(
-                      'Nessun interno. Aggiungi quelli che chiami più spesso.',
+                      tr(
+                        'Nessun interno. Aggiungi quelli che chiami più spesso.',
+                      ),
                       style: TextStyle(color: c.muted),
                     ),
                   )
                 : GridView.builder(
                     gridDelegate:
                         const SliverGridDelegateWithMaxCrossAxisExtent(
-                          maxCrossAxisExtent: 260,
-                          mainAxisExtent: 116,
-                          crossAxisSpacing: 12,
-                          mainAxisSpacing: 12,
+                          maxCrossAxisExtent: 300,
+                          mainAxisExtent: 72,
+                          crossAxisSpacing: 10,
+                          mainAxisSpacing: 10,
                         ),
-                    itemCount: list.length,
-                    itemBuilder: (_, i) => _ExtensionCard(
-                      ext: list[i],
-                      canCall: phone.canDial,
-                      callable: phone.isCallable(list[i]),
-                      blf: phone.isCallable(list[i])
-                          ? phone.blf[list[i].number]
-                          : null,
-                      presence: phone.presenceOf(list[i]),
-                      onCall: () => onCall(list[i].number),
-                      onRemove: phone.isManual(list[i])
-                          ? () => phone.removeExtension(list[i])
-                          : null,
-                    ),
+                    itemCount: slice.length,
+                    itemBuilder: (_, i) {
+                      final e = slice[i];
+                      return _ExtensionTile(
+                        ext: e,
+                        callable: phone.isCallable(e),
+                        canDial: phone.canDial,
+                        blf: phone.isCallable(e)
+                            ? phone.blf[e.number]?.status
+                            : null,
+                        presence: phone.presenceOf(e),
+                        onCall: () => widget.onCall(e.number),
+                        onRemove: phone.isManual(e)
+                            ? () => phone.removeExtension(e)
+                            : null,
+                      );
+                    },
                   ),
           ),
-          Align(
-            alignment: Alignment.centerRight,
-            child: Padding(
-              padding: const EdgeInsets.only(top: 8),
+          const SizedBox(height: 8),
+          Pager(
+            total: list.length,
+            page: _page,
+            pageSize: pageSize,
+            onPage: (i) => setState(() => _page = i),
+          ),
+          if (phone.apiSummary.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
               child: Text(
-                phone.apiSummary.isEmpty
-                    ? 'Stato interni via SIP BLF'
-                    : 'Stato interni via SIP BLF · API PBX: ${phone.apiSummary}',
-                style: TextStyle(fontSize: 12, color: c.muted),
+                phone.apiSummary,
+                textAlign: TextAlign.right,
+                style: TextStyle(fontSize: 11, color: c.muted),
               ),
             ),
-          ),
         ],
       ),
     );
@@ -670,6 +609,100 @@ class _ExtensionsView extends StatelessWidget {
         _GroupsPanel(phone: phone),
         Expanded(child: grid),
       ],
+    );
+  }
+}
+
+/// Scheda compatta: avatar (stato linea + presenza), nome, numero, simbolo di chiamata.
+class _ExtensionTile extends StatelessWidget {
+  const _ExtensionTile({
+    required this.ext,
+    required this.callable,
+    required this.canDial,
+    required this.blf,
+    required this.presence,
+    required this.onCall,
+    required this.onRemove,
+  });
+  final Extension ext;
+  final bool callable;
+  final bool canDial;
+  final BlfStatus? blf;
+  final String presence;
+  final VoidCallback onCall;
+  final VoidCallback? onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.drin;
+    return Material(
+      color: c.card,
+      shape: RoundedRectangleBorder(
+        side: BorderSide(color: c.border),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        // Doppio clic sulla scheda = chiama, come nei softphone desktop.
+        onDoubleTap: canDial && callable ? onCall : null,
+        onSecondaryTapDown: onRemove == null
+            ? null
+            : (d) => showMenu<void>(
+                context: context,
+                position: RelativeRect.fromLTRB(
+                  d.globalPosition.dx,
+                  d.globalPosition.dy,
+                  d.globalPosition.dx,
+                  d.globalPosition.dy,
+                ),
+                items: [
+                  PopupMenuItem(onTap: onRemove, child: Text(tr('Rimuovi'))),
+                ],
+              ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: Row(
+            children: [
+              StatusAvatar(name: ext.name, blf: blf, presence: presence),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      ext.name,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        color: blf == BlfStatus.offline ? c.muted : c.text,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(ext.number, style: mono(c.muted, size: 12)),
+                  ],
+                ),
+              ),
+              if (onRemove != null)
+                Tooltip(
+                  message: tr('Inserito a mano · tasto destro per rimuovere'),
+                  child: Icon(
+                    Icons.push_pin_outlined,
+                    size: 14,
+                    color: c.muted,
+                  ),
+                ),
+              const SizedBox(width: 6),
+              CallIconButton(
+                tooltip: callable
+                    ? tr('Chiama {n}', {'n': ext.number})
+                    : tr('Nessun account SIP su questo PBX'),
+                onPressed: canDial && callable ? onCall : null,
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
@@ -757,10 +790,10 @@ class _GroupsPanelState extends State<_GroupsPanel> {
 
   String _lastSync() {
     final times = [for (final c in phone.connections) c.lastSync].nonNulls;
-    if (times.isEmpty) return 'mai sincronizzato';
+    if (times.isEmpty) return tr('mai sincronizzato');
     final t = times.reduce((a, b) => a.isBefore(b) ? a : b);
     String two(int n) => n.toString().padLeft(2, '0');
-    return 'aggiornato alle ${two(t.hour)}:${two(t.minute)}';
+    return tr('aggiornato alle {t}', {'t': '${two(t.hour)}:${two(t.minute)}'});
   }
 
   Widget _pill(DrinColors c, int n, bool selected) => Container(
@@ -791,10 +824,9 @@ class _GroupsPanelState extends State<_GroupsPanel> {
           borderRadius: BorderRadius.circular(8),
           onTap: () => phone.selectGroup(r.key),
           child: SizedBox(
-            height: 38,
+            height: 36,
             child: Row(
               children: [
-                // Barra di accento sulla voce selezionata.
                 Container(
                   width: 3,
                   height: 20,
@@ -803,12 +835,11 @@ class _GroupsPanelState extends State<_GroupsPanel> {
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
-                // Guide verticali di rientro, una per livello.
                 for (var d = 0; d < r.depth; d++)
                   SizedBox(
                     width: 16,
                     child: Center(
-                      child: Container(width: 1, height: 38, color: c.border),
+                      child: Container(width: 1, height: 36, color: c.border),
                     ),
                   ),
                 SizedBox(
@@ -817,7 +848,7 @@ class _GroupsPanelState extends State<_GroupsPanel> {
                       ? IconButton(
                           padding: EdgeInsets.zero,
                           iconSize: 18,
-                          tooltip: open ? 'Chiudi' : 'Apri',
+                          tooltip: open ? tr('Chiudi') : tr('Apri'),
                           onPressed: () => setState(
                             () => open
                                 ? _collapsed.add(r.key)
@@ -865,7 +896,7 @@ class _GroupsPanelState extends State<_GroupsPanel> {
       decoration: BoxDecoration(
         color: c.surface,
         border: Border.all(color: c.border),
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(14),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -889,7 +920,8 @@ class _GroupsPanelState extends State<_GroupsPanel> {
                     const SizedBox(width: 10),
                     Expanded(
                       child: Text(
-                        'Tutti gli interni',
+                        tr('Tutti gli interni'),
+                        overflow: TextOverflow.ellipsis,
                         style: TextStyle(
                           color: allSelected ? c.accent : c.text,
                           fontWeight: allSelected
@@ -910,17 +942,17 @@ class _GroupsPanelState extends State<_GroupsPanel> {
             child: Row(
               children: [
                 Text(
-                  'REPARTI',
+                  tr('REPARTI'),
                   style: TextStyle(
                     fontSize: 11,
                     letterSpacing: 1.2,
-                    fontWeight: FontWeight.w600,
+                    fontWeight: FontWeight.w700,
                     color: c.muted,
                   ),
                 ),
                 const Spacer(),
                 Tooltip(
-                  message: 'Sincronizza ora · ${_lastSync()}',
+                  message: '${tr('Sincronizza ora')} · ${_lastSync()}',
                   child: IconButton(
                     iconSize: 18,
                     visualDensity: VisualDensity.compact,
@@ -931,7 +963,7 @@ class _GroupsPanelState extends State<_GroupsPanel> {
                             height: 14,
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
-                        : Icon(Icons.sync, color: c.muted),
+                        : Icon(Icons.sync_rounded, color: c.muted),
                   ),
                 ),
               ],
@@ -947,190 +979,11 @@ class _GroupsPanelState extends State<_GroupsPanel> {
               const SizedBox(width: 6),
               Expanded(
                 child: Text(
-                  'Sola lettura dal PBX',
+                  tr('Sola lettura dal PBX'),
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(fontSize: 12, color: c.muted),
                 ),
               ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ExtensionCard extends StatelessWidget {
-  const _ExtensionCard({
-    required this.ext,
-    required this.canCall,
-    required this.callable,
-    required this.blf,
-    required this.presence,
-    required this.onCall,
-    required this.onRemove,
-  });
-  final Extension ext;
-  final bool canCall;
-
-  /// false = interno di un PBX senza account SIP in questa app.
-  final bool callable;
-  final BlfEvent? blf;
-  final String presence;
-
-  static const _presenceLabels = {
-    'available': 'Disponibile',
-    'away': 'Assente',
-    'business_trip': 'In trasferta',
-    'do_not_disturb': 'Non disturbare',
-    'lunch': 'Pausa pranzo',
-    'off_work': 'Fuori ufficio',
-  };
-  final VoidCallback onCall;
-  final VoidCallback? onRemove;
-
-  @override
-  Widget build(BuildContext context) {
-    final c = context.drin;
-    final initials = ext.name
-        .split(RegExp(r'\s+'))
-        .where((w) => w.isNotEmpty)
-        .map((w) => w[0])
-        .take(2)
-        .join()
-        .toUpperCase();
-    // Libero/occupato pieni, squilla/sconosciuto ad anello: non solo colore.
-    final (ring, fill, label, labelColor) = switch (blf?.status) {
-      BlfStatus.idle => (c.ok, c.ok, 'Libero', c.okText),
-      BlfStatus.busy => (c.busy, c.busy, 'Occupato', c.busyText),
-      BlfStatus.ringing => (c.ringing, c.card, 'Squilla', c.ringing),
-      BlfStatus.offline => (c.muted, c.card, 'Non registrato', c.muted),
-      _ => (c.muted, c.card, 'Sconosciuto', c.muted),
-    };
-    final reason = blf?.reason ?? '';
-    // Presenza Yeastar dopo lo stato linea: "Libero · Non disturbare".
-    final presenceLabel = _presenceLabels[presence] ?? '';
-    final detail = [
-      if (reason.isNotEmpty) reason,
-      if (presenceLabel.isNotEmpty) presenceLabel,
-    ].join(' · ');
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: c.card,
-        border: Border.all(color: c.border),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            children: [
-              Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  CircleAvatar(
-                    radius: 20,
-                    backgroundColor: c.avatar,
-                    child: Text(
-                      initials,
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: c.text,
-                      ),
-                    ),
-                  ),
-                  Positioned(
-                    right: -1,
-                    bottom: -1,
-                    child: Container(
-                      width: 12,
-                      height: 12,
-                      decoration: BoxDecoration(
-                        color: fill,
-                        shape: BoxShape.circle,
-                        border: Border.all(color: ring, width: 2),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Il nome si accorcia, il numero no.
-                    Row(
-                      children: [
-                        Flexible(
-                          child: Text(
-                            ext.name,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontWeight: FontWeight.w500,
-                              color: c.text,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 6),
-                        Text(
-                          ext.number,
-                          style: TextStyle(
-                            fontFamily: monoFont,
-                            color: c.muted,
-                          ),
-                        ),
-                      ],
-                    ),
-                    Tooltip(
-                      message: reason,
-                      child: Text(
-                        detail.isEmpty ? label : '$label · $detail',
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(fontSize: 12, color: labelColor),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const Spacer(),
-          Row(
-            children: [
-              Expanded(
-                child: Tooltip(
-                  message: callable ? '' : 'Nessun account SIP su questo PBX',
-                  child: FilledButton.tonalIcon(
-                    style: FilledButton.styleFrom(
-                      backgroundColor: c.keyBtn,
-                      foregroundColor: c.accent,
-                      minimumSize: const Size.fromHeight(36),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                    ),
-                    onPressed: canCall && callable ? onCall : null,
-                    icon: const Icon(Icons.call, size: 14),
-                    label: const Text('Chiama'),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 6),
-              // Interni dal PBX: si gestiscono sul PBX, qui non si rimuovono.
-              if (onRemove != null)
-                PopupMenuButton<void>(
-                  tooltip: 'Altre azioni',
-                  icon: Icon(Icons.more_horiz, color: c.muted),
-                  itemBuilder: (_) => [
-                    PopupMenuItem(
-                      onTap: onRemove,
-                      child: const Text('Rimuovi'),
-                    ),
-                  ],
-                ),
             ],
           ),
         ],

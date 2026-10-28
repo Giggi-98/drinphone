@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 
+import 'app/l10n.dart';
 import 'app/phone_controller.dart';
 import 'app/theme.dart';
 import 'core/app_paths.dart';
@@ -37,12 +38,17 @@ class DrinPhoneApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'DrinPhone',
-      debugShowCheckedModeBanner: false,
-      theme: buildTheme(Brightness.light),
-      darkTheme: buildTheme(Brightness.dark),
-      home: HomeScreen(phone: phone),
+    // Cambio lingua dalle Impostazioni: si ricostruisce tutta l'interfaccia.
+    return ValueListenableBuilder<AppLang>(
+      valueListenable: appLang,
+      builder: (_, lang, _) => MaterialApp(
+        title: 'DrinPhone',
+        debugShowCheckedModeBanner: false,
+        locale: Locale(lang.name),
+        theme: buildTheme(Brightness.light),
+        darkTheme: buildTheme(Brightness.dark),
+        home: HomeScreen(key: ValueKey(lang), phone: phone),
+      ),
     );
   }
 }

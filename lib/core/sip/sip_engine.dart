@@ -66,8 +66,16 @@ class BlfEvent {
   final String reason;
 }
 
+/// Casella vocale (SIP MWI, message-summary): messaggi nuovi e già ascoltati.
+class VoicemailEvent {
+  const VoicemailEvent(this.newMessages, this.oldMessages);
+  final int newMessages;
+  final int oldMessages;
+}
+
 abstract class SipEngine {
   Stream<RegistrationEvent> get registrations;
+  Stream<VoicemailEvent> get voicemail;
   Stream<CallEvent> get calls;
   Stream<BlfEvent> get dialogs;
 

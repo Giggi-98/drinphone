@@ -37,6 +37,8 @@ typedef _SubStateCb = Void Function(
   Int32 state,
 );
 
+typedef _MwiCb = Void Function(Pointer<Void> account, Pointer<Void> mwi);
+
 typedef _VoidP = Void Function(Pointer<Void>);
 typedef _VoidPDart = void Function(Pointer<Void>);
 typedef _VoidPS = Void Function(Pointer<Void>, Pointer<Utf8>);
@@ -54,6 +56,8 @@ class LinphoneFfiEngine implements SipEngine {
   final _registrations = StreamController<RegistrationEvent>.broadcast();
   final _calls = StreamController<CallEvent>.broadcast();
   final _dialogs = StreamController<BlfEvent>.broadcast();
+  final _voicemail = StreamController<VoicemailEvent>.broadcast();
+  NativeCallable<_MwiCb>? _mwiCb;
 
   late final DynamicLibrary _lib;
   Pointer<Void> _factory = nullptr;
@@ -76,6 +80,38 @@ class LinphoneFfiEngine implements SipEngine {
   Stream<CallEvent> get calls => _calls.stream;
   @override
   Stream<BlfEvent> get dialogs => _dialogs.stream;
+  @override
+  Stream<VoicemailEvent> get voicemail => _voicemail.stream;
+
+  late final _createAccountCbs = _lib.lookupFunction<_PP, _PP>(
+    'linphone_factory_create_account_cbs',
+  );
+  late final _setMwiCb = _lib
+      .lookupFunction<
+        Void Function(Pointer<Void>, Pointer<NativeFunction<_MwiCb>>),
+        void Function(Pointer<Void>, Pointer<NativeFunction<_MwiCb>>)
+      >('linphone_account_cbs_set_message_waiting_indication_changed');
+  late final _accountAddCbs = _lib.lookupFunction<_VoidPP, _VoidPPDart>(
+    'linphone_account_add_callbacks',
+  );
+  late final _accountCbsUnref = _lib.lookupFunction<_VoidP, _VoidPDart>(
+    'linphone_account_cbs_unref',
+  );
+  late final _mwiNew = _lib
+      .lookupFunction<
+        Uint32 Function(Pointer<Void>),
+        int Function(Pointer<Void>)
+      >('linphone_message_waiting_indication_get_nb_new');
+  late final _mwiOld = _lib
+      .lookupFunction<
+        Uint32 Function(Pointer<Void>),
+        int Function(Pointer<Void>)
+      >('linphone_message_waiting_indication_get_nb_old');
+
+  void _onMwi(Pointer<Void> account, Pointer<Void> mwi) {
+    if (mwi == nullptr) return;
+    _voicemail.add(VoicemailEvent(_mwiNew(mwi), _mwiOld(mwi)));
+  }
 
   late final _factoryGet = _lib
       .lookupFunction<Pointer<Void> Function(), Pointer<Void> Function()>(
@@ -494,6 +530,12 @@ class LinphoneFfiEngine implements SipEngine {
       _setTransport(params, account.transport.index);
       _enableRegister(params, 1);
       final acc = _createAccount(_core, params);
+      // Casella vocale: il PBX invia NOTIFY message-summary sull'account.
+      _mwiCb ??= NativeCallable<_MwiCb>.isolateLocal(_onMwi);
+      final accCbs = _createAccountCbs(_factory);
+      _setMwiCb(accCbs, _mwiCb!.nativeFunction);
+      _accountAddCbs(acc, accCbs);
+      _accountCbsUnref(accCbs);
       _addAccount(_core, acc);
       _setDefault(_core, acc);
       _accountUnref(acc);
@@ -617,6 +659,19 @@ class LinphoneFfiEngine implements SipEngine {
     Pointer<Utf8> notifiedEvent,
     Pointer<Void> body,
   ) {
+    // Casella vocale: Yeastar manda NOTIFY message-summary fuori dialogo e senza
+    // Message-Account (liblinphone non lo abbina all'account, e via RAS la
+    // SUBSCRIBE esplicita riceve 500): si legge qui "Voice-Message: n/o" (RFC 3842).
+    if (_str(notifiedEvent) == 'message-summary' && body != nullptr) {
+      final m = RegExp(r'Voice-Message:\s*(\d+)/(\d+)')
+          .firstMatch(_str(_contentText(body)));
+      if (m != null) {
+        _voicemail.add(
+          VoicemailEvent(int.parse(m.group(1)!), int.parse(m.group(2)!)),
+        );
+      }
+      return;
+    }
     final n = _numberOf(ev);
     if (n == null || _str(notifiedEvent) != 'dialog') return;
     final xml = body == nullptr ? '' : _str(_contentText(body));
@@ -652,6 +707,7 @@ class LinphoneFfiEngine implements SipEngine {
     _regCb?.close();
     _callCb?.close();
     _notifyCb?.close();
+    _mwiCb?.close();
     _subStateCb?.close();
   }
 

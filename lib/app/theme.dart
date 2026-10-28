@@ -92,6 +92,19 @@ ThemeData buildTheme(Brightness b) {
   final c = b == Brightness.dark ? DrinColors.dark : DrinColors.light;
   return ThemeData(
     brightness: b,
+    // Font di sistema di Windows 11; Segoe UI su Windows 10.
+    fontFamily: 'Segoe UI Variable Text',
+    fontFamilyFallback: const ['Segoe UI'],
+    visualDensity: VisualDensity.standard,
+    tooltipTheme: TooltipThemeData(
+      waitDuration: const Duration(milliseconds: 400),
+      textStyle: TextStyle(color: c.text, fontSize: 12),
+      decoration: BoxDecoration(
+        color: c.card,
+        border: Border.all(color: c.border),
+        borderRadius: BorderRadius.circular(6),
+      ),
+    ),
     colorScheme: ColorScheme.fromSeed(
       seedColor: c.accent,
       brightness: b,
@@ -118,4 +131,15 @@ ThemeData buildTheme(Brightness b) {
   );
 }
 
-const monoFont = 'Consolas';
+/// Numeri e interni: Cascadia Mono (Windows 11), poi Consolas.
+const monoFont = 'Cascadia Mono';
+const monoFallback = ['Consolas'];
+
+TextStyle mono(Color color, {double size = 13, FontWeight? weight}) =>
+    TextStyle(
+      fontFamily: monoFont,
+      fontFamilyFallback: monoFallback,
+      fontSize: size,
+      color: color,
+      fontWeight: weight,
+    );
