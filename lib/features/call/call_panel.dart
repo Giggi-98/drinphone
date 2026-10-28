@@ -56,9 +56,11 @@ class _CallPanelState extends State<CallPanel> {
     final c = context.drin;
     final p = widget.phone;
     final call = widget.call;
-    final title = call.remoteName.isNotEmpty
+    // Nome dal SIP, altrimenti da interni o rubrica aziendale.
+    final name = call.remoteName.isNotEmpty
         ? call.remoteName
-        : call.remoteNumber;
+        : p.nameFor(call.remoteNumber);
+    final title = name.isNotEmpty ? name : call.remoteNumber;
     final incoming = call.phase == CallPhase.incoming;
 
     return Container(
@@ -97,7 +99,7 @@ class _CallPanelState extends State<CallPanel> {
             ),
             overflow: TextOverflow.ellipsis,
           ),
-          if (call.remoteName.isNotEmpty)
+          if (name.isNotEmpty)
             Text(
               call.remoteNumber,
               style: TextStyle(fontFamily: monoFont, color: c.muted),

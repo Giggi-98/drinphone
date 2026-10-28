@@ -10,6 +10,7 @@ import '../account/account_dialog.dart';
 import '../account/api_dialog.dart';
 import '../call/call_panel.dart';
 import '../call/keypad.dart';
+import '../contacts/contacts_view.dart';
 import '../history/history_view.dart';
 
 /// Struttura a pannelli (proposta D): barra sezioni, barra composizione con
@@ -22,10 +23,12 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
+enum _Section { extensions, contacts, history }
+
 class _HomeScreenState extends State<HomeScreen> {
   final _dial = TextEditingController();
   bool _keypadOpen = false;
-  bool _historyOpen = false;
+  _Section _section = _Section.extensions;
   late final AppLifecycleListener _lifecycle;
 
   PhoneController get p => widget.phone;
@@ -96,9 +99,9 @@ class _HomeScreenState extends State<HomeScreen> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _Sidebar(
-            historyOpen: _historyOpen,
+            section: _section,
             missed: p.history.where((r) => r.missed).length,
-            onSection: (history) => setState(() => _historyOpen = history),
+            onSection: (s) => setState(() => _section = s),
             onSettings: _openAccount,
             onApi: p.apiAvailable ? _openApi : null,
           ),
@@ -118,9 +121,20 @@ class _HomeScreenState extends State<HomeScreen> {
                         action: ('Configura', _openAccount),
                       ),
                     Expanded(
-                      child: _historyOpen
-                          ? HistoryView(phone: p, onCall: _call)
-                          : _ExtensionsView(phone: p, onCall: _call),
+                      child: switch (_section) {
+                        _Section.extensions => _ExtensionsView(
+                          phone: p,
+                          onCall: _call,
+                        ),
+                        _Section.contacts => ContactsView(
+                          phone: p,
+                          onCall: _call,
+                        ),
+                        _Section.history => HistoryView(
+                          phone: p,
+                          onCall: _call,
+                        ),
+                      },
                     ),
                   ],
                 ),
@@ -241,8 +255,10 @@ class _HomeScreenState extends State<HomeScreen> {
                     onSubmitted: _submit,
                     onChanged: (v) {
                       p.setQuery(v);
-                      if (_historyOpen && v.isNotEmpty) {
-                        setState(() => _historyOpen = false);
+                      // La ricerca vale per interni e rubrica: dalla
+                      // cronologia si torna agli interni.
+                      if (_section == _Section.history && v.isNotEmpty) {
+                        setState(() => _section = _Section.extensions);
                       }
                     },
                     style: TextStyle(
@@ -362,17 +378,17 @@ class _HomeScreenState extends State<HomeScreen> {
 
 class _Sidebar extends StatelessWidget {
   const _Sidebar({
-    required this.historyOpen,
+    required this.section,
     required this.missed,
     required this.onSection,
     required this.onSettings,
     required this.onApi,
   });
-  final bool historyOpen;
+  final _Section section;
 
   /// Chiamate perse in cronologia (badge).
   final int missed;
-  final ValueChanged<bool> onSection;
+  final ValueChanged<_Section> onSection;
   final VoidCallback onSettings;
   final VoidCallback? onApi;
 
@@ -463,14 +479,20 @@ class _Sidebar extends StatelessWidget {
           item(
             Icons.people_outline,
             'Interni',
-            !historyOpen,
-            () => onSection(false),
+            section == _Section.extensions,
+            () => onSection(_Section.extensions),
+          ),
+          item(
+            Icons.contacts_outlined,
+            'Rubrica',
+            section == _Section.contacts,
+            () => onSection(_Section.contacts),
           ),
           item(
             Icons.history,
             missed > 0 ? 'Cronologia · $missed perse' : 'Cronologia',
-            historyOpen,
-            () => onSection(true),
+            section == _Section.history,
+            () => onSection(_Section.history),
           ),
           const Spacer(),
           if (onApi != null)

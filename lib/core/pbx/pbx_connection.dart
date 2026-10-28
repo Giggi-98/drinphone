@@ -27,6 +27,9 @@ class PbxConnection {
   YeastarApi? _api;
   List<PbxExtension> directory = const [];
   List<PbxOrg> orgs = const [];
+
+  /// Rubrica aziendale; vuota se l'API non la espone o non è autorizzata.
+  List<PbxContact> contacts = const [];
   String status = 'Non connessa';
   bool ok = false;
   bool syncing = false;
@@ -36,6 +39,13 @@ class PbxConnection {
   /// dell'account SIP.
   String baseUrl = '';
   String get host => Uri.tryParse(baseUrl)?.host ?? '';
+
+  /// Problemi delle letture facoltative dell'ultimo giro (reparti, rubrica).
+  final optionalErrors = <String>[];
+
+  // Messaggio breve: tipo ed eventuale codice, mai URL o token.
+  static String _short(Object e) =>
+      e is YeastarApiException ? '$e' : e.runtimeType.toString();
 
   Timer? _timer;
   int _failures = 0;
@@ -79,6 +89,7 @@ class PbxConnection {
     syncing = true;
     onUpdate(this, false);
     var changed = false;
+    optionalErrors.clear();
     try {
       if (!api.connected) await api.connect();
       final ext = await api.listExtensions();
@@ -90,6 +101,7 @@ class PbxConnection {
               .isNotEmpty ||
           ext.length != directory.length;
       var newOrgs = orgs;
+      var newContacts = contacts;
       final orgsAt = _orgsAt;
       if (force ||
           idsChanged ||
@@ -97,21 +109,31 @@ class PbxConnection {
           DateTime.now().difference(orgsAt) > orgsEvery) {
         try {
           newOrgs = await api.listOrganizations();
-          _orgsAt = DateTime.now();
-        } on YeastarApiException {
-          // Reparti facoltativi: si tengono gli ultimi letti.
+        } catch (e) {
+          // Reparti facoltativi: si tengono gli ultimi letti; non bloccano gli interni.
+          optionalErrors.add('reparti: ${_short(e)}');
         }
+        // Rubrica: stessa cadenza lenta dei reparti, cambia di rado.
+        try {
+          newContacts = await api.listCompanyContacts();
+        } catch (e) {
+          // Rubrica facoltativa (permessi, formato diverso dalla documentazione).
+          optionalErrors.add('rubrica: ${_short(e)}');
+        }
+        _orgsAt = DateTime.now();
       }
-      final fp = _fingerprintOf(ext, newOrgs);
+      final fp = _fingerprintOf(ext, newOrgs, newContacts);
       changed = fp != _fingerprint;
       _fingerprint = fp;
       directory = ext;
       orgs = newOrgs;
+      contacts = newContacts;
       lastSync = DateTime.now();
       _failures = 0;
       ok = true;
       status =
-          'Sincronizzata · ${ext.length} interni, ${newOrgs.length} reparti';
+          'Sincronizzata · ${ext.length} interni, ${newOrgs.length} reparti, '
+          '${newContacts.length} contatti';
     } catch (e) {
       // e non contiene URL né token (YeastarApiException), solo operazione e codice.
       _failures++;
@@ -130,9 +152,14 @@ class PbxConnection {
     return Duration(seconds: min(s.toInt(), maxBackoff.inSeconds));
   }
 
-  static String _fingerprintOf(List<PbxExtension> ext, List<PbxOrg> orgs) => [
+  static String _fingerprintOf(
+    List<PbxExtension> ext,
+    List<PbxOrg> orgs,
+    List<PbxContact> contacts,
+  ) => [
     for (final e in ext) '${e.id}|${e.number}|${e.name}|${e.presence}',
     for (final o in orgs) '${o.id}|${o.parentId}|${o.name}|${o.extIds.length}',
+    for (final c in contacts) '${c.id}|${c.name}|${c.numbers}',
   ].join('\n');
 
   Future<void> stop() async {
@@ -148,5 +175,6 @@ class PbxConnection {
     await store.clear();
     directory = const [];
     orgs = const [];
+    contacts = const [];
   }
 }

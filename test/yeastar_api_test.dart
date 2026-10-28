@@ -89,6 +89,25 @@ class FakePbx {
               },
             ],
           };
+        case '/openapi/v1.0/company_contact/list':
+          reply = {
+            'errcode': 0,
+            'errmsg': 'SUCCESS',
+            'total_number': 1,
+            'data': [
+              {
+                'id': 7,
+                'contact_name': 'Mario Rossi',
+                'company': 'Fornitore Srl',
+                'business': '02 5550 1234',
+                'mobile': '',
+                'business_fax': '02 5550 9999',
+                'phonebook_list': [
+                  {'id': 1, 'name': 'Fornitori'},
+                ],
+              },
+            ],
+          };
         case '/openapi/v1.0/del_token':
           reply = {'errcode': 0, 'errmsg': 'SUCCESS'};
         default:
@@ -261,7 +280,17 @@ void main() {
       final phone = await controllerWith(engine, {'a': pbx.baseUrl});
       final conn = phone.connections.single;
 
-      expect(conn.status, 'Sincronizzata · 3 interni, 2 reparti');
+      expect(conn.status, 'Sincronizzata · 3 interni, 2 reparti, 1 contatti');
+      final mario = conn.contacts.single;
+      expect(mario.numbers, [
+        ('Ufficio', '02 5550 1234'),
+      ]); // fax e vuoti esclusi
+      expect(mario.phonebooks, ['Fornitori']);
+      expect(phone.nameFor('+390255501234'), 'Mario Rossi');
+      expect(phone.nameFor('350'), 'Jack Egards');
+      phone.setQuery('forn');
+      expect(phone.visibleContacts.single.$2.name, 'Mario Rossi');
+      phone.setQuery('');
       expect(phone.allExtensions.map((e) => e.number), ['400', '301', '350']);
       expect(phone.isManual(phone.allExtensions.first), isTrue);
       expect(phone.isManual(phone.allExtensions.last), isFalse);

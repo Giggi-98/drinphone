@@ -37,6 +37,28 @@ class PbxExtension {
   final String presence;
 }
 
+/// Contatto della rubrica aziendale (company_contact/list).
+class PbxContact {
+  const PbxContact({
+    required this.id,
+    required this.name,
+    this.company = '',
+    this.jobTitle = '',
+    this.email = '',
+    this.numbers = const [],
+    this.phonebooks = const [],
+  });
+  final int id;
+  final String name;
+  final String company;
+  final String jobTitle;
+  final String email;
+
+  /// (etichetta, numero) dei soli campi valorizzati, fax esclusi.
+  final List<(String, String)> numbers;
+  final List<String> phonebooks;
+}
+
 class PbxOrg {
   const PbxOrg({
     required this.id,
@@ -92,7 +114,10 @@ class YeastarApi {
       ..contentType = ContentType.json;
     if (body != null) req.write(jsonEncode(body));
     final res = await req.close().timeout(const Duration(seconds: 15));
-    final text = await res.transform(utf8.decoder).join();
+    final text = await res
+        .transform(utf8.decoder)
+        .join()
+        .timeout(const Duration(seconds: 30));
     if (res.statusCode != 200) {
       throw YeastarApiException(op, -res.statusCode, 'HTTP ${res.statusCode}');
     }
@@ -207,6 +232,57 @@ class YeastarApi {
 
     walk(j['organization_list'] as List? ?? const [], 0, 0);
     return out;
+  }
+
+  /// Campi numero di Contact_Info con l'etichetta mostrata (fax esclusi).
+  static const _contactNumberFields = {
+    'business': 'Ufficio',
+    'business2': 'Ufficio 2',
+    'mobile': 'Cellulare',
+    'mobile2': 'Cellulare 2',
+    'home': 'Casa',
+    'home2': 'Casa 2',
+    'other': 'Altro',
+  };
+
+  Future<List<PbxContact>> listCompanyContacts() async {
+    final out = <PbxContact>[];
+    for (var page = 1; ; page++) {
+      final j = await _call(
+        'company_contact/list',
+        'GET',
+        _uri('company_contact/list', {
+          'page': '$page',
+          'page_size': '500',
+          'sort_by': 'contact_name',
+          'order_by': 'asc',
+        }),
+      );
+      final data = (j['data'] as List? ?? const [])
+          .cast<Map<String, dynamic>>();
+      for (final c in data) {
+        out.add(
+          PbxContact(
+            id: (c['id'] as num?)?.toInt() ?? 0,
+            name: '${c['contact_name'] ?? ''}',
+            company: '${c['company'] ?? ''}',
+            jobTitle: '${c['job_title'] ?? ''}',
+            email: '${c['email'] ?? ''}',
+            numbers: [
+              for (final f in _contactNumberFields.entries)
+                if ('${c[f.key] ?? ''}'.trim().isNotEmpty)
+                  (f.value, '${c[f.key]}'.trim()),
+            ],
+            phonebooks: [
+              for (final b in (c['phonebook_list'] as List? ?? const []))
+                '${(b as Map<String, dynamic>)['name'] ?? ''}',
+            ],
+          ),
+        );
+      }
+      final total = j['total_number'] as int? ?? out.length;
+      if (data.isEmpty || out.length >= total) return out;
+    }
   }
 
   /// Revoca il token: alla chiusura, per non consumare uno degli 8 slot.

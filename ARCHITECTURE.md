@@ -62,6 +62,11 @@ spikes/f0a/                         spike F0-A (non prodotto)
   ogni 60 s per la presenza. Interni del PBX uniti a quelli manuali
   (senza il proprio, max 100 in BLF). Solo Windows. Credenziali in
   `ApiCredentialStore` (DPAPI, sola scrittura dalla UI, DECISIONS 2026-10-28 bis).
+- **Rubrica aziendale** (`IMPLEMENTATO`, verificato sul pilota) — `company_contact/list`
+  (pagine da 500) letta con i reparti ogni 10 min, **solo in memoria**; vista
+  `features/contacts/` con filtro per phonebook e un pulsante Chiama per numero
+  (fax esclusi). `nameFor(numero)` dà il nome del chiamante da interni e rubrica
+  (cifre finali se ≥ 7 cifre). Errori di reparti/rubrica non bloccano gli interni.
 - **Cronologia** (`IMPLEMENTATO`) — `CallHistoryStore` (`lib/core/call_history.dart`):
   `history.json` locale, ultime 200 chiamate, salvataggi in coda; persa = entrante
   non risposta. Vista `features/history/`.

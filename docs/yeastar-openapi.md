@@ -99,7 +99,8 @@ multi-tenant, retention dei dati personali (rubrica, numeri).
 
 ## 7. Verificato sul PBX pilota (2026-10-28, via FQDN RAS)
 `get_token`, `extension/list` (50 interni, `id`/`number`/`caller_id_name`/`presence_status`),
-`organization/list?is_all=1` (6 reparti annidati con `ext_list`), `del_token`.
+`organization/list?is_all=1` (6 reparti annidati con `ext_list`),
+`company_contact/list` (4468 contatti, paginati da 500), `del_token`.
 Il client rilegge interni e reparti ogni 60 s (presenza); WebSocket eventi non usato.
 
 ## 7b. Ancora da verificare sul PBX pilota

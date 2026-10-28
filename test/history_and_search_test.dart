@@ -95,4 +95,18 @@ void main() {
     expect(phone.history.any((r) => r.missed), isFalse);
     expect(attention, 0);
   });
+
+  test('sameNumber: prefissi e simboli sì, interni brevi mai per suffisso', () {
+    expect(
+      PhoneController.sameNumber('+39 02 5550 1234', '0255501234'),
+      isTrue,
+    );
+    expect(
+      PhoneController.sameNumber('0039 333 1234567', '3331234567'),
+      isTrue,
+    );
+    expect(PhoneController.sameNumber('234', '0255501234'), isFalse);
+    expect(PhoneController.sameNumber('201', '201'), isTrue);
+    expect(PhoneController.sameNumber('', '201'), isFalse);
+  });
 }

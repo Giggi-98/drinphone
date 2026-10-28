@@ -134,10 +134,15 @@ class PhoneController extends ChangeNotifier {
   );
 
   void _onConnectionUpdate(PbxConnection c, bool directoryChanged) {
+    if (!c.syncing && (!c.ok || c.optionalErrors.isNotEmpty)) {
+      debugPrint(
+        '[drinphone] pbx ${c.id}: ${c.status} ${c.optionalErrors.join('; ')}',
+      );
+    }
     if (directoryChanged) {
       debugPrint(
         '[drinphone] pbx ${c.id}: ${c.directory.length} interni, '
-        '${c.orgs.length} reparti',
+        '${c.orgs.length} reparti, ${c.contacts.length} contatti',
       );
       final g = selectedGroup;
       if (g != null && !_groupExists(g)) selectedGroup = null;
@@ -310,6 +315,46 @@ class PhoneController extends ChangeNotifier {
 
   bool isManual(Extension e) => settings.extensions.contains(e);
 
+  /// Rubrica aziendale di tutti i PBX, con il filtro di ricerca del campo in alto.
+  List<(PbxConnection, PbxContact)> get visibleContacts {
+    final q = query.toLowerCase();
+    return [
+      for (final c in connections)
+        for (final x in c.contacts)
+          if (q.isEmpty ||
+              x.name.toLowerCase().contains(q) ||
+              x.company.toLowerCase().contains(q) ||
+              x.numbers.any((n) => _digits(n.$2).contains(q)))
+            (c, x),
+    ];
+  }
+
+  static String _digits(String n) => n.replaceAll(RegExp(r'[^0-9]'), '');
+
+  /// Stesso numero a meno di spazi/simboli e prefissi (+39, 0039): uguali, o
+  /// stesse cifre finali se entrambi lunghi almeno 7 (mai per gli interni brevi).
+  static bool sameNumber(String a, String b) {
+    final x = _digits(a), y = _digits(b);
+    if (x.isEmpty || y.isEmpty) return false;
+    if (x == y) return true;
+    if (x.length < 7 || y.length < 7) return false;
+    return x.endsWith(y) || y.endsWith(x);
+  }
+
+  /// Nome per un numero: interni (anche di altri PBX), poi rubrica aziendale.
+  String nameFor(String number) {
+    if (number.isEmpty) return '';
+    for (final e in allExtensions) {
+      if (e.number == number && e.name != e.number) return e.name;
+    }
+    for (final c in connections) {
+      for (final x in c.contacts) {
+        if (x.numbers.any((n) => sameNumber(n.$2, number))) return x.name;
+      }
+    }
+    return '';
+  }
+
   // ---------------------------------------------------------------- account
 
   Future<void> saveAccount(SipAccount account, {required bool debugLog}) async {
@@ -433,12 +478,16 @@ class PhoneController extends ChangeNotifier {
   void _record(CallEvent e) {
     final start = _callStart ?? DateTime.now();
     final connected = callConnectedAt;
+    final number = e.remoteNumber.isNotEmpty
+        ? e.remoteNumber
+        : (call?.remoteNumber ?? '');
+    final sipName = e.remoteName.isNotEmpty
+        ? e.remoteName
+        : (call?.remoteName ?? '');
     history = [
       CallRecord(
-        number: e.remoteNumber.isNotEmpty
-            ? e.remoteNumber
-            : (call?.remoteNumber ?? ''),
-        name: e.remoteName.isNotEmpty ? e.remoteName : (call?.remoteName ?? ''),
+        number: number,
+        name: sipName.isNotEmpty ? sipName : nameFor(number),
         direction: e.direction,
         start: start,
         seconds: connected == null
