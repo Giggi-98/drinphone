@@ -9,7 +9,8 @@ class DialogInfoTracker {
 
   static final _root = RegExp(r'<(?:\w+:)?dialog-info\b([^>]*)>');
   static final _dialog = RegExp(
-    r'<(?:\w+:)?dialog\b([^>]*?)(?:/>|>(.*?)</(?:\w+:)?dialog>)',
+    // (?![-\w]): `\b` da solo accetterebbe anche `<dialog-info`.
+    r'<(?:\w+:)?dialog(?![-\w])([^>]*?)(?:/>|>(.*?)</(?:\w+:)?dialog>)',
     dotAll: true,
   );
   static final _state = RegExp(

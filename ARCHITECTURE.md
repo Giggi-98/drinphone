@@ -42,10 +42,17 @@ spikes/f0a/                         spike F0-A (non prodotto)
 - **Macchina a stati chiamata** — `CallPhase`: incoming / outgoing / active /
   paused / ended / error, mappata dagli stati `LinphoneCallState`; `Released` libera
   il puntatore. Hold/transfer: F3.
+- **BLF SIP** (`IMPLEMENTATO`; stato Libero `VERIFICATO` su Yeastar via RAS) —
+  `watchDialogs(numeri)`: una SUBSCRIBE `Event: dialog` (600 s, `Accept:
+  application/dialog-info+xml`) per interno della lista locale, a registrazione OK;
+  NOTIFY -> `DialogInfoTracker` (`lib/core/sip/dialog_info.dart`, regex senza
+  espansione di entità, full/partial) -> `BlfStatus` unknown/idle/ringing/busy.
+  Subscription terminata o rifiutata: stato sconosciuto con motivo, ritentata al
+  rinnovo REGISTER successivo. Registrazione caduta: tutto sconosciuto.
 - **SettingsStore** — `settings.json` (utente, dominio, trasporto, interni, flag
   debug) + password in `flutter_secure_storage`.
 - **UI** — `ChangeNotifier` senza librerie di stato. Sezioni: Interni (lista locale,
-  stato BLF "Sconosciuto" finché F3 non c'è), Impostazioni (account). Gruppi: assenti.
+  pallino e testo da BLF SIP), Impostazioni (account). Gruppi: assenti.
 - **Push / Yeastar / Update** — non implementati (F4 / F6 / F7).
 
 ## 4. Flussi

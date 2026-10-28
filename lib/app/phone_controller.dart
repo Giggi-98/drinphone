@@ -32,10 +32,14 @@ class PhoneController extends ChangeNotifier {
   bool muted = false;
   String? notice;
 
+  /// Stato BLF per numero interno; assente = sconosciuto.
+  final blf = <String, BlfEvent>{};
+
   Future<void> init() async {
     settings = await _store.load();
     _subs.add(_engine.registrations.listen(_onRegistration));
     _subs.add(_engine.calls.listen(_onCall));
+    _subs.add(_engine.dialogs.listen(_onDialog));
     try {
       engineVersion = await _engine.start(
         dataDir: engineDataDir,
@@ -87,7 +91,17 @@ class PhoneController extends ChangeNotifier {
       extensions: list,
     );
     await _store.save(settings);
+    await _syncDialogs();
     notifyListeners();
+  }
+
+  Set<String> get _watched => {for (final e in settings.extensions) e.number};
+
+  Future<void> _syncDialogs() async {
+    blf.removeWhere((n, _) => !_watched.contains(n));
+    if (engineError == null && registration.status == RegistrationStatus.ok) {
+      await _engine.watchDialogs(_watched);
+    }
   }
 
   bool get canDial =>
@@ -119,6 +133,17 @@ class PhoneController extends ChangeNotifier {
   void _onRegistration(RegistrationEvent e) {
     debugPrint('[drinphone] registrazione ${e.status.name} ${e.message}');
     registration = e;
+    if (e.status == RegistrationStatus.ok) {
+      _engine.watchDialogs(_watched);
+    } else {
+      blf.clear();
+    }
+    notifyListeners();
+  }
+
+  void _onDialog(BlfEvent e) {
+    debugPrint('[drinphone] blf ${e.number} ${e.status.name} ${e.reason}');
+    blf[e.number] = e;
     notifyListeners();
   }
 

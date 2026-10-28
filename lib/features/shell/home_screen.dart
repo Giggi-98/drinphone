@@ -524,6 +524,7 @@ class _ExtensionsView extends StatelessWidget {
                     itemBuilder: (_, i) => _ExtensionCard(
                       ext: list[i],
                       canCall: phone.canDial,
+                      blf: phone.blf[list[i].number],
                       onCall: () => onCall(list[i].number),
                       onRemove: () => phone.removeExtension(list[i]),
                     ),
@@ -534,7 +535,7 @@ class _ExtensionsView extends StatelessWidget {
             child: Padding(
               padding: const EdgeInsets.only(top: 8),
               child: Text(
-                'Stato interni (BLF): non ancora disponibile',
+                'Stato interni via SIP BLF',
                 style: TextStyle(fontSize: 12, color: c.muted),
               ),
             ),
@@ -549,11 +550,13 @@ class _ExtensionCard extends StatelessWidget {
   const _ExtensionCard({
     required this.ext,
     required this.canCall,
+    required this.blf,
     required this.onCall,
     required this.onRemove,
   });
   final Extension ext;
   final bool canCall;
+  final BlfEvent? blf;
   final VoidCallback onCall;
   final VoidCallback onRemove;
 
@@ -567,6 +570,14 @@ class _ExtensionCard extends StatelessWidget {
         .take(2)
         .join()
         .toUpperCase();
+    // Libero/occupato pieni, squilla/sconosciuto ad anello: non solo colore.
+    final (ring, fill, label, labelColor) = switch (blf?.status) {
+      BlfStatus.idle => (c.ok, c.ok, 'Libero', c.okText),
+      BlfStatus.busy => (c.busy, c.busy, 'Occupato', c.busyText),
+      BlfStatus.ringing => (c.ringing, c.card, 'Squilla', c.ringing),
+      _ => (c.muted, c.card, 'Sconosciuto', c.muted),
+    };
+    final reason = blf?.reason ?? '';
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
@@ -601,9 +612,9 @@ class _ExtensionCard extends StatelessWidget {
                       width: 12,
                       height: 12,
                       decoration: BoxDecoration(
-                        color: c.card,
+                        color: fill,
                         shape: BoxShape.circle,
-                        border: Border.all(color: c.muted, width: 2),
+                        border: Border.all(color: ring, width: 2),
                       ),
                     ),
                   ),
@@ -635,9 +646,13 @@ class _ExtensionCard extends StatelessWidget {
                       ),
                       overflow: TextOverflow.ellipsis,
                     ),
-                    Text(
-                      'Sconosciuto',
-                      style: TextStyle(fontSize: 12, color: c.muted),
+                    Tooltip(
+                      message: reason,
+                      child: Text(
+                        reason.isEmpty ? label : '$label · $reason',
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontSize: 12, color: labelColor),
+                      ),
                     ),
                   ],
                 ),

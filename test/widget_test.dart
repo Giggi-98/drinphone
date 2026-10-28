@@ -115,6 +115,34 @@ void main() {
     expect(engine.log, contains('mute false'));
   });
 
+  test(
+    'BLF: sottoscrive gli interni da registrato, sconosciuto se cade',
+    () async {
+      await phone.addExtension(const Extension('Paolo', '301'));
+      expect(engine.watched, isEmpty);
+      engine.registrationsCtl.add(
+        const RegistrationEvent(RegistrationStatus.ok),
+      );
+      expect(engine.watched, {'301'});
+
+      engine.dialogsCtl.add(const BlfEvent('301', BlfStatus.busy));
+      expect(phone.blf['301']!.status, BlfStatus.busy);
+
+      engine.registrationsCtl.add(
+        const RegistrationEvent(RegistrationStatus.failed),
+      );
+      expect(phone.blf, isEmpty);
+
+      engine.registrationsCtl.add(
+        const RegistrationEvent(RegistrationStatus.ok),
+      );
+      await phone.addExtension(const Extension('Sala', '300'));
+      expect(engine.watched, {'301', '300'});
+      await phone.removeExtension(phone.settings.extensions.first);
+      expect(engine.watched, {'300'});
+    },
+  );
+
   testWidgets('chiamata in arrivo mostra Rispondi e Rifiuta', (tester) async {
     tester.view.physicalSize = const Size(1440, 900);
     tester.view.devicePixelRatio = 1;

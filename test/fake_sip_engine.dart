@@ -8,6 +8,8 @@ class FakeSipEngine implements SipEngine {
     sync: true,
   );
   final callsCtl = StreamController<CallEvent>.broadcast(sync: true);
+  final dialogsCtl = StreamController<BlfEvent>.broadcast(sync: true);
+  Set<String> watched = {};
   final log = <String>[];
   SipAccount? registered;
 
@@ -15,6 +17,12 @@ class FakeSipEngine implements SipEngine {
   Stream<RegistrationEvent> get registrations => registrationsCtl.stream;
   @override
   Stream<CallEvent> get calls => callsCtl.stream;
+  @override
+  Stream<BlfEvent> get dialogs => dialogsCtl.stream;
+
+  @override
+  Future<void> watchDialogs(Set<String> numbers) async =>
+      watched = {...numbers};
 
   @override
   Future<String> start({

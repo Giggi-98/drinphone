@@ -44,7 +44,7 @@
 ## Matrice da compilare con test vero
 | PBX/edition | Firmware | SIP TLS/SRTP | BLF SIP | OpenAPI | Push terminated | Esito/data |
 |---|---|---|---|---|---|---|
-| DRIN PRO (istanza pilota) | TBD | TBD | TBD | TBD | TBD | NON TESTATO |
+| DRIN PRO (istanza pilota, via RAS) | TBD | TLS/SRTP non testati | PARZIALE: SUBSCRIBE dialog accettata, NOTIFY full ricevuto | TBD | TBD | 2026-10-28, `docs/test/2026-10-28-windows-yeastar-ras.md` |
 | Yeastar P-Series Appliance | TBD | TBD | TBD | TBD | TBD | NON TESTATO |
 | Yeastar P-Series Software | TBD | TBD | TBD | TBD | TBD | NON TESTATO |
 | Yeastar P-Series Cloud | TBD | TBD | TBD | TBD | TBD | NON TESTATO |

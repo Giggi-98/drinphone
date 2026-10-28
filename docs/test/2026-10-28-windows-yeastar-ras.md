@@ -13,6 +13,7 @@ parallelo sullo stesso interno. Nessuno STUN/ICE configurato.
 | Chiamata entrante da interno | PASS | IncomingReceived → pannello Rispondi/Rifiuta → Connected; Opus/48000; 401 pacchetti ricevuti, 0 persi |
 | Audio nei due versi | PASS (ascoltato) | Confermato dall'utente sulla chiamata entrante: "l'audio funzionava perfettamente" |
 | Coesistenza con Linkus Desktop sullo stesso interno | PASS | Registrazioni ed entrante funzionanti con Linkus aperto |
+| BLF SIP (SUBSCRIBE dialog) su interno 301 | PASS (solo Libero) | `Subscription-State: active;expires=613`; NOTIFY `dialog-info` full con dialog `terminated` → Libero. Squilla/Occupato non ancora osservati |
 | Password nel log di debug | OK (parole chiave) | vedi `docs/sicurezza/2026-10-28-account-sip-windows.md` |
 
 **Non provato:** muto, DTMF, rifiuto, chiamata persa/occupato, rete degradata o
