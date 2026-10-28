@@ -1,8 +1,11 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 
 import 'app/phone_controller.dart';
 import 'app/theme.dart';
 import 'core/app_paths.dart';
+import 'core/security/api_credential_store.dart';
 import 'core/security/settings_store.dart';
 import 'core/sip/linphone_ffi_engine.dart';
 import 'features/shell/home_screen.dart';
@@ -15,6 +18,10 @@ Future<void> main() async {
     SettingsStore(paths.settingsFile),
     engineDataDir: paths.engineData,
     logDir: paths.logs,
+    // DPAPI esiste solo su Windows: altrove niente integrazione API per ora.
+    apiStore: Platform.isWindows
+        ? ApiCredentialStore(paths.apiCredentialsFile)
+        : null,
   );
   await phone.init();
   runApp(DrinPhoneApp(phone: phone));

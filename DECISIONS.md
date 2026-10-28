@@ -6,6 +6,26 @@ aggiungi una voce nuova in cima che cita la vecchia. Il campo chiave è
 
 ---
 
+## 2026-10-28 (bis) · Credenziali OpenAPI Yeastar nel client (ribalta "Credenziali API e AMI" del 2026-10-28)
+**Scelta (di Luigi):** Client ID e Client Secret OpenAPI si inseriscono **nell'app**
+DrinPhone. Vincoli: campi di **sola scrittura** (si sovrascrivono, non si rileggono
+dalla UI); file cifrato con **DPAPI** (utente Windows + PC) ed entropia = segreto
+compilato nell'app + sale casuale per installazione; mai nei log, compreso
+l'`access_token` (che Yeastar vuole in query string); il client usa **solo
+endpoint in lettura** (`get_token`, `refresh_token`, `del_token`, `extension/list`);
+token rinnovato a 25 min e revocato all'uscita. Codice: `lib/core/security/api_credential_store.dart`,
+`lib/core/pbx/yeastar_api.dart`.
+**Scartato:** gateway Econnet lato server (`docs/yeastar-openapi.md` §6), per ora.
+**Rischio accettato:** su Windows il confine è l'account utente: codice eseguito
+come lo stesso utente che estragga il segreto dall'exe, o un amministratore del PC,
+può decifrare le credenziali, che sono **amministrative** (aprono anche
+`extension/getpassword`). Limite di 8 token per applicazione: molti client
+contemporanei sullo stesso PBX lo esauriscono.
+**Da rivedere se:** più di qualche postazione per PBX, distribuzione a clienti
+esterni, o si chiede presence/eventi in tempo reale per molti utenti (allora gateway).
+
+---
+
 ## 2026-10-28 · UI desktop: proposta D (struttura a pannelli) e gruppi interni opzionali
 **Scelta:** grafica desktop = proposta "D · Struttura a pannelli" (barra sezioni,
 griglia di schede interni con stato BLF, barra con composizione e tastierino a

@@ -17,4 +17,5 @@ class AppPaths {
   String get engineData => '$root${_s}linphone';
   String get logs => '$root${_s}logs';
   String get settingsFile => '$root${_s}settings.json';
+  String get apiCredentialsFile => '$root${_s}yeastar-api.dpapi';
 }

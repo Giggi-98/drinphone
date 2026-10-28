@@ -1,3 +1,5 @@
+import 'dart:ui' show AppExitResponse;
+
 import 'package:flutter/material.dart';
 
 import '../../app/phone_controller.dart';
@@ -5,6 +7,7 @@ import '../../app/theme.dart';
 import '../../core/security/settings_store.dart';
 import '../../core/sip/sip_engine.dart';
 import '../account/account_dialog.dart';
+import '../account/api_dialog.dart';
 import '../call/call_panel.dart';
 import '../call/keypad.dart';
 
@@ -21,6 +24,7 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   final _dial = TextEditingController();
   bool _keypadOpen = false;
+  late final AppLifecycleListener _lifecycle;
 
   PhoneController get p => widget.phone;
 
@@ -28,10 +32,18 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     p.addListener(_onPhone);
+    // Chiudendo la finestra: revoca token API, un-REGISTER, flush del log.
+    _lifecycle = AppLifecycleListener(
+      onExitRequested: () async {
+        await p.shutdown();
+        return AppExitResponse.exit;
+      },
+    );
   }
 
   @override
   void dispose() {
+    _lifecycle.dispose();
     p.removeListener(_onPhone);
     _dial.dispose();
     super.dispose();
@@ -56,6 +68,11 @@ class _HomeScreenState extends State<HomeScreen> {
     builder: (_) => AccountDialog(phone: p),
   );
 
+  void _openApi() => showDialog<void>(
+    context: context,
+    builder: (_) => ApiDialog(phone: p),
+  );
+
   @override
   Widget build(BuildContext context) {
     final c = context.drin;
@@ -64,7 +81,10 @@ class _HomeScreenState extends State<HomeScreen> {
       body: Row(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _Sidebar(onSettings: _openAccount),
+          _Sidebar(
+            onSettings: _openAccount,
+            onApi: p.apiStore == null ? null : _openApi,
+          ),
           Expanded(
             child: Stack(
               children: [
@@ -316,8 +336,9 @@ class _HomeScreenState extends State<HomeScreen> {
 }
 
 class _Sidebar extends StatelessWidget {
-  const _Sidebar({required this.onSettings});
+  const _Sidebar({required this.onSettings, required this.onApi});
   final VoidCallback onSettings;
+  final VoidCallback? onApi;
 
   @override
   Widget build(BuildContext context) {
@@ -405,6 +426,8 @@ class _Sidebar extends StatelessWidget {
           ),
           item(Icons.people_outline, 'Interni', true, () {}),
           const Spacer(),
+          if (onApi != null)
+            item(Icons.hub_outlined, 'Integrazione PBX', false, onApi),
           item(Icons.tune, 'Impostazioni', false, onSettings),
         ],
       ),
@@ -468,7 +491,7 @@ class _ExtensionsView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = context.drin;
-    final list = phone.settings.extensions;
+    final list = phone.allExtensions;
     return Container(
       margin: const EdgeInsets.all(16),
       padding: const EdgeInsets.all(16),
@@ -526,7 +549,9 @@ class _ExtensionsView extends StatelessWidget {
                       canCall: phone.canDial,
                       blf: phone.blf[list[i].number],
                       onCall: () => onCall(list[i].number),
-                      onRemove: () => phone.removeExtension(list[i]),
+                      onRemove: phone.isManual(list[i])
+                          ? () => phone.removeExtension(list[i])
+                          : null,
                     ),
                   ),
           ),
@@ -535,7 +560,9 @@ class _ExtensionsView extends StatelessWidget {
             child: Padding(
               padding: const EdgeInsets.only(top: 8),
               child: Text(
-                'Stato interni via SIP BLF',
+                phone.apiStatus == null
+                    ? 'Stato interni via SIP BLF'
+                    : 'Stato interni via SIP BLF · API PBX: ${phone.apiStatus}',
                 style: TextStyle(fontSize: 12, color: c.muted),
               ),
             ),
@@ -558,7 +585,7 @@ class _ExtensionCard extends StatelessWidget {
   final bool canCall;
   final BlfEvent? blf;
   final VoidCallback onCall;
-  final VoidCallback onRemove;
+  final VoidCallback? onRemove;
 
   @override
   Widget build(BuildContext context) {
@@ -678,13 +705,18 @@ class _ExtensionCard extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 6),
-              PopupMenuButton<void>(
-                tooltip: 'Altre azioni',
-                icon: Icon(Icons.more_horiz, color: c.muted),
-                itemBuilder: (_) => [
-                  PopupMenuItem(onTap: onRemove, child: const Text('Rimuovi')),
-                ],
-              ),
+              // Interni dal PBX: si gestiscono sul PBX, qui non si rimuovono.
+              if (onRemove != null)
+                PopupMenuButton<void>(
+                  tooltip: 'Altre azioni',
+                  icon: Icon(Icons.more_horiz, color: c.muted),
+                  itemBuilder: (_) => [
+                    PopupMenuItem(
+                      onTap: onRemove,
+                      child: const Text('Rimuovi'),
+                    ),
+                  ],
+                ),
             ],
           ),
         ],

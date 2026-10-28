@@ -49,6 +49,11 @@ spikes/f0a/                         spike F0-A (non prodotto)
   espansione di entità, full/partial) -> `BlfStatus` unknown/idle/ringing/busy.
   Subscription terminata o rifiutata: stato sconosciuto con motivo, ritentata al
   rinnovo REGISTER successivo. Registrazione caduta: tutto sconosciuto.
+- **Yeastar OpenAPI** (`IMPLEMENTATO`, `DA VALIDARE` sul PBX) — `YeastarApi`
+  (`lib/core/pbx/`): `get_token` con Client ID/Secret, refresh a 25 min, `del_token`
+  all'uscita, `extension/list` paginato. Interni del PBX uniti a quelli manuali
+  (senza il proprio, max 100 in BLF). Solo Windows. Credenziali in
+  `ApiCredentialStore` (DPAPI, sola scrittura dalla UI, DECISIONS 2026-10-28 bis).
 - **SettingsStore** — `settings.json` (utente, dominio, trasporto, interni, flag
   debug) + password in `flutter_secure_storage`.
 - **UI** — `ChangeNotifier` senza librerie di stato. Sezioni: Interni (lista locale,
@@ -64,6 +69,9 @@ spikes/f0a/                         spike F0-A (non prodotto)
 - **Uscente**: campo/scheda -> `dial(numero)` -> `linphone_core_invite` (numero
   completato col dominio dell'account) -> eventi -> `CallPanel`.
 - **Entrante**: callback `IncomingReceived` -> `CallPanel` con Rispondi/Rifiuta.
+- **API PBX**: Integrazione PBX -> `ApiCredentialStore.save` -> `get_token` ->
+  `extension/list` -> griglia Interni + `watchDialogs`. Uscita dall'app
+  (`AppLifecycleListener.onExitRequested`) -> `del_token` + `engine.stop()` (un-REGISTER).
 - **Log di debug**: flag nelle impostazioni, attivo al prossimo avvio:
   `linphone_logging_service` a livello Debug su `logs/linphone.log` (rotazione 10 MB).
 

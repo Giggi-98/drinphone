@@ -1,0 +1,164 @@
+// Client minimo Yeastar P-Series OpenAPI v1.0, sola lettura (docs/yeastar-openapi.md).
+// Token in query string per specifica Yeastar: gli URL non vanno MAI nei log
+// né nei messaggi d'errore. TLS con verifica standard (nessun bypass certificati).
+import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+
+import '../security/api_credential_store.dart';
+
+class YeastarApiException implements Exception {
+  YeastarApiException(this.operation, this.errcode, this.errmsg);
+  final String operation;
+  final int errcode;
+  final String errmsg;
+  @override
+  String toString() => 'Yeastar API $operation: errcode=$errcode $errmsg';
+}
+
+class PbxExtension {
+  const PbxExtension({
+    required this.number,
+    required this.name,
+    this.email = '',
+    this.mobile = '',
+    this.presence = '',
+  });
+  final String number;
+  final String name;
+  final String email;
+  final String mobile;
+
+  /// `available`, `away`, `business_trip`, `do_not_disturb`, `lunch`, `off_work`.
+  final String presence;
+}
+
+class YeastarApi {
+  YeastarApi(this._creds, {HttpClient? http}) : _http = http ?? HttpClient();
+
+  final ApiCredentials _creds;
+  final HttpClient _http;
+  String? _accessToken;
+  String? _refreshToken;
+  Timer? _refreshTimer;
+  static const _userAgent = 'DrinPhone/0.1.0';
+
+  Uri _uri(String endpoint, [Map<String, String> query = const {}]) {
+    final base = Uri.parse(_creds.baseUrl);
+    // get_token e refresh_token sono le uniche chiamate senza access_token.
+    final withToken = endpoint != 'get_token' && endpoint != 'refresh_token';
+    final params = {
+      if (withToken) 'access_token': _accessToken ?? '',
+      ...query,
+    };
+    return base.replace(
+      path: '${base.path}/openapi/v1.0/$endpoint'.replaceAll('//', '/'),
+      queryParameters: params.isEmpty ? null : params,
+    );
+  }
+
+  Future<Map<String, dynamic>> _call(
+    String op,
+    String method,
+    Uri uri, [
+    Map<String, dynamic>? body,
+  ]) async {
+    final req = await _http
+        .openUrl(method, uri)
+        .timeout(const Duration(seconds: 15));
+    req.headers
+      ..set(HttpHeaders.userAgentHeader, _userAgent)
+      ..contentType = ContentType.json;
+    if (body != null) req.write(jsonEncode(body));
+    final res = await req.close().timeout(const Duration(seconds: 15));
+    final text = await res.transform(utf8.decoder).join();
+    if (res.statusCode != 200) {
+      throw YeastarApiException(op, -res.statusCode, 'HTTP ${res.statusCode}');
+    }
+    final j = jsonDecode(text) as Map<String, dynamic>;
+    final code = j['errcode'] as int? ?? -1;
+    if (code != 0) {
+      throw YeastarApiException(op, code, '${j['errmsg'] ?? ''}');
+    }
+    return j;
+  }
+
+  void _takeTokens(Map<String, dynamic> j) {
+    _accessToken = j['access_token'] as String;
+    _refreshToken = j['refresh_token'] as String;
+    final ttl = j['access_token_expire_time'] as int? ?? 1800;
+    _refreshTimer?.cancel();
+    // Rinnovo 5 minuti prima della scadenza (30 min da specifica).
+    _refreshTimer = Timer(
+      Duration(seconds: ttl > 600 ? ttl - 300 : ttl ~/ 2),
+      _refresh,
+    );
+  }
+
+  Future<void> connect() async {
+    final j = await _call('get_token', 'POST', _uri('get_token'), {
+      'username': _creds.clientId,
+      'password': _creds.clientSecret,
+    });
+    _takeTokens(j);
+  }
+
+  Future<void> _refresh() async {
+    try {
+      final j = await _call('refresh_token', 'POST', _uri('refresh_token'), {
+        'refresh_token': _refreshToken,
+      });
+      _takeTokens(j);
+    } on Object {
+      // Refresh scaduto o rifiutato: un solo nuovo get_token, niente loop
+      // (limite 8 token per app e blocco IP sui fallimenti).
+      await connect();
+    }
+  }
+
+  Future<List<PbxExtension>> listExtensions() async {
+    final out = <PbxExtension>[];
+    for (var page = 1; ; page++) {
+      final j = await _call(
+        'extension/list',
+        'GET',
+        _uri('extension/list', {
+          'page': '$page',
+          'page_size': '100',
+          'sort_by': 'number',
+          'order_by': 'asc',
+        }),
+      );
+      final data = (j['data'] as List? ?? const [])
+          .cast<Map<String, dynamic>>();
+      for (final e in data) {
+        out.add(
+          PbxExtension(
+            number: '${e['number'] ?? ''}',
+            name: '${e['caller_id_name'] ?? ''}',
+            email: '${e['email_addr'] ?? ''}',
+            mobile: '${e['mobile_number'] ?? ''}',
+            presence: '${e['presence_status'] ?? ''}',
+          ),
+        );
+      }
+      final total = j['total_number'] as int? ?? out.length;
+      if (data.isEmpty || out.length >= total) return out;
+    }
+  }
+
+  /// Revoca il token: alla chiusura, per non consumare uno degli 8 slot.
+  Future<void> close() async {
+    _refreshTimer?.cancel();
+    if (_accessToken != null) {
+      try {
+        await _call('del_token', 'GET', _uri('del_token'));
+      } on Object {
+        // Scadrà comunque entro 30 minuti.
+      }
+    }
+    _accessToken = null;
+    _refreshToken = null;
+    _http.close(force: true);
+  }
+}
