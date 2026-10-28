@@ -37,13 +37,15 @@ spikes/f0a/                         spike F0-A (non prodotto)
   `CallEvent`. La UI non vede tipi liblinphone.
 - **LinphoneFfiEngine** — core creato con config `NULL` (nessun `linphonerc`),
   `iterate()` ogni 20 ms da timer Dart: tutti i callback sul thread UI. Porte SIP
-  locali casuali, video disattivato. Una chiamata alla volta: una seconda in arrivo
-  viene chiusa.
+  locali casuali, video disattivato. Più chiamate contemporanee, per id.
 - **Macchina a stati chiamata** — `CallPhase`: incoming / outgoing / active /
   paused / ended / error, mappata dagli stati `LinphoneCallState`; `Released` libera
   il puntatore. Attesa (`linphone_call_pause/resume`) e trasferimento cieco
   (`linphone_call_transfer_to`, REFER) con esito dal callback transfer-state
-  (`DA VALIDARE` sul PBX). Trasferimento assistito: richiede più chiamate, non c'è.
+  (`DA VALIDARE` sul PBX). **Più chiamate**: id = indirizzo del LinphoneCall; avviso
+  di chiamata (rispondere mette in attesa la conversazione), scambio, trasferimento
+  assistito (`consult` = attesa + nuova chiamata, poi `linphone_call_transfer_to_another`,
+  REFER con Replaces). `DA VALIDARE` sul PBX via RAS.
 - **BLF SIP** (`IMPLEMENTATO`; stato Libero `VERIFICATO` su Yeastar via RAS) —
   `watchDialogs(numeri)`: una SUBSCRIBE `Event: dialog` (600 s, `Accept:
   application/dialog-info+xml`) per interno della lista locale, a registrazione OK;

@@ -161,6 +161,6 @@ void main() {
     await tester.pump();
     expect(find.text('Chiamata in arrivo'), findsOneWidget);
     await tester.tap(find.text('Rispondi'));
-    expect(engine.log, contains('answer'));
+    expect(engine.log, contains('answer 0'));
   });
 }

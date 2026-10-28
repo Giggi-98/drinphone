@@ -39,6 +39,7 @@ enum CallPhase { incoming, outgoing, active, paused, ended, error }
 
 class CallEvent {
   const CallEvent({
+    this.id = 0,
     required this.phase,
     required this.direction,
     required this.remoteNumber,
@@ -46,6 +47,8 @@ class CallEvent {
     this.message = '',
   });
 
+  /// Identifica la chiamata finché esiste (più chiamate contemporanee).
+  final int id;
   final CallPhase phase;
   final CallDirection direction;
   final String remoteNumber;
@@ -92,18 +95,23 @@ abstract class SipEngine {
   Future<void> register(SipAccount account);
   Future<void> unregister();
 
-  Future<void> dial(String number);
-  Future<void> answer();
-  Future<void> hangup();
+  /// Avvia una chiamata; restituisce il suo id (null se non partita).
+  Future<int?> dial(String number);
+  Future<void> answer(int id);
+  Future<void> hangup(int id);
   Future<void> setMicMuted(bool muted);
-  Future<void> sendDtmf(String digit);
+  Future<void> sendDtmf(int id, String digit);
 
-  /// Attesa / ripresa della chiamata corrente (re-INVITE sendonly/sendrecv).
-  Future<void> hold();
-  Future<void> resume();
+  /// Attesa / ripresa (re-INVITE sendonly/sendrecv).
+  Future<void> hold(int id);
+  Future<void> resume(int id);
 
-  /// Trasferimento cieco (REFER, RFC 3515) della chiamata corrente a [number].
-  Future<void> transfer(String number);
+  /// Trasferimento cieco (REFER, RFC 3515) a [number].
+  Future<void> transfer(int id, String number);
+
+  /// Trasferimento assistito: collega [id] (in attesa) con [toId] (consultazione),
+  /// REFER con Replaces (RFC 3891).
+  Future<void> transferAttended(int id, int toId);
 
   /// Sostituisce l'insieme degli interni osservati via SUBSCRIBE `dialog`.
   /// Va chiamato a registrazione avvenuta; le subscription non più presenti

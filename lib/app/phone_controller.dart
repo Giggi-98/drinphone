@@ -52,9 +52,12 @@ class PhoneController extends ChangeNotifier {
   /// Completa quando l'ultima scrittura della cronologia è finita.
   Future<void> get historySaved => _historySaving;
 
-  // Chiamata in corso, per la cronologia.
-  DateTime? _callStart;
-  bool _callAnswered = false;
+  // Inizio, connessione e risposta di ogni chiamata viva, per il registro.
+  final _meta = <int, ({DateTime start, DateTime? connected, bool answered})>{};
+
+  // Trasferimento assistito in corso: chiamata messa in attesa -> consultazione.
+  int? _consultFrom;
+  int? _consultTo;
 
   final SipEngine _engine;
   final SettingsStore _store;
@@ -84,8 +87,31 @@ class PhoneController extends ChangeNotifier {
   RegistrationEvent registration = const RegistrationEvent(
     RegistrationStatus.none,
   );
-  CallEvent? call;
-  DateTime? callConnectedAt;
+
+  /// Chiamate in corso per id, in ordine di inizio.
+  final calls = <int, CallEvent>{};
+
+  /// Chiamata in primo piano: attiva, poi in uscita, poi in arrivo, poi in attesa.
+  CallEvent? get call {
+    for (final phase in [
+      CallPhase.active,
+      CallPhase.outgoing,
+      CallPhase.incoming,
+      CallPhase.paused,
+    ]) {
+      final c = calls.values.where((c) => c.phase == phase).lastOrNull;
+      if (c != null) return c;
+    }
+    return null;
+  }
+
+  /// Le altre chiamate (in attesa o in arrivo durante una conversazione).
+  List<CallEvent> get otherCalls => [
+    for (final c in calls.values)
+      if (c.id != call?.id) c,
+  ];
+
+  DateTime? get callConnectedAt => _meta[call?.id]?.connected;
   bool muted = false;
   String? notice;
 
@@ -484,10 +510,11 @@ class PhoneController extends ChangeNotifier {
 
   // ---------------------------------------------------------------- chiamate
 
-  bool get canDial =>
-      engineError == null &&
-      registration.status == RegistrationStatus.ok &&
-      call == null;
+  bool get _registered =>
+      engineError == null && registration.status == RegistrationStatus.ok;
+
+  /// Nuova chiamata dal campo o dalle schede: solo senza altre chiamate.
+  bool get canDial => _registered && calls.isEmpty;
 
   Future<void> dial(String number) async {
     final n = number.trim();
@@ -495,20 +522,81 @@ class PhoneController extends ChangeNotifier {
     await _engine.dial(n);
   }
 
-  Future<void> answer() => _engine.answer();
-  Future<void> hangup() => _engine.hangup();
-  Future<void> sendDtmf(String d) => _engine.sendDtmf(d);
+  /// Risponde alla chiamata in arrivo; un'eventuale conversazione va in attesa.
+  Future<void> answer([int? id]) async {
+    final target =
+        id ??
+        calls.values
+            .where((c) => c.phase == CallPhase.incoming)
+            .firstOrNull
+            ?.id;
+    if (target == null) return;
+    await _holdOthers(target);
+    await _engine.answer(target);
+  }
 
-  /// Chiamata in attesa messa da noi (non dall'altro capo).
-  bool onHold = false;
+  Future<void> hangup([int? id]) async {
+    final target = id ?? call?.id;
+    if (target != null) await _engine.hangup(target);
+  }
+
+  Future<void> sendDtmf(String d) async {
+    final id = call?.id;
+    if (id != null) await _engine.sendDtmf(id, d);
+  }
+
+  Future<void> _holdOthers(int keep) async {
+    for (final c in calls.values.toList()) {
+      if (c.id != keep && c.phase == CallPhase.active) await _engine.hold(c.id);
+    }
+  }
+
+  /// Chiamata in primo piano messa in attesa da noi o dall'altro capo.
+  bool get onHold => call?.phase == CallPhase.paused;
 
   Future<void> toggleHold() async {
-    onHold = !onHold;
-    await (onHold ? _engine.hold() : _engine.resume());
+    final c = call;
+    if (c == null) return;
+    await (c.phase == CallPhase.paused ? resumeCall(c.id) : _engine.hold(c.id));
+  }
+
+  /// Riprende [id] mettendo in attesa la conversazione attiva (scambio).
+  Future<void> resumeCall(int id) async {
+    await _holdOthers(id);
+    await _engine.resume(id);
+  }
+
+  /// Trasferimento cieco della chiamata in primo piano.
+  Future<void> transfer(String number) async {
+    final id = call?.id;
+    if (id != null) await _engine.transfer(id, number.trim());
+  }
+
+  /// Trasferimento assistito, passo 1: la chiamata va in attesa e si chiama
+  /// [number] per consultarsi.
+  Future<void> consult(String number) async {
+    final from = call;
+    final n = number.trim();
+    if (from == null || n.isEmpty || from.phase != CallPhase.active) return;
+    await _engine.hold(from.id);
+    final to = await _engine.dial(n);
+    if (to == null) return;
+    _consultFrom = from.id;
+    _consultTo = to;
     notifyListeners();
   }
 
-  Future<void> transfer(String number) => _engine.transfer(number.trim());
+  /// Consultazione in corso con l'interlocutore che risponde: si può completare.
+  bool get canCompleteTransfer =>
+      calls.containsKey(_consultFrom) &&
+      calls[_consultTo]?.phase == CallPhase.active;
+
+  /// Trasferimento assistito, passo 2: collega le due chiamate e si esce.
+  Future<void> completeTransfer() async {
+    final from = _consultFrom, to = _consultTo;
+    if (from == null || to == null || !canCompleteTransfer) return;
+    await _engine.transferAttended(from, to);
+  }
 
   Future<void> toggleMute() async {
     muted = !muted;
@@ -543,58 +631,78 @@ class PhoneController extends ChangeNotifier {
 
   void _onCall(CallEvent e) {
     debugPrint(
-      '[drinphone] chiamata ${e.direction.name} ${e.phase.name} ${e.message}',
+      '[drinphone] chiamata ${e.id} ${e.direction.name} ${e.phase.name} ${e.message}',
     );
-    if (call == null && e.phase == CallPhase.incoming) onIncomingCall?.call();
-    if (call == null) {
-      _callStart = DateTime.now();
-      _callAnswered = false;
-    }
-    if (e.phase == CallPhase.active) _callAnswered = true;
+    final isNew = !calls.containsKey(e.id);
+    if (isNew && e.phase == CallPhase.incoming) onIncomingCall?.call();
+    final m =
+        _meta[e.id] ??
+        (start: DateTime.now(), connected: null, answered: false);
     if (e.phase == CallPhase.ended || e.phase == CallPhase.error) {
-      _record(e);
+      _record(e, calls[e.id], m);
       if (e.phase == CallPhase.error) {
         notice = tr('Chiamata non riuscita: {m}', {'m': e.message});
       }
-      call = null;
-      callConnectedAt = null;
-      onHold = false;
-      if (muted) {
+      calls.remove(e.id);
+      _meta.remove(e.id);
+      if (e.id == _consultFrom || e.id == _consultTo) {
+        _consultFrom = null;
+        _consultTo = null;
+      }
+      if (calls.isEmpty && muted) {
         muted = false;
         _engine.setMicMuted(false);
       }
     } else {
-      if (e.phase == CallPhase.active && callConnectedAt == null) {
-        callConnectedAt = DateTime.now();
-      }
-      call = e;
+      final active = e.phase == CallPhase.active;
+      _meta[e.id] = (
+        start: m.start,
+        connected: m.connected ?? (active ? DateTime.now() : null),
+        answered: m.answered || active,
+      );
+      // Il nome remoto arriva solo nei primi eventi: non perderlo dopo.
+      final prev = calls[e.id];
+      calls[e.id] = e.remoteName.isEmpty && prev != null
+          ? CallEvent(
+              id: e.id,
+              phase: e.phase,
+              direction: e.direction,
+              remoteNumber: e.remoteNumber.isNotEmpty
+                  ? e.remoteNumber
+                  : prev.remoteNumber,
+              remoteName: prev.remoteName,
+              message: e.message,
+            )
+          : e;
     }
     notifyListeners();
   }
 
-  void _record(CallEvent e) {
-    final start = _callStart ?? DateTime.now();
-    final connected = callConnectedAt;
+  void _record(
+    CallEvent e,
+    CallEvent? last,
+    ({DateTime start, DateTime? connected, bool answered}) m,
+  ) {
     final number = e.remoteNumber.isNotEmpty
         ? e.remoteNumber
-        : (call?.remoteNumber ?? '');
+        : (last?.remoteNumber ?? '');
     final sipName = e.remoteName.isNotEmpty
         ? e.remoteName
-        : (call?.remoteName ?? '');
+        : (last?.remoteName ?? '');
+    final connected = m.connected;
     history = [
       CallRecord(
         number: number,
         name: sipName.isNotEmpty ? sipName : nameFor(number),
         direction: e.direction,
-        start: start,
+        start: m.start,
         seconds: connected == null
             ? 0
             : DateTime.now().difference(connected).inSeconds,
-        answered: _callAnswered,
+        answered: m.answered,
       ),
       ...history,
     ].take(CallHistoryStore.maxRecords).toList();
-    _callStart = null;
     final store = historyStore;
     final snapshot = history;
     if (store != null) {

@@ -200,7 +200,21 @@ class _CallPanelState extends State<CallPanel> {
               ),
             ],
             const SizedBox(height: 16),
+            if (p.canCompleteTransfer) ...[
+              const SizedBox(height: 10),
+              _bigButton(
+                tr('Completa trasferimento'),
+                c.accent,
+                p.completeTransfer,
+              ),
+            ],
+            const SizedBox(height: 10),
             _bigButton(tr('Riaggancia'), DrinColors.hangupRed, p.hangup),
+          ],
+          // Altre chiamate: in attesa (scambio) o in arrivo (avviso di chiamata).
+          for (final other in p.otherCalls) ...[
+            const SizedBox(height: 12),
+            _OtherCallRow(phone: p, call: other),
           ],
         ],
       ),
@@ -262,9 +276,9 @@ class _TransferDialogState extends State<_TransferDialog> {
     super.dispose();
   }
 
-  void _go(String number) {
+  void _go(String number, {required bool consult}) {
     if (number.trim().isEmpty) return;
-    widget.phone.transfer(number);
+    consult ? widget.phone.consult(number) : widget.phone.transfer(number);
     Navigator.of(context).pop();
   }
 
@@ -285,7 +299,7 @@ class _TransferDialogState extends State<_TransferDialog> {
               controller: _text,
               autofocus: true,
               onChanged: (_) => setState(() {}),
-              onSubmitted: _go,
+              onSubmitted: (v) => _go(v, consult: false),
               style: mono(c.text, size: 15),
               decoration: InputDecoration(
                 prefixIcon: const Icon(Icons.search_rounded, size: 18),
@@ -300,7 +314,7 @@ class _TransferDialogState extends State<_TransferDialog> {
                 title: Text(h.name),
                 subtitle: Text(h.number, style: mono(c.muted, size: 12)),
                 trailing: Icon(Icons.phone_forwarded_rounded, color: c.accent),
-                onTap: () => _go(h.number),
+                onTap: () => setState(() => _text.text = h.number),
               ),
           ],
         ),
@@ -310,11 +324,95 @@ class _TransferDialogState extends State<_TransferDialog> {
           onPressed: () => Navigator.of(context).pop(),
           child: Text(tr('Annulla')),
         ),
-        FilledButton(
-          onPressed: () => _go(_text.text),
-          child: Text(tr('Trasferisci')),
+        // Assistito: prima si parla con il destinatario, poi si completa.
+        OutlinedButton.icon(
+          onPressed: () => _go(_text.text, consult: true),
+          icon: const Icon(Icons.record_voice_over_outlined, size: 18),
+          label: Text(tr('Consulta prima')),
+        ),
+        FilledButton.icon(
+          onPressed: () => _go(_text.text, consult: false),
+          icon: const Icon(Icons.phone_forwarded_rounded, size: 18),
+          label: Text(tr('Trasferisci subito')),
         ),
       ],
+    );
+  }
+}
+
+/// Riga compatta per una chiamata non in primo piano.
+class _OtherCallRow extends StatelessWidget {
+  const _OtherCallRow({required this.phone, required this.call});
+  final PhoneController phone;
+  final CallEvent call;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.drin;
+    final incoming = call.phase == CallPhase.incoming;
+    final name = call.remoteName.isNotEmpty
+        ? call.remoteName
+        : phone.nameFor(call.remoteNumber);
+    return Container(
+      padding: const EdgeInsets.fromLTRB(12, 8, 6, 8),
+      decoration: BoxDecoration(
+        color: c.card,
+        border: Border.all(color: incoming ? c.ringing : c.border),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            incoming ? Icons.ring_volume_rounded : Icons.pause_circle_outline,
+            size: 20,
+            color: incoming ? c.ringing : c.muted,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  name.isNotEmpty ? name : call.remoteNumber,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontWeight: FontWeight.w600, color: c.text),
+                ),
+                Text(
+                  incoming ? tr('In arrivo') : tr('In attesa'),
+                  style: TextStyle(fontSize: 12, color: c.muted),
+                ),
+              ],
+            ),
+          ),
+          if (incoming) ...[
+            IconButton(
+              tooltip: tr('Rispondi (la chiamata attuale va in attesa)'),
+              color: DrinColors.callGreen,
+              onPressed: () => phone.answer(call.id),
+              icon: const Icon(Icons.call_rounded),
+            ),
+            IconButton(
+              tooltip: tr('Rifiuta'),
+              color: DrinColors.hangupRed,
+              onPressed: () => phone.hangup(call.id),
+              icon: const Icon(Icons.call_end_rounded),
+            ),
+          ] else ...[
+            IconButton(
+              tooltip: tr('Riprendi (scambia)'),
+              color: c.accent,
+              onPressed: () => phone.resumeCall(call.id),
+              icon: const Icon(Icons.swap_calls_rounded),
+            ),
+            IconButton(
+              tooltip: tr('Riaggancia'),
+              color: DrinColors.hangupRed,
+              onPressed: () => phone.hangup(call.id),
+              icon: const Icon(Icons.call_end_rounded),
+            ),
+          ],
+        ],
+      ),
     );
   }
 }

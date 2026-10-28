@@ -127,6 +127,12 @@ const en = <String, String>{
   'Tastierino': 'Keypad',
   'Trasporto': 'Transport',
   'Trasferisci': 'Transfer',
+  'Completa trasferimento': 'Complete transfer',
+  'Consulta prima': 'Consult first',
+  'Trasferisci subito': 'Transfer now',
+  'Rispondi (la chiamata attuale va in attesa)':
+      'Answer (current call goes on hold)',
+  'Riprendi (scambia)': 'Resume (swap)',
   'Trasferisci chiamata': 'Transfer call',
   'Attesa': 'Hold',
   'Riprendi': 'Resume',

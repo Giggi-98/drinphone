@@ -69,8 +69,10 @@ class LinphoneFfiEngine implements SipEngine {
   late final DynamicLibrary _lib;
   Pointer<Void> _factory = nullptr;
   Pointer<Void> _core = nullptr;
-  Pointer<Void> _call = nullptr;
-  CallDirection _direction = CallDirection.outgoing;
+  // Chiamate vive per id (= indirizzo dell'oggetto LinphoneCall finché non è Released).
+  final _callPtrs = <int, Pointer<Void>>{};
+  final _directions = <int, CallDirection>{};
+  Pointer<Void> _ptr(int id) => _callPtrs[id] ?? nullptr;
   Timer? _iterate;
   NativeCallable<_RegStateCb>? _regCb;
   NativeCallable<_CallStateCb>? _callCb;
@@ -101,6 +103,9 @@ class LinphoneFfiEngine implements SipEngine {
   late final _transferTo = _lib.lookupFunction<_IntPP, _IntPPDart>(
     'linphone_call_transfer_to',
   );
+  late final _transferToAnother = _lib.lookupFunction<_IntPP, _IntPPDart>(
+    'linphone_call_transfer_to_another',
+  );
   late final _setTransferCb = _lib
       .lookupFunction<
         Void Function(Pointer<Void>, Pointer<NativeFunction<_TransferCb>>),
@@ -115,18 +120,25 @@ class LinphoneFfiEngine implements SipEngine {
   }
 
   @override
-  Future<void> hold() async {
-    if (_call != nullptr) _pause(_call);
+  Future<void> hold(int id) async {
+    if (_ptr(id) != nullptr) _pause(_ptr(id));
   }
 
   @override
-  Future<void> resume() async {
-    if (_call != nullptr) _resume(_call);
+  Future<void> resume(int id) async {
+    if (_ptr(id) != nullptr) _resume(_ptr(id));
   }
 
   @override
-  Future<void> transfer(String number) async {
-    if (_call == nullptr || number.isEmpty) return;
+  Future<void> transferAttended(int id, int toId) async {
+    if (_ptr(id) == nullptr || _ptr(toId) == nullptr) return;
+    if (_transferToAnother(_ptr(id), _ptr(toId)) != 0) _transfers.add(false);
+  }
+
+  @override
+  Future<void> transfer(int id, String number) async {
+    final call = _ptr(id);
+    if (call == nullptr || number.isEmpty) return;
     using((a) {
       final to = _createAddress(
         _factory,
@@ -136,7 +148,7 @@ class LinphoneFfiEngine implements SipEngine {
         _transfers.add(false);
         return;
       }
-      if (_transferTo(_call, to) != 0) _transfers.add(false);
+      if (_transferTo(call, to) != 0) _transfers.add(false);
       _addressUnref(to);
     });
   }
@@ -613,13 +625,16 @@ class LinphoneFfiEngine implements SipEngine {
   }
 
   @override
-  Future<void> dial(String number) async {
-    if (_call != nullptr) return;
+  Future<int?> dial(String number) async {
     // Un numero nudo viene completato dal core con il dominio dell'account predefinito.
     final call = using(
       (a) => _invite(_core, number.toNativeUtf8(allocator: a)),
     );
-    if (call == nullptr) {
+    if (call != nullptr) {
+      _callPtrs.putIfAbsent(call.address, () => call);
+      _directions.putIfAbsent(call.address, () => CallDirection.outgoing);
+      return call.address;
+    } else {
       _calls.add(
         CallEvent(
           phase: CallPhase.error,
@@ -629,16 +644,17 @@ class LinphoneFfiEngine implements SipEngine {
         ),
       );
     }
+    return null;
   }
 
   @override
-  Future<void> answer() async {
-    if (_call != nullptr) _accept(_call);
+  Future<void> answer(int id) async {
+    if (_ptr(id) != nullptr) _accept(_ptr(id));
   }
 
   @override
-  Future<void> hangup() async {
-    if (_call != nullptr) _terminate(_call);
+  Future<void> hangup(int id) async {
+    if (_ptr(id) != nullptr) _terminate(_ptr(id));
   }
 
   @override
@@ -646,9 +662,9 @@ class LinphoneFfiEngine implements SipEngine {
       _enableMic(_core, muted ? 0 : 1);
 
   @override
-  Future<void> sendDtmf(String digit) async {
-    if (_call != nullptr && digit.isNotEmpty) {
-      _sendDtmf(_call, digit.codeUnitAt(0));
+  Future<void> sendDtmf(int id, String digit) async {
+    if (_ptr(id) != nullptr && digit.isNotEmpty) {
+      _sendDtmf(_ptr(id), digit.codeUnitAt(0));
     }
   }
 
@@ -800,17 +816,20 @@ class LinphoneFfiEngine implements SipEngine {
     int state,
     Pointer<Utf8> msg,
   ) {
-    if (_call == nullptr && (state == 1 || state == 3)) {
-      _call = call;
-      _direction = state == 1 ? CallDirection.incoming : CallDirection.outgoing;
-    } else if (call != _call) {
-      // Una sola chiamata alla volta per ora: una seconda in arrivo viene chiusa.
-      if (state == 1) _terminate(call);
-      return;
+    final id = call.address;
+    if (!_callPtrs.containsKey(id)) {
+      if (state == 19) return;
+      // Nuova chiamata: in arrivo (anche durante un'altra = avviso di chiamata)
+      // o in uscita avviata dal core.
+      _callPtrs[id] = call;
+      _directions[id] = state == 1 || state == 2
+          ? CallDirection.incoming
+          : CallDirection.outgoing;
     }
     if (state == 19) {
       // Released: il core libera l'oggetto, il puntatore non è più valido.
-      _call = nullptr;
+      _callPtrs.remove(id);
+      _directions.remove(id);
       return;
     }
     final phase = switch (state) {
@@ -824,8 +843,9 @@ class LinphoneFfiEngine implements SipEngine {
     final remote = _remoteAddress(call);
     _calls.add(
       CallEvent(
+        id: id,
         phase: phase,
-        direction: _direction,
+        direction: _directions[id] ?? CallDirection.outgoing,
         remoteNumber: remote == nullptr ? '' : _str(_addressUsername(remote)),
         remoteName: remote == nullptr ? '' : _str(_addressDisplayName(remote)),
         message: _str(msg),

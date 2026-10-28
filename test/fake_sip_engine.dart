@@ -26,11 +26,15 @@ class FakeSipEngine implements SipEngine {
   @override
   Stream<bool> get transfers => transfersCtl.stream;
   @override
-  Future<void> hold() async => log.add('hold');
+  Future<void> hold(int id) async => log.add('hold $id');
   @override
-  Future<void> resume() async => log.add('resume');
+  Future<void> resume(int id) async => log.add('resume $id');
   @override
-  Future<void> transfer(String number) async => log.add('transfer $number');
+  Future<void> transfer(int id, String number) async =>
+      log.add('transfer $id $number');
+  @override
+  Future<void> transferAttended(int id, int toId) async =>
+      log.add('attended $id $toId');
 
   @override
   Future<void> watchDialogs(Set<String> numbers) async =>
@@ -54,16 +58,22 @@ class FakeSipEngine implements SipEngine {
 
   @override
   Future<void> unregister() async => log.add('unregister');
+  var _nextId = 100;
   @override
-  Future<void> dial(String number) async => log.add('dial $number');
+  Future<int?> dial(String number) async {
+    log.add('dial $number');
+    return _nextId++;
+  }
+
   @override
-  Future<void> answer() async => log.add('answer');
+  Future<void> answer(int id) async => log.add('answer $id');
   @override
-  Future<void> hangup() async => log.add('hangup');
+  Future<void> hangup(int id) async => log.add('hangup $id');
   @override
   Future<void> setMicMuted(bool muted) async => log.add('mute $muted');
   @override
-  Future<void> sendDtmf(String digit) async => log.add('dtmf $digit');
+  Future<void> sendDtmf(int id, String digit) async =>
+      log.add('dtmf $id $digit');
   @override
   Future<void> stop() async => log.add('stop');
 }
