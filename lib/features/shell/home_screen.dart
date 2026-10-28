@@ -477,9 +477,13 @@ class _ExtensionsViewState extends State<_ExtensionsView> {
     number.dispose();
   }
 
+  static bool _hasGroups(PhoneController p) =>
+      p.connections.length > 1 || p.connections.any((x) => x.orgs.isNotEmpty);
+
   String _groupTitle() {
     final g = phone.selectedGroup;
     if (g == null) return tr('Tutti gli interni');
+    if (g == PhoneController.favoritesGroup) return tr('Preferiti');
     final parts = g.split(':');
     final conn = phone.connections.where((c) => c.id == parts[0]).firstOrNull;
     if (conn == null) return tr('Tutti gli interni');
@@ -513,21 +517,40 @@ class _ExtensionsViewState extends State<_ExtensionsView> {
         children: [
           Row(
             children: [
-              Flexible(
-                child: Text(
-                  _groupTitle(),
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: -0.2,
-                    color: c.text,
-                  ),
+              Expanded(
+                child: Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        _groupTitle(),
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: -0.2,
+                          color: c.text,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    CountBadge(list.length),
+                  ],
                 ),
               ),
-              const SizedBox(width: 12),
-              CountBadge(list.length),
-              const Spacer(),
+              // Senza pannello reparti, il filtro Preferiti sta nell'intestazione.
+              if (!_hasGroups(phone))
+                IconButton(
+                  tooltip: tr('Preferiti'),
+                  isSelected:
+                      phone.selectedGroup == PhoneController.favoritesGroup,
+                  onPressed: () => phone.selectGroup(
+                    phone.selectedGroup == PhoneController.favoritesGroup
+                        ? null
+                        : PhoneController.favoritesGroup,
+                  ),
+                  icon: Icon(Icons.star_border_rounded, color: c.muted),
+                  selectedIcon: Icon(Icons.star_rounded, color: c.ringing),
+                ),
               // Aggiunta manuale solo nel contesto "Tutti gli interni".
               if (phone.selectedGroup == null)
                 IconButton.filledTonal(
@@ -571,6 +594,8 @@ class _ExtensionsViewState extends State<_ExtensionsView> {
                             ? phone.blf[e.number]?.status
                             : null,
                         presence: phone.presenceOf(e),
+                        favorite: phone.isFavorite(e),
+                        onFavorite: () => phone.toggleFavorite(e),
                         onCall: () => widget.onCall(e.number),
                         onRemove: phone.isManual(e)
                             ? () => phone.removeExtension(e)
@@ -599,10 +624,7 @@ class _ExtensionsViewState extends State<_ExtensionsView> {
       ),
     );
     // Pannello reparti solo se un PBX li fornisce: di default non c'è (DECISIONS 2026-10-28).
-    final hasGroups =
-        phone.connections.length > 1 ||
-        phone.connections.any((x) => x.orgs.isNotEmpty);
-    if (!hasGroups) return grid;
+    if (!_hasGroups(phone)) return grid;
     return Row(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -614,13 +636,16 @@ class _ExtensionsViewState extends State<_ExtensionsView> {
 }
 
 /// Scheda compatta: avatar (stato linea + presenza), nome, numero, simbolo di chiamata.
-class _ExtensionTile extends StatelessWidget {
+/// La stella dei preferiti compare al passaggio del mouse o se già preferito.
+class _ExtensionTile extends StatefulWidget {
   const _ExtensionTile({
     required this.ext,
     required this.callable,
     required this.canDial,
     required this.blf,
     required this.presence,
+    required this.favorite,
+    required this.onFavorite,
     required this.onCall,
     required this.onRemove,
   });
@@ -629,77 +654,106 @@ class _ExtensionTile extends StatelessWidget {
   final bool canDial;
   final BlfStatus? blf;
   final String presence;
+  final bool favorite;
+  final VoidCallback onFavorite;
   final VoidCallback onCall;
   final VoidCallback? onRemove;
 
   @override
+  State<_ExtensionTile> createState() => _ExtensionTileState();
+}
+
+class _ExtensionTileState extends State<_ExtensionTile> {
+  bool _hover = false;
+
+  @override
   Widget build(BuildContext context) {
     final c = context.drin;
-    return Material(
-      color: c.card,
-      shape: RoundedRectangleBorder(
-        side: BorderSide(color: c.border),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(12),
-        // Doppio clic sulla scheda = chiama, come nei softphone desktop.
-        onDoubleTap: canDial && callable ? onCall : null,
-        onSecondaryTapDown: onRemove == null
-            ? null
-            : (d) => showMenu<void>(
-                context: context,
-                position: RelativeRect.fromLTRB(
-                  d.globalPosition.dx,
-                  d.globalPosition.dy,
-                  d.globalPosition.dx,
-                  d.globalPosition.dy,
-                ),
-                items: [
-                  PopupMenuItem(onTap: onRemove, child: Text(tr('Rimuovi'))),
-                ],
-              ),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12),
-          child: Row(
-            children: [
-              StatusAvatar(name: ext.name, blf: blf, presence: presence),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      ext.name,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontWeight: FontWeight.w600,
-                        color: blf == BlfStatus.offline ? c.muted : c.text,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(ext.number, style: mono(c.muted, size: 12)),
+    final w = widget;
+    final ext = w.ext, blf = w.blf, onRemove = w.onRemove;
+    final callable = w.callable, canDial = w.canDial, onCall = w.onCall;
+    final favorite = w.favorite, onFavorite = w.onFavorite;
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hover = true),
+      onExit: (_) => setState(() => _hover = false),
+      child: Material(
+        color: c.card,
+        shape: RoundedRectangleBorder(
+          side: BorderSide(color: c.border),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          // Doppio clic sulla scheda = chiama, come nei softphone desktop.
+          onDoubleTap: canDial && callable ? onCall : null,
+          onSecondaryTapDown: onRemove == null
+              ? null
+              : (d) => showMenu<void>(
+                  context: context,
+                  position: RelativeRect.fromLTRB(
+                    d.globalPosition.dx,
+                    d.globalPosition.dy,
+                    d.globalPosition.dx,
+                    d.globalPosition.dy,
+                  ),
+                  items: [
+                    PopupMenuItem(onTap: onRemove, child: Text(tr('Rimuovi'))),
                   ],
                 ),
-              ),
-              if (onRemove != null)
-                Tooltip(
-                  message: tr('Inserito a mano · tasto destro per rimuovere'),
-                  child: Icon(
-                    Icons.push_pin_outlined,
-                    size: 14,
-                    color: c.muted,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Row(
+              children: [
+                StatusAvatar(name: ext.name, blf: blf, presence: w.presence),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        ext.name,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontWeight: FontWeight.w600,
+                          color: blf == BlfStatus.offline ? c.muted : c.text,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(ext.number, style: mono(c.muted, size: 12)),
+                    ],
                   ),
                 ),
-              const SizedBox(width: 6),
-              CallIconButton(
-                tooltip: callable
-                    ? tr('Chiama {n}', {'n': ext.number})
-                    : tr('Nessun account SIP su questo PBX'),
-                onPressed: canDial && callable ? onCall : null,
-              ),
-            ],
+                if (onRemove != null)
+                  Tooltip(
+                    message: tr('Inserito a mano · tasto destro per rimuovere'),
+                    child: Icon(
+                      Icons.push_pin_outlined,
+                      size: 14,
+                      color: c.muted,
+                    ),
+                  ),
+                if (favorite || _hover)
+                  IconButton(
+                    tooltip: favorite
+                        ? tr('Togli dai preferiti')
+                        : tr('Aggiungi ai preferiti'),
+                    visualDensity: VisualDensity.compact,
+                    onPressed: onFavorite,
+                    icon: Icon(
+                      favorite ? Icons.star_rounded : Icons.star_border_rounded,
+                      size: 20,
+                      color: favorite ? c.ringing : c.muted,
+                    ),
+                  ),
+                CallIconButton(
+                  tooltip: callable
+                      ? tr('Chiama {n}', {'n': ext.number})
+                      : tr('Nessun account SIP su questo PBX'),
+                  onPressed: canDial && callable ? onCall : null,
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -884,6 +938,43 @@ class _GroupsPanelState extends State<_GroupsPanel> {
     );
   }
 
+  Widget _favoritesRow(DrinColors c) {
+    final on = phone.selectedGroup == PhoneController.favoritesGroup;
+    return Material(
+      color: on ? c.keyBtn : Colors.transparent,
+      borderRadius: BorderRadius.circular(8),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onTap: () => phone.selectGroup(PhoneController.favoritesGroup),
+        child: SizedBox(
+          height: 42,
+          child: Row(
+            children: [
+              const SizedBox(width: 10),
+              Icon(
+                on ? Icons.star_rounded : Icons.star_border_rounded,
+                size: 18,
+                color: c.ringing,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  tr('Preferiti'),
+                  style: TextStyle(
+                    color: on ? c.accent : c.text,
+                    fontWeight: on ? FontWeight.w600 : FontWeight.w400,
+                  ),
+                ),
+              ),
+              _pill(c, phone.favorites.length, on),
+              const SizedBox(width: 8),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final c = context.drin;
@@ -937,6 +1028,8 @@ class _GroupsPanelState extends State<_GroupsPanel> {
               ),
             ),
           ),
+          const SizedBox(height: 2),
+          _favoritesRow(c),
           Padding(
             padding: const EdgeInsets.fromLTRB(10, 14, 2, 6),
             child: Row(

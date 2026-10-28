@@ -77,6 +77,9 @@ spikes/f0a/                         spike F0-A (non prodotto)
   invia NOTIFY fuori dialogo senza `Message-Account` (liblinphone non lo abbina)
   e risponde 500 alla SUBSCRIBE esplicita: lì vale solo l'API. Ascolto = chiamata
   al codice configurabile (default `*2`).
+- **Preferiti** — stella sulle schede (al passaggio del mouse o se attiva), salvati
+  in `settings.json` come `<connessione>:<numero>`; vista "Preferiti" nel pannello
+  reparti o, senza pannello, filtro a stella nell'intestazione.
 - **Lingua** — `tr('testo italiano')` + `l10n_en.dart`; scelta in Impostazioni,
   immediata (rebuild di MaterialApp) e salvata in `settings.json`; un test
   verifica che ogni chiave abbia la traduzione.

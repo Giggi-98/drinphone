@@ -185,4 +185,19 @@ void main() {
     expect(phone.calls, isEmpty);
     expect(phone.history.length, 2);
   });
+
+  test('preferiti: stella, filtro e salvataggio', () async {
+    final sala = phone.allExtensions.firstWhere((e) => e.number == '210');
+    expect(phone.isFavorite(sala), isFalse);
+    await phone.toggleFavorite(sala);
+    expect(phone.isFavorite(sala), isTrue);
+    phone.selectGroup(PhoneController.favoritesGroup);
+    expect(phone.visibleExtensions.map((e) => e.number), ['210']);
+    final saved = await SettingsStore(
+      '${tmp.path}${Platform.pathSeparator}s.json',
+    ).load();
+    expect(saved.favorites, [':210']);
+    await phone.toggleFavorite(sala);
+    expect(phone.visibleExtensions, isEmpty);
+  });
 }

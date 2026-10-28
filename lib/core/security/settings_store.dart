@@ -35,6 +35,7 @@ class Settings {
     this.pbx = const [],
     this.lang = 'it',
     this.voicemailCode = '*2',
+    this.favorites = const [],
   });
   final SipAccount? account;
   final bool debugLog;
@@ -48,6 +49,10 @@ class Settings {
   /// Yeastar P-Series: configurabile, non universale (docs/sip-e-blf.md).
   final String voicemailCode;
 
+  /// Interni preferiti: `<connessione>:<numero>`, connessione vuota per il PBX
+  /// dell'account SIP e per gli interni inseriti a mano.
+  final List<String> favorites;
+
   Settings copyWith({
     SipAccount? account,
     bool clearAccount = false,
@@ -56,6 +61,7 @@ class Settings {
     List<PbxConnectionInfo>? pbx,
     String? lang,
     String? voicemailCode,
+    List<String>? favorites,
   }) => Settings(
     account: clearAccount ? null : (account ?? this.account),
     debugLog: debugLog ?? this.debugLog,
@@ -63,6 +69,7 @@ class Settings {
     pbx: pbx ?? this.pbx,
     lang: lang ?? this.lang,
     voicemailCode: voicemailCode ?? this.voicemailCode,
+    favorites: favorites ?? this.favorites,
   );
 }
 
@@ -102,6 +109,7 @@ class SettingsStore {
       ],
       lang: j['lang'] as String? ?? 'it',
       voicemailCode: j['voicemailCode'] as String? ?? '*2',
+      favorites: [for (final f in (j['favorites'] as List? ?? const [])) '$f'],
       pbx: [
         for (final c in (j['pbx'] as List? ?? const []))
           PbxConnectionInfo(
@@ -134,6 +142,7 @@ class SettingsStore {
         'extensions': [for (final e in s.extensions) e.toJson()],
         'lang': s.lang,
         'voicemailCode': s.voicemailCode,
+        'favorites': s.favorites,
         'pbx': [
           for (final c in s.pbx) {'id': c.id, 'label': c.label},
         ],

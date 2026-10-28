@@ -219,6 +219,7 @@ class PhoneController extends ChangeNotifier {
   }
 
   bool _groupExists(String g) {
+    if (g == favoritesGroup) return true;
     final parts = g.split(':');
     final c = connections.where((c) => c.id == parts[0]).firstOrNull;
     if (c == null) return false;
@@ -377,10 +378,33 @@ class PhoneController extends ChangeNotifier {
   /// Ascolto messaggi: si chiama il codice funzione della casella vocale.
   Future<void> callVoicemail() => dial(settings.voicemailCode);
 
+  /// Chiave di gruppo per la vista Preferiti.
+  static const favoritesGroup = '*favorites';
+
+  String _favKey(Extension e) {
+    final primary = primaryConnection?.id;
+    final src = e.source.isEmpty || e.source == primary ? '' : e.source;
+    return '$src:${e.number}';
+  }
+
+  bool isFavorite(Extension e) => settings.favorites.contains(_favKey(e));
+
+  List<Extension> get favorites => allExtensions.where(isFavorite).toList();
+
+  Future<void> toggleFavorite(Extension e) async {
+    final key = _favKey(e);
+    final favs = [...settings.favorites];
+    favs.contains(key) ? favs.remove(key) : favs.add(key);
+    settings = settings.copyWith(favorites: favs);
+    await _store.save(settings);
+    notifyListeners();
+  }
+
   /// Interni della griglia secondo il gruppo selezionato.
   List<Extension> get visibleExtensions {
     final g = selectedGroup;
     if (g == null) return allExtensions;
+    if (g == favoritesGroup) return favorites;
     final parts = g.split(':');
     final c = connections.where((c) => c.id == parts[0]).firstOrNull;
     if (c == null) return allExtensions;
