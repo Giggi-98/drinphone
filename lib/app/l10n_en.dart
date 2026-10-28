@@ -1,6 +1,26 @@
 // Traduzioni inglesi. Chiave = testo italiano esatto usato in tr().
 // Una chiave mancante mostra l'italiano: aggiungerla qui.
 const en = <String, String>{
+  'Eventi in tempo reale: collegamento…': 'Real-time events: connecting…',
+  'Eventi non disponibili ({e}), nuovo tentativo':
+      'Events unavailable ({e}), retrying',
+  'Eventi in tempo reale: riconnessione…': 'Real-time events: reconnecting…',
+  'Eventi in tempo reale attivi': 'Real-time events active',
+  'Eventi rifiutati dal PBX (errcode {c})':
+      'Events refused by the PBX (errcode {c})',
+  'Eventi in tempo reale (WebSocket)': 'Real-time events (WebSocket)',
+  'Presenza e stato chiamate istantanei': 'Instant presence and call status',
+  'Principale': 'Primary',
+  'Registrati {n}/{t}': 'Registered {n}/{t}',
+  'nessun PBX collegato': 'no linked PBX',
+  'Modifica': 'Edit',
+  'Aggiungi account': 'Add account',
+  'Il primo account è il principale. Ogni account chiama e segue in BLF gli interni del PBX collegato.': 'The first account is the primary one. Each account calls and monitors (BLF) the extensions of its linked PBX.',
+  'Salva': 'Save',
+  'PBX collegato': 'Linked PBX',
+  'I suoi interni si chiamano con questo account':
+      'Its extensions are called with this account',
+  'Automatico (stesso host)': 'Automatic (same host)',
   'Accesso amministrativo al PBX: cifrate su questo PC per il tuo utente Windows, mai mostrate né scritte nei log.': 'Administrative access to the PBX: encrypted on this PC for your Windows user, never shown or written to logs.',
   'Account SIP': 'SIP account',
   'Aggiungi': 'Add',

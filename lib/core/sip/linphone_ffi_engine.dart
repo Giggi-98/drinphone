@@ -56,6 +56,12 @@ typedef _VoidPP = Void Function(Pointer<Void>, Pointer<Void>);
 typedef _VoidPPDart = void Function(Pointer<Void>, Pointer<Void>);
 typedef _PP = Pointer<Void> Function(Pointer<Void>);
 typedef _PS = Pointer<Utf8> Function(Pointer<Void>);
+typedef _PPP = Pointer<Void> Function(Pointer<Void>, Pointer<Void>);
+typedef _PPPP = Pointer<Void> Function(
+  Pointer<Void>,
+  Pointer<Void>,
+  Pointer<Void>,
+);
 
 class LinphoneFfiEngine implements SipEngine {
   final _registrations = StreamController<RegistrationEvent>.broadcast();
@@ -78,7 +84,9 @@ class LinphoneFfiEngine implements SipEngine {
   NativeCallable<_CallStateCb>? _callCb;
   NativeCallable<_NotifyCb>? _notifyCb;
   NativeCallable<_SubStateCb>? _subStateCb;
-  String _host = '';
+  // Account registrati: id -> LinphoneAccount (ref tenuta finché registrati).
+  final _accounts = <String, Pointer<Void>>{};
+  final _accountHosts = <String, String>{};
   // BLF: subscription per interno (LinphoneEvent* posseduto da noi) e stato dialog.
   final _subs = <String, Pointer<Void>>{};
   final _subTrackers = <String, DialogInfoTracker>{};
@@ -93,6 +101,19 @@ class LinphoneFfiEngine implements SipEngine {
   Stream<VoicemailEvent> get voicemail => _voicemail.stream;
   @override
   Stream<bool> get transfers => _transfers.stream;
+
+  late final _createCallParams = _lib.lookupFunction<_PPP, _PPP>(
+    'linphone_core_create_call_params',
+  );
+  late final _callParamsSetAccount = _lib.lookupFunction<_VoidPP, _VoidPPDart>(
+    'linphone_call_params_set_account',
+  );
+  late final _callParamsUnref = _lib.lookupFunction<_VoidP, _VoidPDart>(
+    'linphone_call_params_unref',
+  );
+  late final _inviteWithParams = _lib.lookupFunction<_PPPP, _PPPP>(
+    'linphone_core_invite_address_with_params',
+  );
 
   late final _pause = _lib.lookupFunction<_IntP, _IntPDart>(
     'linphone_call_pause',
@@ -119,6 +140,24 @@ class LinphoneFfiEngine implements SipEngine {
     if (state == 13) _transfers.add(false);
   }
 
+  late final _callGetParams = _lib.lookupFunction<_PP, _PP>(
+    'linphone_call_get_params',
+  );
+  late final _callParamsGetAccount = _lib.lookupFunction<_PP, _PP>(
+    'linphone_call_params_get_account',
+  );
+
+  /// Host dell'account su cui viaggia la chiamata (multi-account), o del
+  /// predefinito.
+  String _hostOfCall(Pointer<Void> call) {
+    final params = _callGetParams(call);
+    final acc = params == nullptr ? nullptr : _callParamsGetAccount(params);
+    for (final e in _accounts.entries) {
+      if (e.value == acc) return _accountHosts[e.key] ?? '';
+    }
+    return _accountHosts.values.firstOrNull ?? '';
+  }
+
   @override
   Future<void> hold(int id) async {
     if (_ptr(id) != nullptr) _pause(_ptr(id));
@@ -142,7 +181,7 @@ class LinphoneFfiEngine implements SipEngine {
     using((a) {
       final to = _createAddress(
         _factory,
-        'sip:$number@$_host'.toNativeUtf8(allocator: a),
+        'sip:$number@${_hostOfCall(call)}'.toNativeUtf8(allocator: a),
       );
       if (to == nullptr) {
         _transfers.add(false);
@@ -555,81 +594,99 @@ class LinphoneFfiEngine implements SipEngine {
   }
 
   @override
-  Future<void> register(SipAccount account) async {
+  Future<void> setAccounts(List<SipAccount> accounts) async {
     _dropSubscriptions();
     _clearAccounts(_core);
     _clearAuthInfo(_core);
-    using((a) {
-      final host = account.domain.split(':').first;
-      _host = host;
-      final auth = _createAuthInfo(
-        _factory,
-        account.username.toNativeUtf8(allocator: a),
-        nullptr,
-        account.password.toNativeUtf8(allocator: a),
-        nullptr,
-        nullptr,
-        host.toNativeUtf8(allocator: a),
-      );
-      _addAuthInfo(_core, auth);
-      _authInfoUnref(auth);
-
-      final identity = _createAddress(
-        _factory,
-        'sip:${account.username}@$host'.toNativeUtf8(allocator: a),
-      );
-      if (identity == nullptr) {
-        throw ArgumentError('Utente o dominio SIP non valido');
-      }
-      if (account.displayName.isNotEmpty) {
-        _addressSetDisplayName(
-          identity,
-          account.displayName.toNativeUtf8(allocator: a),
-        );
-      }
-      final server = _createAddress(
-        _factory,
-        'sip:${account.domain}'.toNativeUtf8(allocator: a),
-      );
-      if (server == nullptr) {
-        _addressUnref(identity);
-        throw ArgumentError('Server SIP non valido');
-      }
-      final params = _createParams(_core);
-      _setIdentity(params, identity);
-      _setServer(params, server);
-      // LinphoneTransportType: Udp 0, Tcp 1, Tls 2 (types.h).
-      _setTransport(params, account.transport.index);
-      _enableRegister(params, 1);
-      final acc = _createAccount(_core, params);
-      // Casella vocale: il PBX invia NOTIFY message-summary sull'account.
-      _mwiCb ??= NativeCallable<_MwiCb>.isolateLocal(_onMwi);
-      final accCbs = _createAccountCbs(_factory);
-      _setMwiCb(accCbs, _mwiCb!.nativeFunction);
-      _accountAddCbs(acc, accCbs);
-      _accountCbsUnref(accCbs);
-      _addAccount(_core, acc);
-      _setDefault(_core, acc);
+    for (final acc in _accounts.values) {
       _accountUnref(acc);
-      _paramsUnref(params);
-      _addressUnref(server);
-      _addressUnref(identity);
-    });
+    }
+    _accounts.clear();
+    _accountHosts.clear();
+    for (final account in accounts) {
+      final acc = _addSipAccount(account);
+      _accounts[account.id] = acc;
+      _accountHosts[account.id] = account.host;
+      if (account == accounts.first) _setDefault(_core, acc);
+    }
   }
 
-  @override
-  Future<void> unregister() async {
-    _dropSubscriptions();
-    _clearAccounts(_core);
-    _clearAuthInfo(_core);
-  }
-
-  @override
-  Future<int?> dial(String number) async {
-    // Un numero nudo viene completato dal core con il dominio dell'account predefinito.
-    final call = using(
-      (a) => _invite(_core, number.toNativeUtf8(allocator: a)),
+  Pointer<Void> _addSipAccount(SipAccount account) => using((a) {
+    final host = account.host;
+    final auth = _createAuthInfo(
+      _factory,
+      account.username.toNativeUtf8(allocator: a),
+      nullptr,
+      account.password.toNativeUtf8(allocator: a),
+      nullptr,
+      nullptr,
+      host.toNativeUtf8(allocator: a),
     );
+    _addAuthInfo(_core, auth);
+    _authInfoUnref(auth);
+
+    final identity = _createAddress(
+      _factory,
+      'sip:${account.username}@$host'.toNativeUtf8(allocator: a),
+    );
+    if (identity == nullptr) {
+      throw ArgumentError('Utente o dominio SIP non valido');
+    }
+    if (account.displayName.isNotEmpty) {
+      _addressSetDisplayName(
+        identity,
+        account.displayName.toNativeUtf8(allocator: a),
+      );
+    }
+    final server = _createAddress(
+      _factory,
+      'sip:${account.domain}'.toNativeUtf8(allocator: a),
+    );
+    if (server == nullptr) {
+      _addressUnref(identity);
+      throw ArgumentError('Server SIP non valido');
+    }
+    final params = _createParams(_core);
+    _setIdentity(params, identity);
+    _setServer(params, server);
+    // LinphoneTransportType: Udp 0, Tcp 1, Tls 2 (types.h).
+    _setTransport(params, account.transport.index);
+    _enableRegister(params, 1);
+    final acc = _createAccount(_core, params);
+    // Casella vocale: il PBX invia NOTIFY message-summary sull'account.
+    _mwiCb ??= NativeCallable<_MwiCb>.isolateLocal(_onMwi);
+    final accCbs = _createAccountCbs(_factory);
+    _setMwiCb(accCbs, _mwiCb!.nativeFunction);
+    _accountAddCbs(acc, accCbs);
+    _accountCbsUnref(accCbs);
+    _addAccount(_core, acc);
+    _paramsUnref(params);
+    _addressUnref(server);
+    _addressUnref(identity);
+    return acc; // ref di createAccount: rilasciata alla prossima setAccounts
+  });
+
+  @override
+  Future<int?> dial(String number, {String? accountId}) async {
+    final acc = accountId == null ? null : _accounts[accountId];
+    final call = acc == null
+        // Numero nudo: il core lo completa con il dominio dell'account predefinito.
+        ? using((a) => _invite(_core, number.toNativeUtf8(allocator: a)))
+        : using((a) {
+            // Account esplicito (multi-PBX): indirizzo sul suo host e parametri
+            // di chiamata legati a quell'account.
+            final uri = number.contains('@')
+                ? 'sip:$number'
+                : 'sip:$number@${_accountHosts[accountId]}';
+            final to = _createAddress(_factory, uri.toNativeUtf8(allocator: a));
+            if (to == nullptr) return nullptr;
+            final params = _createCallParams(_core, nullptr);
+            _callParamsSetAccount(params, acc);
+            final c = _inviteWithParams(_core, to, params);
+            _callParamsUnref(params);
+            _addressUnref(to);
+            return c;
+          });
     if (call != nullptr) {
       _callPtrs.putIfAbsent(call.address, () => call);
       _directions.putIfAbsent(call.address, () => CallDirection.outgoing);
@@ -669,15 +726,15 @@ class LinphoneFfiEngine implements SipEngine {
   }
 
   @override
-  Future<void> watchDialogs(Set<String> numbers) async {
-    for (final n in _subs.keys.where((n) => !numbers.contains(n)).toList()) {
+  Future<void> watchDialogs(Set<String> targets) async {
+    for (final n in _subs.keys.where((n) => !targets.contains(n)).toList()) {
       _dropSubscription(n);
     }
-    for (final n in numbers.where((n) => !_subs.containsKey(n))) {
+    for (final n in targets.where((n) => !_subs.containsKey(n))) {
       final ev = using((a) {
         final addr = _createAddress(
           _factory,
-          'sip:$n@$_host'.toNativeUtf8(allocator: a),
+          'sip:$n'.toNativeUtf8(allocator: a),
         );
         if (addr == nullptr) return nullptr;
         // 600 s richiesti; il PBX può accorciarli, il core rinnova da solo.
@@ -776,6 +833,10 @@ class LinphoneFfiEngine implements SipEngine {
     _iterate?.cancel();
     if (_core != nullptr) {
       _dropSubscriptions();
+      for (final acc in _accounts.values) {
+        _accountUnref(acc);
+      }
+      _accounts.clear();
       _stop(_core);
       _coreUnref(_core);
       _core = nullptr;
@@ -804,8 +865,13 @@ class LinphoneFfiEngine implements SipEngine {
       4: RegistrationStatus.failed,
       5: RegistrationStatus.ok,
     };
+    final id = _accounts.entries
+        .where((e) => e.value == account)
+        .map((e) => e.key)
+        .firstOrNull;
+    if (id == null) return; // account già rimosso (es. un-REGISTER del vecchio)
     _registrations.add(
-      RegistrationEvent(map[state] ?? RegistrationStatus.none, _str(msg)),
+      RegistrationEvent(map[state] ?? RegistrationStatus.none, _str(msg), id),
     );
   }
 

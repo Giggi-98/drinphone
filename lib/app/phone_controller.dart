@@ -84,9 +84,14 @@ class PhoneController extends ChangeNotifier {
   Settings settings = const Settings();
   String engineVersion = '';
   String? engineError;
-  RegistrationEvent registration = const RegistrationEvent(
-    RegistrationStatus.none,
-  );
+
+  /// Stato di registrazione per account.
+  final registrations = <String, RegistrationEvent>{};
+
+  /// Registrazione dell'account principale (chip in alto).
+  RegistrationEvent get registration =>
+      registrations[settings.account?.id] ??
+      const RegistrationEvent(RegistrationStatus.none);
 
   /// Chiamate in corso per id, in ordine di inizio.
   final calls = <int, CallEvent>{};
@@ -150,8 +155,9 @@ class PhoneController extends ChangeNotifier {
         debug: settings.debugLog,
       );
       debugPrint('[drinphone] motore liblinphone $engineVersion avviato');
-      final account = settings.account;
-      if (account != null) await _engine.register(account);
+      if (settings.accounts.isNotEmpty) {
+        await _engine.setAccounts(settings.accounts);
+      }
     } catch (e) {
       engineError = '$e';
       debugPrint('[drinphone] avvio motore fallito: $e');
@@ -175,7 +181,7 @@ class PhoneController extends ChangeNotifier {
       await _store.save(settings);
     }
     for (final i in infos) {
-      connections.add(_newConnection(i.id, i.label));
+      connections.add(_newConnection(i.id, i.label)..realtime = i.realtime);
     }
     _assignVoicemail();
     for (final c in connections) {
@@ -258,6 +264,13 @@ class PhoneController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Interruttore "Eventi in tempo reale" di una connessione (salvato).
+  Future<void> setRealtime(PbxConnection c, bool on) async {
+    c.setRealtime(on);
+    await _saveConnectionList();
+    notifyListeners();
+  }
+
   Future<void> removeConnection(PbxConnection c) async {
     await c.forget();
     connections.remove(c);
@@ -269,7 +282,10 @@ class PhoneController extends ChangeNotifier {
 
   Future<void> _saveConnectionList() async {
     settings = settings.copyWith(
-      pbx: [for (final c in connections) PbxConnectionInfo(c.id, c.label)],
+      pbx: [
+        for (final c in connections)
+          PbxConnectionInfo(c.id, c.label, realtime: c.realtime),
+      ],
     );
     await _store.save(settings);
   }
@@ -286,9 +302,49 @@ class PhoneController extends ChangeNotifier {
   /// possono chiamare e osservare in BLF. Se il nome host non coincide (API via
   /// IP, SIP via FQDN) e c'è una sola connessione, si assume quella.
   PbxConnection? get primaryConnection {
-    final sipHost = settings.account?.domain.split(':').first;
-    return connections.where((c) => c.host == sipHost).firstOrNull ??
-        (connections.length == 1 ? connections.first : null);
+    final a = settings.account;
+    return a == null ? null : connectionOf(a);
+  }
+
+  /// PBX di un account: quello scelto nelle impostazioni, altrimenti quello con
+  /// lo stesso host, altrimenti (solo per il principale) l'unica connessione.
+  PbxConnection? connectionOf(SipAccount a) =>
+      connections.where((c) => c.id == a.pbxId).firstOrNull ??
+      connections.where((c) => c.host == a.host).firstOrNull ??
+      (a == settings.account && connections.length == 1
+          ? connections.first
+          : null);
+
+  /// Account SIP con cui chiamare gli interni di una connessione PBX.
+  SipAccount? accountForConnection(String connectionId) {
+    for (final a in settings.accounts) {
+      if (connectionOf(a)?.id == connectionId) return a;
+    }
+    return null;
+  }
+
+  /// Account per un interno: manuali sul principale, gli altri sul loro PBX.
+  SipAccount? accountFor(Extension e) =>
+      e.source.isEmpty ? settings.account : accountForConnection(e.source);
+
+  bool _isRegistered(SipAccount? a) =>
+      a != null && registrations[a.id]?.status == RegistrationStatus.ok;
+
+  /// Chiave BLF di un interno: `numero@host` dell'account che lo osserva.
+  String? _blfKey(Extension e) {
+    final a = accountFor(e);
+    return a == null ? null : '${e.number}@${a.host}';
+  }
+
+  /// Stato linea: BLF SIP, altrimenti stato chiamata dagli eventi API (30008).
+  BlfStatus? blfOf(Extension e) {
+    final k = _blfKey(e);
+    final sip = k == null ? null : blf[k]?.status;
+    if (sip != null && sip != BlfStatus.unknown) return sip;
+    final c = e.source.isEmpty
+        ? primaryConnection
+        : connections.where((x) => x.id == e.source).firstOrNull;
+    return c?.callStatus[e.number] ?? sip;
   }
 
   String get apiSummary {
@@ -321,8 +377,7 @@ class PhoneController extends ChangeNotifier {
   }
 
   /// Chiamabile solo se è sul PBX dell'account SIP (o inserito a mano).
-  bool isCallable(Extension e) =>
-      e.source.isEmpty || e.source == primaryConnection?.id;
+  bool isCallable(Extension e) => accountFor(e) != null;
 
   /// Risultati per il popup di ricerca: interni, poi contatti della rubrica.
   /// Prima le corrispondenze a inizio parola o numero.
@@ -427,8 +482,13 @@ class PhoneController extends ChangeNotifier {
   /// Interni mostrati: manuali, poi quelli di ogni PBX; senza il proprio.
   /// Un interno manuale e uno del PBX principale con lo stesso numero sono lo stesso.
   List<Extension> get allExtensions {
-    final own = settings.account?.username;
     final primaryId = primaryConnection?.id;
+    // Il proprio interno su ciascun PBX non compare nella griglia.
+    bool isOwn(Extension e) {
+      final a = accountFor(e);
+      return a != null && a.username == e.number;
+    }
+
     final seen = <String>{};
     String key(Extension e) =>
         '${e.source.isEmpty || e.source == primaryId ? '' : e.source}:${e.number}';
@@ -443,7 +503,7 @@ class PhoneController extends ChangeNotifier {
               source: c.id,
             ),
       ])
-        if (!(isCallable(e) && e.number == own) && seen.add(key(e))) e,
+        if (!isOwn(e) && seen.add(key(e))) e,
     ];
   }
 
@@ -491,19 +551,38 @@ class PhoneController extends ChangeNotifier {
 
   // ---------------------------------------------------------------- account
 
-  Future<void> saveAccount(SipAccount account, {required bool debugLog}) async {
-    settings = settings.copyWith(account: account, debugLog: debugLog);
+  /// Aggiunge o sostituisce (stesso id) un account SIP e riregistra tutti.
+  Future<void> saveAccount(SipAccount account) async {
+    final list = [...settings.accounts];
+    final i = list.indexWhere((a) => a.id == account.id);
+    i >= 0 ? list[i] = account : list.add(account);
+    await _applyAccounts(list);
+  }
+
+  Future<void> removeAccount(String id) =>
+      _applyAccounts(settings.accounts.where((a) => a.id != id).toList());
+
+  Future<void> setDebugLog(bool on) async {
+    settings = settings.copyWith(debugLog: on);
     await _store.save(settings);
-    _assignVoicemail();
-    if (engineError == null) await _engine.register(account);
     notifyListeners();
   }
 
-  Future<void> removeAccount() async {
-    settings = settings.copyWith(clearAccount: true);
+  /// Nuovo id per un account aggiunto (il primo resta `main`).
+  String newAccountId() => settings.accounts.isEmpty
+      ? 'main'
+      : List.generate(
+          8,
+          (_) => Random.secure().nextInt(16).toRadixString(16),
+        ).join();
+
+  Future<void> _applyAccounts(List<SipAccount> list) async {
+    settings = settings.copyWith(accounts: list);
     await _store.save(settings);
-    if (engineError == null) await _engine.unregister();
-    registration = const RegistrationEvent(RegistrationStatus.none);
+    registrations.removeWhere((id, _) => !list.any((a) => a.id == id));
+    blf.clear();
+    _assignVoicemail();
+    if (engineError == null) await _engine.setAccounts(list);
     notifyListeners();
   }
 
@@ -520,30 +599,38 @@ class PhoneController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Interni in BLF: solo quelli con l'account del loro PBX registrato.
   Set<String> get _watched => {
-    for (final e in allExtensions.where(isCallable).take(maxBlf)) e.number,
+    for (final e
+        in allExtensions
+            .where((e) => _isRegistered(accountFor(e)))
+            .take(maxBlf))
+      _blfKey(e)!,
   };
 
   Future<void> _syncDialogs() async {
     final watched = _watched;
     blf.removeWhere((n, _) => !watched.contains(n));
-    if (engineError == null && registration.status == RegistrationStatus.ok) {
-      await _engine.watchDialogs(watched);
-    }
+    if (engineError == null) await _engine.watchDialogs(watched);
   }
 
   // ---------------------------------------------------------------- chiamate
 
   bool get _registered =>
-      engineError == null && registration.status == RegistrationStatus.ok;
+      engineError == null && settings.accounts.any(_isRegistered);
 
   /// Nuova chiamata dal campo o dalle schede: solo senza altre chiamate.
   bool get canDial => _registered && calls.isEmpty;
 
-  Future<void> dial(String number) async {
+  /// Chiama [number]; con [via] (un interno) usa l'account del suo PBX.
+  Future<void> dial(String number, {Extension? via}) async {
     final n = number.trim();
     if (n.isEmpty || !canDial) return;
-    await _engine.dial(n);
+    final a = via == null ? null : accountFor(via);
+    await _engine.dial(
+      n,
+      accountId: a == null || a == settings.account ? null : a.id,
+    );
   }
 
   /// Risponde alla chiamata in arrivo; un'eventuale conversazione va in attesa.
@@ -634,15 +721,22 @@ class PhoneController extends ChangeNotifier {
   }
 
   void _onRegistration(RegistrationEvent e) {
-    debugPrint('[drinphone] registrazione ${e.status.name} ${e.message}');
-    final wasOk = registration.status == RegistrationStatus.ok;
-    registration = e;
+    debugPrint(
+      '[drinphone] registrazione ${e.accountId} ${e.status.name} ${e.message}',
+    );
+    final wasOk = registrations[e.accountId]?.status == RegistrationStatus.ok;
+    registrations[e.accountId] = e;
     if (e.status == RegistrationStatus.ok) {
-      _engine.watchDialogs(_watched);
+      _syncDialogs();
       // Rete tornata dopo una caduta: riallinea anche i dati dal PBX.
       if (!wasOk) resync(force: false);
     } else {
-      blf.clear();
+      // Stato linea non più affidabile per gli interni di quell'account.
+      final host = settings.accounts
+          .where((a) => a.id == e.accountId)
+          .firstOrNull
+          ?.host;
+      blf.removeWhere((k, _) => host != null && k.endsWith('@$host'));
     }
     notifyListeners();
   }

@@ -5,6 +5,8 @@ enum SipTransport { udp, tcp, tls }
 
 class SipAccount {
   const SipAccount({
+    this.id = 'main',
+    this.pbxId = '',
     required this.username,
     required this.password,
     required this.domain,
@@ -12,8 +14,15 @@ class SipAccount {
     this.displayName = '',
   });
 
+  /// Identificativo locale dell'account (il primo è `main`).
+  final String id;
+
+  /// Connessione API del PBX su cui è registrato ('' = nessuna).
+  final String pbxId;
   final String username;
   final String password;
+
+  String get host => domain.split(':').first;
 
   /// Host del PBX, opzionalmente con porta: `pbx.example.it` o `10.0.0.5:5060`.
   final String domain;
@@ -28,9 +37,14 @@ class SipAccount {
 enum RegistrationStatus { none, progress, ok, cleared, failed }
 
 class RegistrationEvent {
-  const RegistrationEvent(this.status, [this.message = '']);
+  const RegistrationEvent(
+    this.status, [
+    this.message = '',
+    this.accountId = 'main',
+  ]);
   final RegistrationStatus status;
   final String message;
+  final String accountId;
 }
 
 enum CallDirection { incoming, outgoing }
@@ -92,11 +106,14 @@ abstract class SipEngine {
     required String logDir,
     required bool debug,
   });
-  Future<void> register(SipAccount account);
-  Future<void> unregister();
 
-  /// Avvia una chiamata; restituisce il suo id (null se non partita).
-  Future<int?> dial(String number);
+  /// Registra esattamente questi account (gli altri vengono rimossi). Il primo
+  /// è quello predefinito.
+  Future<void> setAccounts(List<SipAccount> accounts);
+
+  /// Avvia una chiamata tramite l'account [accountId] (null = predefinito);
+  /// restituisce il suo id (null se non partita).
+  Future<int?> dial(String number, {String? accountId});
   Future<void> answer(int id);
   Future<void> hangup(int id);
   Future<void> setMicMuted(bool muted);
@@ -114,9 +131,9 @@ abstract class SipEngine {
   Future<void> transferAttended(int id, int toId);
 
   /// Sostituisce l'insieme degli interni osservati via SUBSCRIBE `dialog`.
-  /// Va chiamato a registrazione avvenuta; le subscription non più presenti
-  /// vengono chiuse.
-  Future<void> watchDialogs(Set<String> numbers);
+  /// Ogni voce è `interno@host`: il core la instrada sull'account di quel host.
+  /// Le subscription non più presenti vengono chiuse.
+  Future<void> watchDialogs(Set<String> targets);
 
   Future<void> stop();
 }

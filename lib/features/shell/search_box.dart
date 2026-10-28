@@ -73,7 +73,13 @@ class _SearchBoxState extends State<SearchBox> {
     }
     if (i < _hits.length) {
       final h = _hits[i];
-      if (h.extension == null || p.isCallable(h.extension!)) _call(h.number);
+      final e = h.extension;
+      if (e == null) return _call(h.number);
+      if (!p.isCallable(e)) return;
+      // Interno: tramite l'account SIP del suo PBX.
+      p.dial(h.number, via: e);
+      _text.clear();
+      _changed('');
     }
   }
 
@@ -205,7 +211,7 @@ class _SearchBoxState extends State<SearchBox> {
                 i++,
                 StatusAvatar(
                   name: e.name,
-                  blf: p.isCallable(e) ? p.blf[e.number]?.status : null,
+                  blf: p.blfOf(e),
                   presence: p.presenceOf(e),
                 ),
                 e.name,

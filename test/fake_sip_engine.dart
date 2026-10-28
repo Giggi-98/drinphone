@@ -50,18 +50,20 @@ class FakeSipEngine implements SipEngine {
     return 'fake';
   }
 
+  List<SipAccount> accounts = [];
   @override
-  Future<void> register(SipAccount account) async {
-    registered = account;
-    log.add('register ${account.username}@${account.domain}');
+  Future<void> setAccounts(List<SipAccount> list) async {
+    accounts = list;
+    registered = list.firstOrNull;
+    log.add(
+      'accounts ${[for (final a in list) '${a.username}@${a.domain}'].join(',')}',
+    );
   }
 
-  @override
-  Future<void> unregister() async => log.add('unregister');
   var _nextId = 100;
   @override
-  Future<int?> dial(String number) async {
-    log.add('dial $number');
+  Future<int?> dial(String number, {String? accountId}) async {
+    log.add(accountId == null ? 'dial $number' : 'dial $number via $accountId');
     return _nextId++;
   }
 

@@ -142,7 +142,27 @@ class _ConnectionTile extends StatelessWidget {
               color: conn.ok ? c.okText : c.busyText,
             ),
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 4),
+          // Richiede su PBX: Integrations > API > Advanced Settings >
+          // Extension Status Monitor (Call Status, Presence Status).
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            dense: true,
+            value: conn.realtime,
+            onChanged: (v) => phone.setRealtime(conn, v),
+            secondary: Icon(
+              Icons.bolt_rounded,
+              color: conn.eventsConnected ? c.ok : c.muted,
+            ),
+            title: Text(tr('Eventi in tempo reale (WebSocket)')),
+            subtitle: Text(
+              conn.realtime && conn.eventsStatus.isNotEmpty
+                  ? conn.eventsStatus
+                  : tr('Presenza e stato chiamate istantanei'),
+              style: TextStyle(fontSize: 12, color: c.muted),
+            ),
+          ),
+          const SizedBox(height: 6),
           Wrap(
             spacing: 8,
             runSpacing: 6,

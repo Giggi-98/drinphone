@@ -104,7 +104,23 @@ class YeastarApi {
   String? _accessToken;
   String? _refreshToken;
   Timer? _refreshTimer;
-  static const _userAgent = 'DrinPhone/0.1.0';
+  static const userAgent = 'DrinPhone/0.1.0';
+  static const _userAgent = userAgent;
+
+  /// Chiamato a ogni nuovo token (rilascio o rinnovo): chi usa il WebSocket
+  /// eventi si ricollega con il token nuovo.
+  void Function()? onTokens;
+
+  /// URL del WebSocket eventi (`wss://…/openapi/v1.0/subscribe?access_token=…`).
+  /// Contiene il token: MAI nei log o nei messaggi d'errore.
+  Uri eventsUri() {
+    final base = Uri.parse(_creds.baseUrl);
+    return base.replace(
+      scheme: base.scheme == 'https' ? 'wss' : 'ws',
+      path: '${base.path}/openapi/v1.0/subscribe'.replaceAll('//', '/'),
+      queryParameters: {'access_token': _accessToken ?? ''},
+    );
+  }
 
   Uri _uri(String endpoint, [Map<String, String> query = const {}]) {
     final base = Uri.parse(_creds.baseUrl);
@@ -159,6 +175,7 @@ class YeastarApi {
       Duration(seconds: ttl > 600 ? ttl - 300 : ttl ~/ 2),
       _refresh,
     );
+    onTokens?.call();
   }
 
   bool get connected => _accessToken != null;

@@ -21,11 +21,27 @@ class FakePbx {
   final requests = <HttpRequest>[];
   final bodies = <String>[];
 
+  /// Ultimo WebSocket eventi aperto dal client e messaggi ricevuti.
+  WebSocket? events;
+  final eventMessages = <String>[];
+
   String get baseUrl => 'http://127.0.0.1:${server.port}';
 
   Future<void> start() async {
     server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     server.listen((req) async {
+      if (req.uri.path == '/openapi/v1.0/subscribe' &&
+          WebSocketTransformer.isUpgradeRequest(req)) {
+        final ws = await WebSocketTransformer.upgrade(req);
+        events = ws;
+        ws.listen((m) {
+          eventMessages.add('$m');
+          if ('$m'.contains('topic_list')) {
+            ws.add(jsonEncode({'errcode': 0, 'errmsg': 'SUCCESS'}));
+          }
+        });
+        return;
+      }
       requests.add(req);
       final body = await utf8.decoder.bind(req).join();
       bodies.add(body);
@@ -250,11 +266,9 @@ void main() {
     final settings = SettingsStore('${tmp.path}${sep}s.json');
     await settings.save(
       Settings(
-        account: const SipAccount(
-          username: '305',
-          password: 'p',
-          domain: '127.0.0.1',
-        ),
+        accounts: const [
+          SipAccount(username: '305', password: 'p', domain: '127.0.0.1'),
+        ],
         extensions: const [
           Extension('Manuale', '400'),
           Extension('Doppione', '301'),
@@ -311,7 +325,11 @@ void main() {
       engine.registrationsCtl.add(
         const RegistrationEvent(RegistrationStatus.ok),
       );
-      expect(engine.watched, {'400', '301', '350'});
+      expect(engine.watched, {
+        '400@127.0.0.1',
+        '301@127.0.0.1',
+        '350@127.0.0.1',
+      });
       await phone.shutdown();
       expect(pbx.requests.last.uri.path, '/openapi/v1.0/del_token');
     },
@@ -366,7 +384,11 @@ void main() {
         const RegistrationEvent(RegistrationStatus.ok),
       );
       // BLF solo per manuali + PBX dell'account (numeri, senza il proprio 305).
-      expect(engine.watched, {'400', '301', '350'});
+      expect(engine.watched, {
+        '400@127.0.0.1',
+        '301@127.0.0.1',
+        '350@127.0.0.1',
+      });
       await phone.shutdown();
       await other.server.close(force: true);
     },
@@ -403,4 +425,50 @@ void main() {
     expect(saved.extensions.single.number, '400');
     await phone.shutdown();
   }, skip: !Platform.isWindows);
+
+  test(
+    'eventi WebSocket: sottoscrizione, stato chiamata 30008, presenza 30009',
+    () async {
+      final phone = await controllerWith(FakeSipEngine(), {'a': pbx.baseUrl});
+      final conn = phone.connections.single;
+      await phone.setRealtime(conn, true);
+      for (var i = 0; i < 50 && pbx.eventMessages.isEmpty; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+      }
+      expect(jsonDecode(pbx.eventMessages.first)['topic_list'], [
+        30007,
+        30008,
+        30009,
+        30022,
+      ]);
+      pbx.events!.add(
+        jsonEncode({
+          'type': 30008,
+          'sn': 'X',
+          'msg': jsonEncode({'extension': '301', 'status': 'Ringing'}),
+        }),
+      );
+      pbx.events!.add(
+        jsonEncode({
+          'type': 30009,
+          'msg': {'extension': '350', 'presence_status': 'do_not_disturb'},
+        }),
+      );
+      for (var i = 0; i < 50 && conn.callStatus.isEmpty; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      expect(conn.eventsConnected, isTrue);
+      expect(conn.eventsStatus, 'Eventi in tempo reale attivi');
+      expect(conn.callStatus['301'], BlfStatus.ringing);
+      final jack = phone.allExtensions.firstWhere((e) => e.number == '350');
+      expect(phone.presenceOf(jack), 'do_not_disturb');
+      // Il token resta solo nell'URL del WebSocket, mai nello stato mostrato.
+      expect(conn.eventsStatus, isNot(contains('AT1')));
+      await phone.setRealtime(conn, false);
+      expect(conn.eventsConnected, isFalse);
+      await phone.shutdown();
+    },
+    skip: !Platform.isWindows,
+  );
 }

@@ -42,7 +42,8 @@ void main() {
   test(
     'la password va nello storage sicuro, non nel file impostazioni',
     () async {
-      await phone.saveAccount(_account, debugLog: true);
+      await phone.saveAccount(_account);
+      await phone.setDebugLog(true);
       final json = await File(store.path).readAsString();
       expect(json, isNot(contains(_account.password)));
       expect(json, contains('pbx.test'));
@@ -58,6 +59,7 @@ void main() {
   });
 
   test('si compone solo da registrato e senza chiamate in corso', () async {
+    await phone.saveAccount(_account);
     await phone.dial('202');
     expect(engine.log, isNot(contains('dial 202')));
 
@@ -93,6 +95,7 @@ void main() {
   });
 
   test('errore di chiamata produce un avviso e resetta il muto', () async {
+    await phone.saveAccount(_account);
     engine.registrationsCtl.add(const RegistrationEvent(RegistrationStatus.ok));
     engine.callsCtl.add(
       const CallEvent(
@@ -118,15 +121,16 @@ void main() {
   test(
     'BLF: sottoscrive gli interni da registrato, sconosciuto se cade',
     () async {
+      await phone.saveAccount(_account);
       await phone.addExtension(const Extension('Paolo', '301'));
-      expect(engine.watched, isEmpty);
+      expect(engine.watched, isEmpty); // account non ancora registrato
       engine.registrationsCtl.add(
         const RegistrationEvent(RegistrationStatus.ok),
       );
-      expect(engine.watched, {'301'});
+      expect(engine.watched, {'301@pbx.test'});
 
-      engine.dialogsCtl.add(const BlfEvent('301', BlfStatus.busy));
-      expect(phone.blf['301']!.status, BlfStatus.busy);
+      engine.dialogsCtl.add(const BlfEvent('301@pbx.test', BlfStatus.busy));
+      expect(phone.blfOf(phone.settings.extensions.first), BlfStatus.busy);
 
       engine.registrationsCtl.add(
         const RegistrationEvent(RegistrationStatus.failed),
@@ -137,9 +141,9 @@ void main() {
         const RegistrationEvent(RegistrationStatus.ok),
       );
       await phone.addExtension(const Extension('Sala', '300'));
-      expect(engine.watched, {'301', '300'});
+      expect(engine.watched, {'301@pbx.test', '300@pbx.test'});
       await phone.removeExtension(phone.settings.extensions.first);
-      expect(engine.watched, {'300'});
+      expect(engine.watched, {'300@pbx.test'});
     },
   );
 
@@ -163,4 +167,32 @@ void main() {
     await tester.tap(find.text('Rispondi'));
     expect(engine.log, contains('answer 0'));
   });
+
+  test(
+    'più account: password separate, chiamata via account del PBX',
+    () async {
+      const second = SipAccount(
+        id: 'b2',
+        username: '401',
+        password: 'altra!',
+        domain: 'pbx2.test',
+      );
+      await phone.saveAccount(_account);
+      await phone.saveAccount(second);
+      expect(engine.accounts.map((a) => a.id), ['main', 'b2']);
+      final reloaded = await store.load();
+      expect(reloaded.accounts.map((a) => a.password), ['s3greta!', 'altra!']);
+      expect(await File(store.path).readAsString(), isNot(contains('altra!')));
+
+      engine.registrationsCtl.add(
+        const RegistrationEvent(RegistrationStatus.ok, '', 'b2'),
+      );
+      // Interno manuale = PBX principale: si chiama senza account esplicito.
+      await phone.dial('300', via: const Extension('Sala', '300'));
+      expect(engine.log.last, 'dial 300');
+
+      await phone.removeAccount('b2');
+      expect((await store.load()).accounts.single.id, 'main');
+    },
+  );
 }

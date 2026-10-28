@@ -6,6 +6,23 @@ aggiungi una voce nuova in cima che cita la vecchia. Il campo chiave è
 
 ---
 
+## 2026-10-28 · Multi-account SIP ed eventi WebSocket (aggiorna "Multi-PBX e sincronizzazione dati API")
+**Scelta:** più account SIP registrati insieme, ognuno collegato a una connessione
+PBX (scelta esplicita o stesso host). Gli interni di un PBX si chiamano e vanno in
+BLF tramite il suo account: chiamata con `linphone_call_params_set_account`, BLF
+con risorsa `interno@host` (il core la instrada sull'account di quel dominio, DA
+VALIDARE sul secondo PBX). Eventi API in tempo reale per connessione, attivabili
+dall'utente: WebSocket `subscribe` con 30007/30008/30009/30022, heartbeat 30 s,
+riconnessione con backoff; con eventi attivi la lettura periodica scende a 5 min.
+30008 fa da stato linea dove manca il BLF SIP.
+**Supera:** "gli interni di un PBX senza account SIP non si chiamano" della voce
+"Multi-PBX e sincronizzazione" (resta vero solo se quel PBX non ha un account).
+**Da rivedere se:** il core non instrada le SUBSCRIBE sull'account giusto (allora
+`linphone_core_create_subscribe_2` per account), o i payload 30009/30007 reali
+differiscono da quelli assunti (chiavi `extension` / `presence_status`).
+
+---
+
 ## 2026-10-28 · Multi-PBX e sincronizzazione dati API
 **Scelta:** ogni PBX è una `PbxConnection` indipendente (credenziali DPAPI proprie,
 token, ciclo di sync). Sync a **polling adattivo**: interni+presenza ogni 60 s,

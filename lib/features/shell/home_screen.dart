@@ -173,12 +173,26 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _topBar(DrinColors c) {
     final reg = p.registration;
-    final (dot, label) = switch (reg.status) {
+    var (dot, label) = switch (reg.status) {
       RegistrationStatus.ok => (c.ok, tr('Registrato')),
       RegistrationStatus.progress => (c.ringing, tr('Registrazione…')),
       RegistrationStatus.failed => (c.busy, tr('Errore registrazione')),
       _ => (c.muted, tr('Non registrato')),
     };
+    // Più account: riepilogo "Registrati 2/3", dettaglio nel tooltip.
+    final accounts = p.settings.accounts;
+    var tooltip = reg.message;
+    if (accounts.length > 1) {
+      bool ok(SipAccount a) =>
+          p.registrations[a.id]?.status == RegistrationStatus.ok;
+      final n = accounts.where(ok).length;
+      label = tr('Registrati {n}/{t}', {'n': n, 't': accounts.length});
+      dot = n == accounts.length ? c.ok : (n == 0 ? c.busy : c.ringing);
+      tooltip = [
+        for (final a in accounts)
+          '${a.username}@${a.domain}: ${p.registrations[a.id]?.status.name ?? '-'}',
+      ].join('\n');
+    }
     final account = p.settings.account;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
@@ -189,7 +203,7 @@ class _HomeScreenState extends State<HomeScreen> {
       child: Row(
         children: [
           Tooltip(
-            message: reg.message,
+            message: tooltip,
             child: Container(
               height: 36,
               padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -590,13 +604,12 @@ class _ExtensionsViewState extends State<_ExtensionsView> {
                         ext: e,
                         callable: phone.isCallable(e),
                         canDial: phone.canDial,
-                        blf: phone.isCallable(e)
-                            ? phone.blf[e.number]?.status
-                            : null,
+                        blf: phone.blfOf(e),
                         presence: phone.presenceOf(e),
                         favorite: phone.isFavorite(e),
                         onFavorite: () => phone.toggleFavorite(e),
-                        onCall: () => widget.onCall(e.number),
+                        // Tramite l'account SIP del PBX dell'interno.
+                        onCall: () => phone.dial(e.number, via: e),
                         onRemove: phone.isManual(e)
                             ? () => phone.removeExtension(e)
                             : null,
