@@ -4,35 +4,77 @@
 > (CLAUDE.md §6). Descrivi cosa c'è, non cosa vorresti.
 
 ## 1. Sintesi
-Softphone Flutter multipiattaforma. Motore: liblinphone. Nucleo SIP standard +
-strato Yeastar P-Series opzionale. *(da espandere)*
+Softphone Flutter. Motore: liblinphone (linphone-sdk 5.5.39) via `dart:ffi`.
+Piattaforma pilota: **Windows desktop** (DECISIONS 2026-10-28). Nucleo SIP
+standard; strato Yeastar non ancora presente. UI: proposta D (struttura a pannelli).
+
+Stato: `IMPLEMENTATO` = codice presente e compilato; `DA VALIDARE` = non ancora
+provato contro un PBX reale con audio nei due versi (CLAUDE.md §5).
 
 ## 2. Albero del progetto
-`lib/`, `android/`, `ios/`, `linux/`, `windows/`, `macos/`, `test/`, `docs/`.
-*(dettaglia i moduli di `lib/` man mano)*
+```
+lib/main.dart                       bootstrap: AppPaths -> PhoneController -> HomeScreen
+lib/app/phone_controller.dart       stato UI (registrazione, chiamata, impostazioni)
+lib/app/theme.dart                  palette D chiaro/scuro (DrinColors)
+lib/core/app_paths.dart             cartelle dati: %APPDATA%\Econnet\DrinPhone
+lib/core/sip/sip_engine.dart        porta astratta SipEngine + tipi neutri
+lib/core/sip/linphone_ffi_engine.dart  unico adattatore liblinphone (FFI, API C)
+lib/core/security/settings_store.dart  impostazioni JSON + password in storage sicuro
+lib/features/shell/home_screen.dart barra sezioni, barra composizione, griglia interni
+lib/features/call/                  pannello chiamata, tastierino (anche DTMF)
+lib/features/account/               dialogo account SIP
+test/                               controller e UI con FakeSipEngine
+windows/                            runner Flutter; CMake installa l'SDK accanto all'exe
+tool/fetch_linphone_sdk.ps1         scarica SDK in third_party/ (non versionato)
+spikes/f0a/                         spike F0-A (non prodotto)
+```
 
-## 3. Moduli (da riempire)
-- **SIP core** — wrapper su liblinphone: account, registrazione, chiamate, media.
-- **Macchina a stati chiamata** — idle / in uscita / squilla / attiva / in attesa / chiusa.
-- **Push** — ricezione chiamate ad app chiusa (gateway + APNs/FCM). *(F4)*
-- **Storage sicuro** — credenziali SIP e token.
-- **Strato Yeastar** — client API P-Series, isolato dal nucleo SIP. *(F6)*
-- **Update** — lettura manifest, auto-update desktop, rimando store mobile. *(F7)*
-- **UI/State** — gestione stato (es. Riverpod/Bloc), schermate.
+## 3. Moduli
+- **SipEngine** (`IMPLEMENTATO`; REGISTER, uscente, entrante e audio bidirezionale
+  `VERIFICATO` su Windows contro Yeastar via RAS/TCP, `docs/test/2026-10-28-windows-yeastar-ras.md`;
+  resto `DA VALIDARE`) — interfaccia: start, register,
+  unregister, dial, answer, hangup, mute, DTMF; eventi `RegistrationEvent` e
+  `CallEvent`. La UI non vede tipi liblinphone.
+- **LinphoneFfiEngine** — core creato con config `NULL` (nessun `linphonerc`),
+  `iterate()` ogni 20 ms da timer Dart: tutti i callback sul thread UI. Porte SIP
+  locali casuali, video disattivato. Una chiamata alla volta: una seconda in arrivo
+  viene chiusa.
+- **Macchina a stati chiamata** — `CallPhase`: incoming / outgoing / active /
+  paused / ended / error, mappata dagli stati `LinphoneCallState`; `Released` libera
+  il puntatore. Hold/transfer: F3.
+- **SettingsStore** — `settings.json` (utente, dominio, trasporto, interni, flag
+  debug) + password in `flutter_secure_storage`.
+- **UI** — `ChangeNotifier` senza librerie di stato. Sezioni: Interni (lista locale,
+  stato BLF "Sconosciuto" finché F3 non c'è), Impostazioni (account). Gruppi: assenti.
+- **Push / Yeastar / Update** — non implementati (F4 / F6 / F7).
 
-## 4. Flussi (da riempire)
-- Registrazione account → PBX.
-- Chiamata uscente / entrante (con e senza app in foreground).
-- Risveglio da push → CallKit/ConnectionService → risposta.
-- Controllo aggiornamenti all'avvio.
+## 4. Flussi
+- **Avvio**: `AppPaths` -> `SettingsStore.load()` -> `engine.start(dataDir, logDir,
+  debug)` -> se c'è un account `engine.register()`.
+- **Registrazione**: dialogo account -> `saveAccount` (password nello storage
+  sicuro) -> `clear_accounts` + `auth_info` + `account_params` (server =
+  `sip:<dominio>`, trasporto UDP/TCP/TLS) -> evento registrazione -> chip in alto.
+- **Uscente**: campo/scheda -> `dial(numero)` -> `linphone_core_invite` (numero
+  completato col dominio dell'account) -> eventi -> `CallPanel`.
+- **Entrante**: callback `IncomingReceived` -> `CallPanel` con Rispondi/Rifiuta.
+- **Log di debug**: flag nelle impostazioni, attivo al prossimo avvio:
+  `linphone_logging_service` a livello Debug su `logs/linphone.log` (rotazione 10 MB).
 
 ## 5. Dipendenze
-Flutter/Dart, linphone-sdk (plugin Flutter), flutter_secure_storage,
-(push/callkeep da definire), client HTTP per lo strato Yeastar. *(elenca le versioni reali)*
+Flutter 3.47.8 / Dart 3.13.7; `ffi` ^2.2.0; `flutter_secure_storage` ^11.2.0
+(Windows: richiede componente VS "C++ ATL"); linphone-sdk-win64 5.5.39 (GPLv3 /
+commerciale, `docs/licenze-e-compliance.md`). Toolchain: VS 2022 Build Tools 17.14
+(C++ + ATL), Windows SDK 10.0.26100.
 
 ## 6. Punti di attenzione
-Qui vanno fragilità, vincoli, trappole. (Es. push ad app chiusa, NAT/RTP,
-vincolo build iOS/Mac.)
+- Il core cerca grammatiche belr e plugin WASAPI sotto `<exe>\linphone\`; senza
+  quei file abort o nessuna scheda audio (F0-A punti 2 e 6).
+- Log di debug = messaggi SIP completi (numeri, header Authorization digest). Non
+  contengono la password in chiaro ma vanno trattati come dati personali.
+- Il log su file è bufferizzato: con kill del processo le ultime righe si perdono.
+- Nessun STUN/ICE configurato: audio unidirezionale probabile dietro NAT (F2).
+- TLS: CA di `share/linphone/rootca.pem` dell'SDK; nessun pinning.
+- Una sola istanza: due avvii contemporanei condividerebbero DB e log.
 
 ## 7. Architettura target (PROPOSTA, non implementata)
 ```
@@ -48,7 +90,7 @@ UI Flutter (Dialer/Call/Contacts/BLF/Settings/Diagnostics)
          [futuro backend Econnet: provisioning, privileged API broker, push gateway]
 ```
 
-**Non implementato:** nessuno dei moduli descritti sopra è codice esistente nel bootstrap. I nomi sono contratti di progetto, non API reali del SDK.
+**Stato:** `SipEngine`, adattatore liblinphone, storage sicuro e UI base esistono (sezioni 2–4); `BlfService`, `ContactsService`, `PbxCapabilities`, provider Yeastar, push e updater sono ancora solo proposta.
 
 ### Confini e regole di dipendenza
 - `SipEngine` è porta astratta; un solo adattatore incapsula la SDK nativa; non esporre i tipi liblinphone alla UI.

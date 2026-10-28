@@ -1,0 +1,33 @@
+libEGL warning: DRI3 error: Could not get DRI3 device
+libEGL warning: Ensure your X server supports DRI3 to get accelerated rendering
+
+(it.drin.drinphone_f0a_probe:163): Atk-CRITICAL **: 10:30:39.953: atk_socket_embed: assertion 'plug_id != NULL' failed
+[IMPORTANT:flutter/shell/platform/embedder/embedder_surface_gl_impeller.cc(126)] Using the Impeller rendering backend (OpenGLESSDF).
+The Dart VM service is listening on http://127.0.0.1:44181/YEdm1-_hrOk=/
+
+** (it.drin.drinphone_f0a_probe:163): CRITICAL **: 10:30:40.425: void fl_gnome_settings_set_interface_settings(FlGnomeSettings *, GSettings *): assertion 'G_IS_SETTINGS(settings)' failed
+2026-10-28 10:30:40:627 liblinphone-error- Could not find a suitable soundcard with capabilities : 2
+2026-10-28 10:30:40:627 liblinphone-error- Could not find a suitable soundcard with capabilities : 1
+2026-10-28 10:30:40:627 liblinphone-error- Could not find a suitable soundcard with capabilities : 2
+2026-10-28 10:30:40:628 liblinphone-error- Could not find a suitable soundcard with capabilities : 2
+2026-10-28 10:30:40:628 liblinphone-warning- No ringtone has been defined in sound config, using default one
+2026-10-28 10:30:40:681 liblinphone-warning- nothing to migrate, skipping...
+F0A EVENT global state=1 msg=Starting up
+F0A INIT version=5.5.36
+F0A EVENT global state=4 msg=Configuring
+F0A REGISTER_REQUESTED domain=127.0.0.1:5999
+F0A EVENT global state=2 msg=On
+F0A EVENT registration state=1 msg=Registration in progress
+2026-10-28 10:30:41:014 belle-sip-error- Connection failed  for fd [29]: cause [Connection refused]
+2026-10-28 10:30:41:014 belle-sip-error- Cannot connect to [TCP://127.0.0.1:5999]
+F0A EVENT registration state=4 msg=io error
+2026-10-28 10:30:41:071 belle-sip-error- Connection failed  for fd [29]: cause [Connection refused]
+2026-10-28 10:30:41:072 belle-sip-error- Cannot connect to [TCP://127.0.0.1:5999]
+2026-10-28 10:30:52:864 belle-sip-error- Connection failed  for fd [29]: cause [Connection refused]
+2026-10-28 10:30:52:864 belle-sip-error- Cannot connect to [TCP://127.0.0.1:5999]
+2026-10-28 10:30:52:966 liblinphone-warning- Unable to get valid core instance.
+F0A EVENT global state=3 msg=Shutdown
+F0A EVENT registration state=0 msg=io error
+F0A EVENT global state=0 msg=Off
+F0A DESTROYED
+F0A DONE

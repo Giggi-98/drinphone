@@ -35,3 +35,15 @@ Leggi `START-HERE.md` e `AGENTS.md`. Esegui **solo F0-A (spike SDK)** prima di i
 - `docs/aggiornamenti-e-distribuzione.md`: release firmate, update.
 - `docs/operativita-agenti.md`: workflow e task pronti da dare all'agente.
 - `docs/fonti.md`: riferimenti e punti da riconfermare.
+
+## Avvio rapido (Windows, piattaforma pilota)
+Prerequisiti: Flutter 3.47.8 stable, Visual Studio 2022 Build Tools con
+"Desktop development with C++" + componente "C++ ATL".
+```powershell
+powershell -File tool/fetch_linphone_sdk.ps1   # linphone-sdk-win64 5.5.39 in third_party/
+flutter test
+flutter run -d windows
+```
+Account SIP: Impostazioni → Account SIP. "Log di debug del motore SIP" (dal
+prossimo avvio) scrive `%APPDATA%\Econnet\DrinPhone\logs\linphone.log`.
+Stato reale e limiti: `ARCHITECTURE.md`, `docs/spikes/F0-A.md`.

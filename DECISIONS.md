@@ -6,6 +6,35 @@ aggiungi una voce nuova in cima che cita la vecchia. Il campo chiave è
 
 ---
 
+## 2026-10-28 · UI desktop: proposta D (struttura a pannelli) e gruppi interni opzionali
+**Scelta:** grafica desktop = proposta "D · Struttura a pannelli" (barra sezioni,
+griglia di schede interni con stato BLF, barra con composizione e tastierino a
+comparsa). Ispirata alla *struttura* di Linkus Desktop; logo, palette, icone e
+tipografia sono propri. Esclusi: videoconferenza, video, chat, pannello operatore,
+console call center. Canvas: https://claude.ai/artifact/NPEZ2hdFBTfgWNkFH99tHp
+**Gruppi:** il pannello gruppi **non c'è di default** (solo "Tutti" / "Preferiti").
+Compare se (a) l'utente crea gruppi personali, salvati localmente, oppure (b) il
+provider Yeastar fornisce l'organigramma, in sola lettura. Endpoint Yeastar per
+reparti/organizzazioni **DA VALIDARE** sulla documentazione OpenAPI per edition.
+**Scartato:** albero organizzativo fisso e obbligatorio (non esiste su PBX SIP generici).
+**Da rivedere se:** i clienti pilota chiedono gruppi condivisi gestiti centralmente
+(allora servirebbe provisioning/backend).
+
+---
+
+## 2026-10-28 · Piattaforma pilota: Windows desktop (integra "F2 — piattaforma pilota: Android")
+**Scelta:** su indicazione di Luigi, la prima vertical slice si fa su **Windows desktop**;
+Android segue. Bridge: `dart:ffi` sull'API C di liblinphone con l'**SDK ufficiale
+`linphone-sdk-win64`** (5.5.39), lo stesso bridge già provato su Linux.
+**Scartate (per ora):** Android come pilota (richiede dispositivo e push F4 prima di
+essere utile); plugin Flutter di terze parti (nessuno copre Windows).
+**Perché:** la workstation di sviluppo è Windows, l'SDK Windows è ufficiale e completo
+(DLL, header, plugin WASAPI) e lo spike F0-A lo ha inizializzato senza ripieghi.
+**Da rivedere se:** la licenza commerciale Belledonne non copre Windows desktop, o
+il primo cliente pilota è solo mobile.
+
+---
+
 ## 2026-10-26 · Framework: Flutter
 **Scelta:** un unico codebase Flutter per Android, iOS, Windows, macOS, Linux.
 **Scartate:** React Native (binding liblinphone comunitari/deboli),

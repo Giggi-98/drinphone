@@ -22,3 +22,15 @@ macos/Pods/
 secrets/
 # Sistema
 .DS_Store
+
+# Spike F0-A: binari upstream scaricati (non versionati)
+spikes/f0a/vendor/
+
+# linphone-sdk scaricato da tool/fetch_linphone_sdk.ps1 (non versionato)
+/third_party/
+
+# Screenshot e catture locali nella root (possono contenere dati personali)
+/*.png
+/*.jpg
+# Log temporanei
+*.tmp.log
