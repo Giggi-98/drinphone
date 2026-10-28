@@ -19,14 +19,12 @@ avvio sul pilota con il file della versione precedente (registrazione e API OK).
 | Contatti personali in chiaro | ACCETTATO | Scelta di Luigi (JSON come il registro, protetto dall'account Windows); dati personali di terzi: non nei log, non inviati fuori dal PC |
 | Import da file | OK | Parser senza esecuzione di contenuti: CSV e vCard letti come testo, nessuna espansione o URL seguito; righe senza numero e fax scartati; file scelto dall'utente |
 | Cambio profilo durante una chiamata | OK | Rifiutato (`switchProfile`/`createProfile` restituiscono false con chiamate attive) |
-
 | Cache dati PBX su disco | OK | Cifrata DPAPI (`DpapiBox`, entropia segreto + sale per file); test: nomi di interni e contatti assenti dal file; cancellata con la connessione o il profilo; scrittura atomica (temporaneo + rinomina) |
 | Stati BLF dopo il cambio profilo | OK | Solo in memoria, mostrati come "da confermare"; mai su disco |
 
 ## Riscontri
 - **confirmed**: nessuno.
 
-## Da validare
-- Al cambio profilo gli account lasciati vengono rimossi dal core (`clear_accounts`):
-  verificare sul PBX che parta l'un-REGISTER (altrimenti restano registrati fino
-  alla scadenza).
+## Verificato sul pilota
+- Al cambio profilo gli account lasciati fanno l'un-REGISTER (`Expires: 0`, stato
+  Ok → Cleared) e le sottoscrizioni BLF vengono chiuse (log del 2026-10-28 17:45).
