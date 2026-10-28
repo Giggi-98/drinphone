@@ -50,7 +50,13 @@ spikes/f0a/                         spike F0-A (non prodotto)
   `<state>unregister</state>` di Yeastar -> `offline` (Non registrato).
   Subscription terminata o rifiutata: stato sconosciuto con motivo, ritentata al
   rinnovo REGISTER successivo. Registrazione caduta: tutto sconosciuto.
-- **Yeastar OpenAPI** (`IMPLEMENTATO`, `DA VALIDARE` sul PBX) — `YeastarApi`
+- **Connessioni PBX** (`IMPLEMENTATO`) — `PbxConnection` (`lib/core/pbx/pbx_connection.dart`),
+  una per PBX, elenco id/etichetta in `settings.json`, credenziali in
+  `yeastar-api[-<id>].dpapi` (`default` = file della versione singola, migrato).
+  Sync adattiva (DECISIONS "Multi-PBX e sincronizzazione"); "Sincronizza ora"
+  per connessione o globale. PBX dell'account SIP = host uguale al dominio SIP
+  (o unica connessione): solo i suoi interni sono chiamabili e in BLF.
+- **Yeastar OpenAPI** (`IMPLEMENTATO`, verificato sul pilota) — `YeastarApi`
   (`lib/core/pbx/`): `get_token` con Client ID/Secret, refresh a 25 min, `del_token`
   all'uscita, `extension/list` paginato e `organization/list` (reparti), riletti
   ogni 60 s per la presenza. Interni del PBX uniti a quelli manuali

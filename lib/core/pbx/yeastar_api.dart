@@ -40,11 +40,15 @@ class PbxExtension {
 class PbxOrg {
   const PbxOrg({
     required this.id,
+    this.parentId = 0,
     required this.name,
     required this.depth,
     required this.extIds,
   });
   final int id;
+
+  /// 0 = radice.
+  final int parentId;
   final String name;
   final int depth;
   final Set<int> extIds;
@@ -112,6 +116,8 @@ class YeastarApi {
     );
   }
 
+  bool get connected => _accessToken != null;
+
   Future<void> connect() async {
     final j = await _call('get_token', 'POST', _uri('get_token'), {
       'username': _creds.clientId,
@@ -128,8 +134,14 @@ class YeastarApi {
       _takeTokens(j);
     } on Object {
       // Refresh scaduto o rifiutato: un solo nuovo get_token, niente loop
-      // (limite 8 token per app e blocco IP sui fallimenti).
-      await connect();
+      // (limite 8 token per app e blocco IP sui fallimenti). Se fallisce anche
+      // quello, il token resta assente e la prossima sincronizzazione riprova.
+      _accessToken = null;
+      try {
+        await connect();
+      } on Object {
+        _refreshToken = null;
+      }
     }
   }
 
@@ -174,11 +186,13 @@ class YeastarApi {
       _uri('organization/list', {'is_all': '1'}),
     );
     final out = <PbxOrg>[];
-    void walk(List<dynamic> nodes, int depth) {
+    void walk(List<dynamic> nodes, int depth, int parent) {
       for (final n in nodes.cast<Map<String, dynamic>>()) {
+        final id = (n['id'] as num?)?.toInt() ?? 0;
         out.add(
           PbxOrg(
-            id: (n['id'] as num?)?.toInt() ?? 0,
+            id: id,
+            parentId: parent,
             name: '${n['name'] ?? ''}',
             depth: depth,
             extIds: {
@@ -187,11 +201,11 @@ class YeastarApi {
             },
           ),
         );
-        walk(n['children'] as List? ?? const [], depth + 1);
+        walk(n['children'] as List? ?? const [], depth + 1, id);
       }
     }
 
-    walk(j['organization_list'] as List? ?? const [], 0);
+    walk(j['organization_list'] as List? ?? const [], 0, 0);
     return out;
   }
 

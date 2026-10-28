@@ -19,8 +19,8 @@ Future<void> main() async {
     engineDataDir: paths.engineData,
     logDir: paths.logs,
     // DPAPI esiste solo su Windows: altrove niente integrazione API per ora.
-    apiStore: Platform.isWindows
-        ? ApiCredentialStore(paths.apiCredentialsFile)
+    apiStoreFor: Platform.isWindows
+        ? (id) => ApiCredentialStore(paths.apiCredentialsFileFor(id))
         : null,
   );
   await phone.init();

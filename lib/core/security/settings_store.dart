@@ -6,13 +6,25 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../sip/sip_engine.dart';
 
 class Extension {
-  const Extension(this.name, this.number);
+  const Extension(this.name, this.number, {this.source = ''});
   final String name;
   final String number;
+
+  /// '' = inserito a mano; altrimenti l'id della connessione PBX da cui arriva.
+  /// Solo gli interni manuali vengono salvati.
+  final String source;
 
   Map<String, String> toJson() => {'name': name, 'number': number};
   static Extension fromJson(Map<String, dynamic> j) =>
       Extension(j['name'] as String? ?? '', j['number'] as String? ?? '');
+}
+
+/// Connessione API a un PBX: solo dati non segreti. Le credenziali stanno nel
+/// file DPAPI della connessione (ApiCredentialStore).
+class PbxConnectionInfo {
+  const PbxConnectionInfo(this.id, this.label);
+  final String id;
+  final String label;
 }
 
 class Settings {
@@ -20,10 +32,25 @@ class Settings {
     this.account,
     this.debugLog = false,
     this.extensions = const [],
+    this.pbx = const [],
   });
   final SipAccount? account;
   final bool debugLog;
   final List<Extension> extensions;
+  final List<PbxConnectionInfo> pbx;
+
+  Settings copyWith({
+    SipAccount? account,
+    bool clearAccount = false,
+    bool? debugLog,
+    List<Extension>? extensions,
+    List<PbxConnectionInfo>? pbx,
+  }) => Settings(
+    account: clearAccount ? null : (account ?? this.account),
+    debugLog: debugLog ?? this.debugLog,
+    extensions: extensions ?? this.extensions,
+    pbx: pbx ?? this.pbx,
+  );
 }
 
 /// Impostazioni in chiaro su file JSON; la password SIP SOLO nello storage
@@ -60,6 +87,13 @@ class SettingsStore {
         for (final e in (j['extensions'] as List? ?? const []))
           Extension.fromJson(e as Map<String, dynamic>),
       ],
+      pbx: [
+        for (final c in (j['pbx'] as List? ?? const []))
+          PbxConnectionInfo(
+            (c as Map<String, dynamic>)['id'] as String,
+            c['label'] as String? ?? 'PBX',
+          ),
+      ],
     );
   }
 
@@ -83,6 +117,9 @@ class SettingsStore {
           },
         'debugLog': s.debugLog,
         'extensions': [for (final e in s.extensions) e.toJson()],
+        'pbx': [
+          for (final c in s.pbx) {'id': c.id, 'label': c.label},
+        ],
       }),
     );
   }

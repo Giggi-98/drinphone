@@ -1,7 +1,9 @@
 import 'dart:async';
+import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 
+import '../core/pbx/pbx_connection.dart';
 import '../core/pbx/yeastar_api.dart';
 import '../core/security/api_credential_store.dart';
 import '../core/security/settings_store.dart';
@@ -15,7 +17,7 @@ class PhoneController extends ChangeNotifier {
     this._store, {
     required this.engineDataDir,
     required this.logDir,
-    this.apiStore,
+    this.apiStoreFor,
     YeastarApi Function(ApiCredentials)? apiFactory,
   }) : _apiFactory = apiFactory ?? YeastarApi.new;
 
@@ -24,30 +26,22 @@ class PhoneController extends ChangeNotifier {
   final String engineDataDir;
   final String logDir;
   final _subs = <StreamSubscription<Object>>[];
-  final ApiCredentialStore? apiStore;
+
+  /// Deposito credenziali per connessione (null = piattaforma senza DPAPI).
+  final ApiCredentialStore Function(String connectionId)? apiStoreFor;
   final YeastarApi Function(ApiCredentials) _apiFactory;
-  YeastarApi? _api;
 
-  /// Interni importati dal PBX via OpenAPI (vuoto se l'integrazione è spenta).
-  List<PbxExtension> pbxDirectory = const [];
+  /// Connessioni API, una per PBX, indipendenti tra loro.
+  final connections = <PbxConnection>[];
 
-  /// Reparti del PBX (vuoto = nessun pannello gruppi, DECISIONS 2026-10-28).
-  List<PbxOrg> pbxOrgs = const [];
-
-  /// Reparto selezionato nel pannello gruppi; null = tutti gli interni.
-  int? selectedOrg;
-
-  Timer? _apiPoll;
-
-  /// Presenza e reparti si rileggono a intervalli: semplice e 1-2 richieste/min.
-  /// Da rivedere con molti client: WebSocket eventi 30009/30006 (docs/yeastar-openapi.md).
-  static const apiPollInterval = Duration(seconds: 60);
-
-  /// Stato leggibile dell'integrazione API; null = non configurata.
-  String? apiStatus;
+  /// Gruppo selezionato: null = tutti; `conn` = tutto un PBX; `conn:org` = reparto.
+  String? selectedGroup;
 
   /// Limite delle subscription BLF contemporanee (docs/sip-e-blf.md: provare 1/10/50).
   static const maxBlf = 100;
+
+  /// Id della connessione creata prima del multi-PBX (file `yeastar-api.dpapi`).
+  static const legacyConnectionId = 'default';
 
   Settings settings = const Settings();
   String engineVersion = '';
@@ -81,142 +75,212 @@ class PhoneController extends ChangeNotifier {
       engineError = '$e';
       debugPrint('[drinphone] avvio motore fallito: $e');
     }
-    await _connectApi();
+    await _startConnections();
     notifyListeners();
   }
 
-  bool get apiConfigured => apiStore?.isSet ?? false;
+  // ---------------------------------------------------------------- PBX API
 
-  /// Sovrascrive le credenziali API: non esiste un metodo per rileggerle.
-  Future<void> saveApiCredentials(ApiCredentials c) async {
-    await apiStore!.save(c);
-    await _connectApi();
-    notifyListeners();
-  }
+  bool get apiAvailable => apiStoreFor != null;
 
-  Future<void> clearApiCredentials() async {
-    _apiPoll?.cancel();
-    await _api?.close();
-    _api = null;
-    await apiStore?.clear();
-    pbxDirectory = const [];
-    pbxOrgs = const [];
-    selectedOrg = null;
-    apiStatus = null;
-    await _syncDialogs();
-    notifyListeners();
-  }
-
-  Future<void> _connectApi() async {
-    _apiPoll?.cancel();
-    await _api?.close();
-    _api = null;
-    final creds = await apiStore?.load();
-    if (creds == null) {
-      apiStatus = apiConfigured
-          ? 'Credenziali non leggibili su questo PC'
-          : null;
-      return;
+  Future<void> _startConnections() async {
+    final storeFor = apiStoreFor;
+    if (storeFor == null) return;
+    var infos = settings.pbx;
+    // Migrazione dalla versione a connessione singola.
+    if (infos.isEmpty && storeFor(legacyConnectionId).isSet) {
+      infos = const [PbxConnectionInfo(legacyConnectionId, 'PBX')];
+      settings = settings.copyWith(pbx: infos);
+      await _store.save(settings);
     }
-    final api = _apiFactory(creds);
-    try {
-      await api.connect();
-      _api = api;
-      await _pullDirectory();
+    for (final i in infos) {
+      final c = _newConnection(i.id, i.label);
+      connections.add(c);
+      await c.start();
+    }
+  }
+
+  PbxConnection _newConnection(String id, String label) => PbxConnection(
+    id: id,
+    label: label,
+    store: apiStoreFor!(id),
+    apiFactory: _apiFactory,
+    onUpdate: _onConnectionUpdate,
+  );
+
+  void _onConnectionUpdate(PbxConnection c, bool directoryChanged) {
+    if (directoryChanged) {
       debugPrint(
-        '[drinphone] api yeastar: ${pbxDirectory.length} interni, '
-        '${pbxOrgs.length} reparti',
+        '[drinphone] pbx ${c.id}: ${c.directory.length} interni, '
+        '${c.orgs.length} reparti',
       );
-      _apiPoll = Timer.periodic(apiPollInterval, (_) async {
-        await _pullDirectory();
-        notifyListeners();
-      });
-    } catch (e) {
-      // e non contiene URL né token (YeastarApiException), solo operazione e codice.
-      apiStatus = 'Errore: $e';
-      debugPrint('[drinphone] api yeastar: $e');
-      await api.close();
+      final g = selectedGroup;
+      if (g != null && !_groupExists(g)) selectedGroup = null;
+      _syncDialogs();
     }
-  }
-
-  Future<void> _pullDirectory() async {
-    final api = _api;
-    if (api == null) return;
-    try {
-      pbxDirectory = await api.listExtensions();
-      apiStatus = 'Connessa · ${pbxDirectory.length} interni';
-    } catch (e) {
-      // Si tengono gli ultimi dati letti; e non contiene URL né token.
-      apiStatus = 'Errore aggiornamento: $e';
-      return;
-    }
-    try {
-      pbxOrgs = await api.listOrganizations();
-    } catch (e) {
-      // Reparti facoltativi: senza, niente pannello gruppi.
-      pbxOrgs = const [];
-      debugPrint('[drinphone] api yeastar reparti: $e');
-    }
-    if (!pbxOrgs.any((o) => o.id == selectedOrg)) selectedOrg = null;
-    await _syncDialogs();
-  }
-
-  void selectOrg(int? id) {
-    selectedOrg = id;
     notifyListeners();
   }
+
+  bool _groupExists(String g) {
+    final parts = g.split(':');
+    final c = connections.where((c) => c.id == parts[0]).firstOrNull;
+    if (c == null) return false;
+    return parts.length == 1 || c.orgs.any((o) => '${o.id}' == parts[1]);
+  }
+
+  /// Nuova connessione PBX; le credenziali si possono solo sovrascrivere.
+  Future<PbxConnection> addConnection(
+    String label,
+    ApiCredentials creds,
+  ) async {
+    final id = List.generate(
+      8,
+      (_) => Random.secure().nextInt(16).toRadixString(16),
+    ).join();
+    final c = _newConnection(id, label);
+    await c.store.save(creds);
+    connections.add(c);
+    await _saveConnectionList();
+    await c.start();
+    return c;
+  }
+
+  Future<void> updateConnection(
+    PbxConnection c, {
+    String? label,
+    ApiCredentials? creds,
+  }) async {
+    if (label != null) c.label = label;
+    await _saveConnectionList();
+    if (creds != null) {
+      await c.store.save(creds);
+      await c.start();
+    }
+    notifyListeners();
+  }
+
+  Future<void> removeConnection(PbxConnection c) async {
+    await c.forget();
+    connections.remove(c);
+    if (selectedGroup?.split(':').first == c.id) selectedGroup = null;
+    await _saveConnectionList();
+    await _syncDialogs();
+    notifyListeners();
+  }
+
+  Future<void> _saveConnectionList() async {
+    settings = settings.copyWith(
+      pbx: [for (final c in connections) PbxConnectionInfo(c.id, c.label)],
+    );
+    await _store.save(settings);
+  }
+
+  /// Forza la rilettura (tasto "Sincronizza ora"); senza [force] le connessioni
+  /// saltano se hanno letto da meno di 10 s (rientro nella finestra, re-REGISTER).
+  Future<void> resync({PbxConnection? only, bool force = true}) async {
+    for (final c in [if (only != null) only else ...connections]) {
+      await c.sync(force: force);
+    }
+  }
+
+  /// Connessione del PBX su cui è registrato l'account SIP: i suoi interni si
+  /// possono chiamare e osservare in BLF. Se il nome host non coincide (API via
+  /// IP, SIP via FQDN) e c'è una sola connessione, si assume quella.
+  PbxConnection? get primaryConnection {
+    final sipHost = settings.account?.domain.split(':').first;
+    return connections.where((c) => c.host == sipHost).firstOrNull ??
+        (connections.length == 1 ? connections.first : null);
+  }
+
+  String get apiSummary {
+    if (connections.isEmpty) return '';
+    if (connections.length == 1) return connections.first.status;
+    final ok = connections.where((c) => c.ok).length;
+    return '$ok/${connections.length} PBX sincronizzati';
+  }
+
+  void selectGroup(String? key) {
+    selectedGroup = key;
+    notifyListeners();
+  }
+
+  PbxConnection? _connectionOf(Extension e) => e.source.isEmpty
+      ? primaryConnection
+      : connections.where((c) => c.id == e.source).firstOrNull;
 
   /// Presenza Yeastar dell'interno (`available`, `away`, …); vuota se ignota.
-  String presenceOf(String number) {
-    for (final x in pbxDirectory) {
-      if (x.number == number) return x.presence;
+  String presenceOf(Extension e) {
+    final c = _connectionOf(e);
+    if (c == null) return '';
+    for (final x in c.directory) {
+      if (x.number == e.number) return x.presence;
     }
     return '';
   }
 
-  /// Interni della griglia: tutti, o solo quelli del reparto selezionato.
+  /// Chiamabile solo se è sul PBX dell'account SIP (o inserito a mano).
+  bool isCallable(Extension e) =>
+      e.source.isEmpty || e.source == primaryConnection?.id;
+
+  /// Interni della griglia secondo il gruppo selezionato.
   List<Extension> get visibleExtensions {
-    final org = pbxOrgs.where((o) => o.id == selectedOrg).firstOrNull;
-    if (org == null) return allExtensions;
+    final g = selectedGroup;
+    if (g == null) return allExtensions;
+    final parts = g.split(':');
+    final c = connections.where((c) => c.id == parts[0]).firstOrNull;
+    if (c == null) return allExtensions;
+    final org = parts.length > 1
+        ? c.orgs.where((o) => '${o.id}' == parts[1]).firstOrNull
+        : null;
     final numbers = {
-      for (final x in pbxDirectory)
-        if (org.extIds.contains(x.id)) x.number,
+      for (final x in c.directory)
+        if (org == null || org.extIds.contains(x.id)) x.number,
     };
-    return allExtensions.where((e) => numbers.contains(e.number)).toList();
+    final primary = c.id == primaryConnection?.id;
+    return [
+      for (final e in allExtensions)
+        if (numbers.contains(e.number) &&
+            (e.source == c.id || (primary && e.source.isEmpty)))
+          e,
+    ];
   }
 
-  /// Interni mostrati: quelli inseriti a mano più quelli del PBX, senza il proprio.
+  /// Interni mostrati: manuali, poi quelli di ogni PBX; senza il proprio.
+  /// Un interno manuale e uno del PBX principale con lo stesso numero sono lo stesso.
   List<Extension> get allExtensions {
     final own = settings.account?.username;
+    final primaryId = primaryConnection?.id;
     final seen = <String>{};
+    String key(Extension e) =>
+        '${e.source.isEmpty || e.source == primaryId ? '' : e.source}:${e.number}';
     return [
       for (final e in [
         ...settings.extensions,
-        for (final x in pbxDirectory)
-          Extension(x.name.isEmpty ? x.number : x.name, x.number),
+        for (final c in connections)
+          for (final x in c.directory)
+            Extension(
+              x.name.isEmpty ? x.number : x.name,
+              x.number,
+              source: c.id,
+            ),
       ])
-        if (e.number != own && seen.add(e.number)) e,
+        if (!(isCallable(e) && e.number == own) && seen.add(key(e))) e,
     ];
   }
 
   bool isManual(Extension e) => settings.extensions.contains(e);
 
+  // ---------------------------------------------------------------- account
+
   Future<void> saveAccount(SipAccount account, {required bool debugLog}) async {
-    settings = Settings(
-      account: account,
-      debugLog: debugLog,
-      extensions: settings.extensions,
-    );
+    settings = settings.copyWith(account: account, debugLog: debugLog);
     await _store.save(settings);
     if (engineError == null) await _engine.register(account);
     notifyListeners();
   }
 
   Future<void> removeAccount() async {
-    settings = Settings(
-      debugLog: settings.debugLog,
-      extensions: settings.extensions,
-    );
+    settings = settings.copyWith(clearAccount: true);
     await _store.save(settings);
     if (engineError == null) await _engine.unregister();
     registration = const RegistrationEvent(RegistrationStatus.none);
@@ -230,26 +294,25 @@ class PhoneController extends ChangeNotifier {
       _saveExtensions(settings.extensions.where((x) => x != e).toList());
 
   Future<void> _saveExtensions(List<Extension> list) async {
-    settings = Settings(
-      account: settings.account,
-      debugLog: settings.debugLog,
-      extensions: list,
-    );
+    settings = settings.copyWith(extensions: list);
     await _store.save(settings);
     await _syncDialogs();
     notifyListeners();
   }
 
   Set<String> get _watched => {
-    for (final e in allExtensions.take(maxBlf)) e.number,
+    for (final e in allExtensions.where(isCallable).take(maxBlf)) e.number,
   };
 
   Future<void> _syncDialogs() async {
-    blf.removeWhere((n, _) => !_watched.contains(n));
+    final watched = _watched;
+    blf.removeWhere((n, _) => !watched.contains(n));
     if (engineError == null && registration.status == RegistrationStatus.ok) {
-      await _engine.watchDialogs(_watched);
+      await _engine.watchDialogs(watched);
     }
   }
+
+  // ---------------------------------------------------------------- chiamate
 
   bool get canDial =>
       engineError == null &&
@@ -279,9 +342,12 @@ class PhoneController extends ChangeNotifier {
 
   void _onRegistration(RegistrationEvent e) {
     debugPrint('[drinphone] registrazione ${e.status.name} ${e.message}');
+    final wasOk = registration.status == RegistrationStatus.ok;
     registration = e;
     if (e.status == RegistrationStatus.ok) {
       _engine.watchDialogs(_watched);
+      // Rete tornata dopo una caduta: riallinea anche i dati dal PBX.
+      if (!wasOk) resync(force: false);
     } else {
       blf.clear();
     }
@@ -317,18 +383,20 @@ class PhoneController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Chiusura ordinata (uscita dall'app): revoca il token API e ferma il motore,
+  /// Chiusura ordinata (uscita dall'app): revoca i token API e ferma il motore,
   /// che invia l'un-REGISTER e scarica il log.
   Future<void> shutdown() async {
-    _apiPoll?.cancel();
-    await _api?.close();
-    _api = null;
+    for (final c in connections) {
+      await c.stop();
+    }
     await _engine.stop();
   }
 
   @override
   void dispose() {
-    _apiPoll?.cancel();
+    for (final c in connections) {
+      c.stop();
+    }
     for (final s in _subs) {
       s.cancel();
     }

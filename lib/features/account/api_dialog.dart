@@ -2,23 +2,196 @@ import 'package:flutter/material.dart';
 
 import '../../app/phone_controller.dart';
 import '../../app/theme.dart';
+import '../../core/pbx/pbx_connection.dart';
 import '../../core/security/api_credential_store.dart';
 
-/// Integrazione Yeastar OpenAPI. Client ID e Secret sono di sola scrittura:
-/// i campi partono sempre vuoti e non esiste un modo per rileggerli dalla UI.
-class ApiDialog extends StatefulWidget {
+/// Elenco delle connessioni API ai PBX (una per PBX, indipendenti).
+class ApiDialog extends StatelessWidget {
   const ApiDialog({super.key, required this.phone});
   final PhoneController phone;
 
+  String _ago(DateTime? t) {
+    if (t == null) return 'mai';
+    String two(int n) => n.toString().padLeft(2, '0');
+    return 'alle ${two(t.hour)}:${two(t.minute)}:${two(t.second)}';
+  }
+
   @override
-  State<ApiDialog> createState() => _ApiDialogState();
+  Widget build(BuildContext context) {
+    final c = context.drin;
+    return ListenableBuilder(
+      listenable: phone,
+      builder: (context, _) => AlertDialog(
+        backgroundColor: c.surface,
+        title: const Text('Integrazione PBX Yeastar (API)'),
+        content: SizedBox(
+          width: 560,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (phone.connections.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  child: Text(
+                    'Nessun PBX collegato.',
+                    style: TextStyle(color: c.muted),
+                  ),
+                ),
+              for (final conn in phone.connections)
+                _ConnectionTile(
+                  phone: phone,
+                  conn: conn,
+                  lastSync: _ago(conn.lastSync),
+                  primary: conn.id == phone.primaryConnection?.id,
+                ),
+              const SizedBox(height: 8),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: OutlinedButton.icon(
+                  onPressed: () => showDialog<void>(
+                    context: context,
+                    builder: (_) => _CredentialsDialog(phone: phone),
+                  ),
+                  icon: const Icon(Icons.add, size: 16),
+                  label: const Text('Aggiungi PBX'),
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Chiudi'),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
-class _ApiDialogState extends State<ApiDialog> {
+class _ConnectionTile extends StatelessWidget {
+  const _ConnectionTile({
+    required this.phone,
+    required this.conn,
+    required this.lastSync,
+    required this.primary,
+  });
+  final PhoneController phone;
+  final PbxConnection conn;
+  final String lastSync;
+  final bool primary;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.drin;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: c.card,
+        border: Border.all(color: conn.ok ? c.border : c.busy),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.dns_outlined, size: 20, color: c.accent),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  conn.label,
+                  style: TextStyle(fontWeight: FontWeight.w600, color: c.text),
+                ),
+              ),
+              if (primary)
+                Tooltip(
+                  message: 'PBX dell\'account SIP: interni chiamabili e in BLF',
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 2,
+                    ),
+                    decoration: BoxDecoration(
+                      color: c.keyBtn,
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Text(
+                      'Account SIP',
+                      style: TextStyle(fontSize: 11, color: c.accent),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(conn.host, style: TextStyle(fontSize: 12, color: c.muted)),
+          const SizedBox(height: 4),
+          Text(
+            '${conn.status} · ultima lettura $lastSync',
+            style: TextStyle(
+              fontSize: 12,
+              color: conn.ok ? c.okText : c.busyText,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 6,
+            children: [
+              FilledButton.tonalIcon(
+                onPressed: conn.syncing ? null : () => phone.resync(only: conn),
+                icon: conn.syncing
+                    ? const SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.sync, size: 16),
+                label: const Text('Sincronizza ora'),
+              ),
+              OutlinedButton.icon(
+                onPressed: () => showDialog<void>(
+                  context: context,
+                  builder: (_) => _CredentialsDialog(phone: phone, conn: conn),
+                ),
+                icon: const Icon(Icons.key_outlined, size: 16),
+                label: const Text('Credenziali'),
+              ),
+              TextButton.icon(
+                onPressed: () => phone.removeConnection(conn),
+                icon: Icon(Icons.delete_outline, size: 16, color: c.busyText),
+                label: Text('Rimuovi', style: TextStyle(color: c.busyText)),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Nuova connessione o sostituzione delle credenziali. Client ID e Secret sono
+/// di sola scrittura: i campi partono sempre vuoti.
+class _CredentialsDialog extends StatefulWidget {
+  const _CredentialsDialog({required this.phone, this.conn});
+  final PhoneController phone;
+  final PbxConnection? conn;
+
+  @override
+  State<_CredentialsDialog> createState() => _CredentialsDialogState();
+}
+
+class _CredentialsDialogState extends State<_CredentialsDialog> {
   final _form = GlobalKey<FormState>();
+  late final _label = TextEditingController(text: widget.conn?.label ?? 'PBX');
   late final _baseUrl = TextEditingController(
-    text:
-        'https://${widget.phone.settings.account?.domain.split(':').first ?? ''}',
+    text: widget.conn?.baseUrl.isNotEmpty == true
+        ? widget.conn!.baseUrl
+        : 'https://${widget.phone.settings.account?.domain.split(':').first ?? ''}',
   );
   final _clientId = TextEditingController();
   final _clientSecret = TextEditingController();
@@ -26,7 +199,7 @@ class _ApiDialogState extends State<ApiDialog> {
 
   @override
   void dispose() {
-    for (final c in [_baseUrl, _clientId, _clientSecret]) {
+    for (final c in [_label, _baseUrl, _clientId, _clientSecret]) {
       c.dispose();
     }
     super.dispose();
@@ -45,28 +218,35 @@ class _ApiDialogState extends State<ApiDialog> {
   Future<void> _save() async {
     if (!_form.currentState!.validate()) return;
     setState(() => _saving = true);
-    await widget.phone.saveApiCredentials(
-      ApiCredentials(
-        baseUrl: _baseUrl.text.trim().replaceAll(RegExp(r'/+$'), ''),
-        clientId: _clientId.text.trim(),
-        clientSecret: _clientSecret.text.trim(),
-      ),
+    final creds = ApiCredentials(
+      baseUrl: _baseUrl.text.trim().replaceAll(RegExp(r'/+$'), ''),
+      clientId: _clientId.text.trim(),
+      clientSecret: _clientSecret.text.trim(),
     );
+    final conn = widget.conn;
+    if (conn == null) {
+      await widget.phone.addConnection(_label.text.trim(), creds);
+    } else {
+      await widget.phone.updateConnection(
+        conn,
+        label: _label.text.trim(),
+        creds: creds,
+      );
+    }
     _clientId.clear();
     _clientSecret.clear();
-    if (mounted) setState(() => _saving = false);
+    if (mounted) Navigator.of(context).pop();
   }
 
   @override
   Widget build(BuildContext context) {
     final c = context.drin;
-    final p = widget.phone;
-    final hint = p.apiConfigured
-        ? 'Impostato · scrivi per sostituire'
-        : 'Da Integrations > API sul PBX';
+    final hint = widget.conn == null
+        ? 'Da Integrations > API sul PBX'
+        : 'Impostato · scrivi per sostituire';
     return AlertDialog(
       backgroundColor: c.surface,
-      title: const Text('Integrazione PBX Yeastar (API)'),
+      title: Text(widget.conn == null ? 'Aggiungi PBX' : 'Credenziali PBX'),
       content: SizedBox(
         width: 460,
         child: Form(
@@ -75,11 +255,12 @@ class _ApiDialogState extends State<ApiDialog> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text(
-                p.apiStatus ?? 'Non configurata',
-                style: TextStyle(color: c.muted),
+              TextFormField(
+                controller: _label,
+                validator: _required,
+                decoration: const InputDecoration(labelText: 'Nome'),
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 12),
               TextFormField(
                 controller: _baseUrl,
                 validator: _validateUrl,
@@ -124,17 +305,9 @@ class _ApiDialogState extends State<ApiDialog> {
         ),
       ),
       actions: [
-        if (p.apiConfigured)
-          TextButton(
-            onPressed: () async {
-              await p.clearApiCredentials();
-              if (context.mounted) Navigator.of(context).pop();
-            },
-            child: Text('Rimuovi', style: TextStyle(color: c.busyText)),
-          ),
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Chiudi'),
+          child: const Text('Annulla'),
         ),
         FilledButton(
           onPressed: _saving ? null : _save,

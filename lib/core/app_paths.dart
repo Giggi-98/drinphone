@@ -17,5 +17,10 @@ class AppPaths {
   String get engineData => '$root${_s}linphone';
   String get logs => '$root${_s}logs';
   String get settingsFile => '$root${_s}settings.json';
-  String get apiCredentialsFile => '$root${_s}yeastar-api.dpapi';
+
+  /// Un file DPAPI per connessione PBX; `default` = file della versione
+  /// a connessione singola.
+  String apiCredentialsFileFor(String id) => id == 'default'
+      ? '$root${_s}yeastar-api.dpapi'
+      : '$root${_s}yeastar-api-$id.dpapi';
 }

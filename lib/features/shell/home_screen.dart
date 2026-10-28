@@ -34,6 +34,8 @@ class _HomeScreenState extends State<HomeScreen> {
     p.addListener(_onPhone);
     // Chiudendo la finestra: revoca token API, un-REGISTER, flush del log.
     _lifecycle = AppLifecycleListener(
+      // Rientro nella finestra: riallinea i dati PBX (saltato se letti da < 10 s).
+      onResume: () => p.resync(force: false),
       onExitRequested: () async {
         await p.shutdown();
         return AppExitResponse.exit;
@@ -83,7 +85,7 @@ class _HomeScreenState extends State<HomeScreen> {
         children: [
           _Sidebar(
             onSettings: _openAccount,
-            onApi: p.apiStore == null ? null : _openApi,
+            onApi: p.apiAvailable ? _openApi : null,
           ),
           Expanded(
             child: Stack(
@@ -488,13 +490,21 @@ class _ExtensionsView extends StatelessWidget {
     number.dispose();
   }
 
+  String _groupTitle() {
+    final g = phone.selectedGroup;
+    if (g == null) return 'Tutti gli interni';
+    final parts = g.split(':');
+    final conn = phone.connections.where((c) => c.id == parts[0]).firstOrNull;
+    if (conn == null) return 'Tutti gli interni';
+    if (parts.length == 1) return conn.label;
+    return conn.orgs.where((o) => '${o.id}' == parts[1]).firstOrNull?.name ??
+        conn.label;
+  }
+
   @override
   Widget build(BuildContext context) {
     final c = context.drin;
     final list = phone.visibleExtensions;
-    final org = phone.pbxOrgs
-        .where((o) => o.id == phone.selectedOrg)
-        .firstOrNull;
     final grid = Container(
       margin: const EdgeInsets.all(16),
       padding: const EdgeInsets.all(16),
@@ -508,12 +518,15 @@ class _ExtensionsView extends StatelessWidget {
         children: [
           Row(
             children: [
-              Text(
-                org?.name ?? 'Tutti gli interni',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w600,
-                  color: c.text,
+              Flexible(
+                child: Text(
+                  _groupTitle(),
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w600,
+                    color: c.text,
+                  ),
                 ),
               ),
               const SizedBox(width: 16),
@@ -550,8 +563,11 @@ class _ExtensionsView extends StatelessWidget {
                     itemBuilder: (_, i) => _ExtensionCard(
                       ext: list[i],
                       canCall: phone.canDial,
-                      blf: phone.blf[list[i].number],
-                      presence: phone.presenceOf(list[i].number),
+                      callable: phone.isCallable(list[i]),
+                      blf: phone.isCallable(list[i])
+                          ? phone.blf[list[i].number]
+                          : null,
+                      presence: phone.presenceOf(list[i]),
                       onCall: () => onCall(list[i].number),
                       onRemove: phone.isManual(list[i])
                           ? () => phone.removeExtension(list[i])
@@ -564,9 +580,9 @@ class _ExtensionsView extends StatelessWidget {
             child: Padding(
               padding: const EdgeInsets.only(top: 8),
               child: Text(
-                phone.apiStatus == null
+                phone.apiSummary.isEmpty
                     ? 'Stato interni via SIP BLF'
-                    : 'Stato interni via SIP BLF · API PBX: ${phone.apiStatus}',
+                    : 'Stato interni via SIP BLF · API PBX: ${phone.apiSummary}',
                 style: TextStyle(fontSize: 12, color: c.muted),
               ),
             ),
@@ -574,8 +590,11 @@ class _ExtensionsView extends StatelessWidget {
         ],
       ),
     );
-    // Pannello reparti solo se il PBX li fornisce: di default non c'è (DECISIONS 2026-10-28).
-    if (phone.pbxOrgs.isEmpty) return grid;
+    // Pannello reparti solo se un PBX li fornisce: di default non c'è (DECISIONS 2026-10-28).
+    final hasGroups =
+        phone.connections.length > 1 ||
+        phone.connections.any((x) => x.orgs.isNotEmpty);
+    if (!hasGroups) return grid;
     return Row(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -586,46 +605,192 @@ class _ExtensionsView extends StatelessWidget {
   }
 }
 
-class _GroupsPanel extends StatelessWidget {
+/// Una riga dell'albero reparti, già appiattita.
+class _TreeRow {
+  const _TreeRow({
+    required this.key,
+    required this.label,
+    required this.depth,
+    required this.count,
+    required this.icon,
+    required this.hasChildren,
+  });
+  final String key;
+  final String label;
+  final int depth;
+  final int count;
+  final IconData icon;
+  final bool hasChildren;
+}
+
+class _GroupsPanel extends StatefulWidget {
   const _GroupsPanel({required this.phone});
   final PhoneController phone;
 
   @override
-  Widget build(BuildContext context) {
-    final c = context.drin;
-    Widget entry(String label, int? id, int depth, String count) {
-      final selected = phone.selectedOrg == id;
-      return Material(
+  State<_GroupsPanel> createState() => _GroupsPanelState();
+}
+
+class _GroupsPanelState extends State<_GroupsPanel> {
+  /// Nodi chiusi (chiave come in PhoneController.selectedGroup).
+  final _collapsed = <String>{};
+
+  PhoneController get phone => widget.phone;
+
+  List<_TreeRow> _rows() {
+    final multi = phone.connections.length > 1;
+    final rows = <_TreeRow>[];
+    for (final conn in phone.connections) {
+      final base = multi ? 1 : 0;
+      if (multi) {
+        rows.add(
+          _TreeRow(
+            key: conn.id,
+            label: conn.label,
+            depth: 0,
+            count: conn.directory.length,
+            icon: Icons.dns_outlined,
+            hasChildren: conn.orgs.isNotEmpty,
+          ),
+        );
+        if (_collapsed.contains(conn.id)) continue;
+      }
+      final byId = {for (final o in conn.orgs) o.id: o};
+      final parents = {for (final o in conn.orgs) o.parentId};
+      bool hidden(int parentId) {
+        for (var p = parentId; p != 0; p = byId[p]?.parentId ?? 0) {
+          if (_collapsed.contains('${conn.id}:$p')) return true;
+        }
+        return false;
+      }
+
+      for (final o in conn.orgs) {
+        if (hidden(o.parentId)) continue;
+        final hasChildren = parents.contains(o.id);
+        rows.add(
+          _TreeRow(
+            key: '${conn.id}:${o.id}',
+            label: o.name,
+            depth: base + o.depth,
+            count: o.extIds.length,
+            icon: o.depth == 0
+                ? Icons.apartment_outlined
+                : hasChildren
+                ? Icons.account_tree_outlined
+                : Icons.groups_outlined,
+            hasChildren: hasChildren,
+          ),
+        );
+      }
+    }
+    return rows;
+  }
+
+  String _lastSync() {
+    final times = [for (final c in phone.connections) c.lastSync].nonNulls;
+    if (times.isEmpty) return 'mai sincronizzato';
+    final t = times.reduce((a, b) => a.isBefore(b) ? a : b);
+    String two(int n) => n.toString().padLeft(2, '0');
+    return 'aggiornato alle ${two(t.hour)}:${two(t.minute)}';
+  }
+
+  Widget _pill(DrinColors c, int n, bool selected) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+    decoration: BoxDecoration(
+      color: selected ? c.accent.withValues(alpha: 0.18) : c.keyBtn,
+      borderRadius: BorderRadius.circular(999),
+    ),
+    child: Text(
+      '$n',
+      style: TextStyle(
+        fontSize: 11,
+        fontWeight: FontWeight.w600,
+        color: selected ? c.accent : (n == 0 ? c.muted : c.text),
+      ),
+    ),
+  );
+
+  Widget _row(DrinColors c, _TreeRow r) {
+    final selected = phone.selectedGroup == r.key;
+    final open = !_collapsed.contains(r.key);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 2),
+      child: Material(
         color: selected ? c.keyBtn : Colors.transparent,
         borderRadius: BorderRadius.circular(8),
         child: InkWell(
           borderRadius: BorderRadius.circular(8),
-          onTap: () => phone.selectOrg(id),
-          child: Container(
-            constraints: const BoxConstraints(minHeight: 40),
-            padding: EdgeInsets.only(left: 10.0 + depth * 14, right: 10),
+          onTap: () => phone.selectGroup(r.key),
+          child: SizedBox(
+            height: 38,
             child: Row(
               children: [
+                // Barra di accento sulla voce selezionata.
+                Container(
+                  width: 3,
+                  height: 20,
+                  decoration: BoxDecoration(
+                    color: selected ? c.accent : Colors.transparent,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                // Guide verticali di rientro, una per livello.
+                for (var d = 0; d < r.depth; d++)
+                  SizedBox(
+                    width: 16,
+                    child: Center(
+                      child: Container(width: 1, height: 38, color: c.border),
+                    ),
+                  ),
+                SizedBox(
+                  width: 24,
+                  child: r.hasChildren
+                      ? IconButton(
+                          padding: EdgeInsets.zero,
+                          iconSize: 18,
+                          tooltip: open ? 'Chiudi' : 'Apri',
+                          onPressed: () => setState(
+                            () => open
+                                ? _collapsed.add(r.key)
+                                : _collapsed.remove(r.key),
+                          ),
+                          icon: AnimatedRotation(
+                            turns: open ? 0.25 : 0,
+                            duration: const Duration(milliseconds: 150),
+                            child: Icon(Icons.chevron_right, color: c.muted),
+                          ),
+                        )
+                      : null,
+                ),
+                Icon(r.icon, size: 18, color: selected ? c.accent : c.muted),
+                const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    label,
+                    r.label,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       color: selected ? c.accent : c.text,
-                      fontWeight: selected ? FontWeight.w500 : FontWeight.w400,
+                      fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
                     ),
                   ),
                 ),
-                Text(count, style: TextStyle(fontSize: 12, color: c.muted)),
+                _pill(c, r.count, selected),
+                const SizedBox(width: 8),
               ],
             ),
           ),
         ),
-      );
-    }
+      ),
+    );
+  }
 
+  @override
+  Widget build(BuildContext context) {
+    final c = context.drin;
+    final syncing = phone.connections.any((x) => x.syncing);
+    final allSelected = phone.selectedGroup == null;
     return Container(
-      width: 240,
+      width: 260,
       margin: const EdgeInsets.fromLTRB(16, 16, 0, 16),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -636,20 +801,89 @@ class _GroupsPanel extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          entry('Tutti gli interni', null, 0, '${phone.allExtensions.length}'),
-          Divider(color: c.border, height: 16),
-          Expanded(
-            child: ListView(
+          Material(
+            color: allSelected ? c.keyBtn : Colors.transparent,
+            borderRadius: BorderRadius.circular(8),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(8),
+              onTap: () => phone.selectGroup(null),
+              child: SizedBox(
+                height: 42,
+                child: Row(
+                  children: [
+                    const SizedBox(width: 10),
+                    Icon(
+                      Icons.people_alt_outlined,
+                      size: 18,
+                      color: allSelected ? c.accent : c.muted,
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'Tutti gli interni',
+                        style: TextStyle(
+                          color: allSelected ? c.accent : c.text,
+                          fontWeight: allSelected
+                              ? FontWeight.w600
+                              : FontWeight.w400,
+                        ),
+                      ),
+                    ),
+                    _pill(c, phone.allExtensions.length, allSelected),
+                    const SizedBox(width: 8),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(10, 14, 2, 6),
+            child: Row(
               children: [
-                for (final o in phone.pbxOrgs)
-                  entry(o.name, o.id, o.depth, '${o.extIds.length}'),
+                Text(
+                  'REPARTI',
+                  style: TextStyle(
+                    fontSize: 11,
+                    letterSpacing: 1.2,
+                    fontWeight: FontWeight.w600,
+                    color: c.muted,
+                  ),
+                ),
+                const Spacer(),
+                Tooltip(
+                  message: 'Sincronizza ora · ${_lastSync()}',
+                  child: IconButton(
+                    iconSize: 18,
+                    visualDensity: VisualDensity.compact,
+                    onPressed: syncing ? null : () => phone.resync(),
+                    icon: syncing
+                        ? const SizedBox(
+                            width: 14,
+                            height: 14,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : Icon(Icons.sync, color: c.muted),
+                  ),
+                ),
               ],
             ),
           ),
+          Expanded(
+            child: ListView(children: [for (final r in _rows()) _row(c, r)]),
+          ),
           Divider(color: c.border, height: 16),
-          Text(
-            'Reparti dal PBX Yeastar · sola lettura',
-            style: TextStyle(fontSize: 12, color: c.muted),
+          Row(
+            children: [
+              Icon(Icons.lock_outline, size: 14, color: c.muted),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  'Sola lettura dal PBX',
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 12, color: c.muted),
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -661,6 +895,7 @@ class _ExtensionCard extends StatelessWidget {
   const _ExtensionCard({
     required this.ext,
     required this.canCall,
+    required this.callable,
     required this.blf,
     required this.presence,
     required this.onCall,
@@ -668,6 +903,9 @@ class _ExtensionCard extends StatelessWidget {
   });
   final Extension ext;
   final bool canCall;
+
+  /// false = interno di un PBX senza account SIP in questa app.
+  final bool callable;
   final BlfEvent? blf;
   final String presence;
 
@@ -754,26 +992,28 @@ class _ExtensionCard extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text.rich(
-                      TextSpan(
-                        children: [
-                          TextSpan(
-                            text: ext.name,
+                    // Il nome si accorcia, il numero no.
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            ext.name,
+                            overflow: TextOverflow.ellipsis,
                             style: TextStyle(
                               fontWeight: FontWeight.w500,
                               color: c.text,
                             ),
                           ),
-                          TextSpan(
-                            text: ' ${ext.number}',
-                            style: TextStyle(
-                              fontFamily: monoFont,
-                              color: c.muted,
-                            ),
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          ext.number,
+                          style: TextStyle(
+                            fontFamily: monoFont,
+                            color: c.muted,
                           ),
-                        ],
-                      ),
-                      overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
                     ),
                     Tooltip(
                       message: reason,
@@ -792,18 +1032,21 @@ class _ExtensionCard extends StatelessWidget {
           Row(
             children: [
               Expanded(
-                child: FilledButton.tonalIcon(
-                  style: FilledButton.styleFrom(
-                    backgroundColor: c.keyBtn,
-                    foregroundColor: c.accent,
-                    minimumSize: const Size.fromHeight(36),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
+                child: Tooltip(
+                  message: callable ? '' : 'Nessun account SIP su questo PBX',
+                  child: FilledButton.tonalIcon(
+                    style: FilledButton.styleFrom(
+                      backgroundColor: c.keyBtn,
+                      foregroundColor: c.accent,
+                      minimumSize: const Size.fromHeight(36),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
                     ),
+                    onPressed: canCall && callable ? onCall : null,
+                    icon: const Icon(Icons.call, size: 14),
+                    label: const Text('Chiama'),
                   ),
-                  onPressed: canCall ? onCall : null,
-                  icon: const Icon(Icons.call, size: 14),
-                  label: const Text('Chiama'),
                 ),
               ),
               const SizedBox(width: 6),

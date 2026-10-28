@@ -6,6 +6,22 @@ aggiungi una voce nuova in cima che cita la vecchia. Il campo chiave è
 
 ---
 
+## 2026-10-28 · Multi-PBX e sincronizzazione dati API
+**Scelta:** ogni PBX è una `PbxConnection` indipendente (credenziali DPAPI proprie,
+token, ciclo di sync). Sync a **polling adattivo**: interni+presenza ogni 60 s,
+reparti ogni 10 min o se cambia l'elenco interni, backoff esponenziale fino a
+15 min sugli errori, risync immediata (max 1 ogni 10 s) al rientro nella finestra
+e dopo una re-REGISTER; BLF e UI si riallineano solo se l'impronta dei dati cambia.
+Gli interni di un PBX diverso da quello dell'account SIP si vedono ma **non si
+chiamano** e non vanno in BLF (manca un account SIP su quel PBX).
+**Scartato per ora:** WebSocket eventi 30006/30009/30022 (richiede monitor
+abilitati sul PBX e gestione heartbeat/riconnessione; non verificato sul pilota);
+multi-account SIP.
+**Da rivedere se:** serve presenza istantanea, molte postazioni sullo stesso PBX
+(carico/limite token), o chiamate verso più PBX (allora multi-account SIP).
+
+---
+
 ## 2026-10-28 (bis) · Credenziali OpenAPI Yeastar nel client (ribalta "Credenziali API e AMI" del 2026-10-28)
 **Scelta (di Luigi):** Client ID e Client Secret OpenAPI si inseriscono **nell'app**
 DrinPhone. Vincoli: campi di **sola scrittura** (si sovrascrivono, non si rileggono

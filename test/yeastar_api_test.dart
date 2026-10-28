@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:drinphone/app/phone_controller.dart';
+import 'package:drinphone/core/pbx/pbx_connection.dart';
 import 'package:drinphone/core/pbx/yeastar_api.dart';
 import 'package:drinphone/core/security/api_credential_store.dart';
 import 'package:drinphone/core/security/settings_store.dart';
@@ -214,64 +215,65 @@ void main() {
     skip: !Platform.isWindows,
   );
 
+  Future<PhoneController> controllerWith(
+    FakeSipEngine engine,
+    Map<String, String> pbxUrls,
+  ) async {
+    FlutterSecureStorage.setMockInitialValues({});
+    final sep = Platform.pathSeparator;
+    ApiCredentialStore storeFor(String id) =>
+        ApiCredentialStore('${tmp.path}${sep}api-$id.dpapi');
+    for (final e in pbxUrls.entries) {
+      await storeFor(e.key).save(
+        ApiCredentials(baseUrl: e.value, clientId: _id, clientSecret: _secret),
+      );
+    }
+    final settings = SettingsStore('${tmp.path}${sep}s.json');
+    await settings.save(
+      Settings(
+        account: const SipAccount(
+          username: '305',
+          password: 'p',
+          domain: '127.0.0.1',
+        ),
+        extensions: const [
+          Extension('Manuale', '400'),
+          Extension('Doppione', '301'),
+        ],
+        pbx: [for (final id in pbxUrls.keys) PbxConnectionInfo(id, 'PBX $id')],
+      ),
+    );
+    final phone = PhoneController(
+      engine,
+      settings,
+      engineDataDir: tmp.path,
+      logDir: tmp.path,
+      apiStoreFor: storeFor,
+    );
+    await phone.init();
+    return phone;
+  }
+
   test(
     'controller: interni dal PBX uniti ai manuali, senza il proprio, in BLF',
     () async {
-      FlutterSecureStorage.setMockInitialValues({});
-      final store = ApiCredentialStore(
-        '${tmp.path}${Platform.pathSeparator}api.dpapi',
-      );
-      await store.save(
-        ApiCredentials(
-          baseUrl: pbx.baseUrl,
-          clientId: _id,
-          clientSecret: _secret,
-        ),
-      );
       final engine = FakeSipEngine();
-      final settings = SettingsStore(
-        '${tmp.path}${Platform.pathSeparator}s.json',
-      );
-      await settings.save(
-        const Settings(
-          account: SipAccount(
-            username: '305',
-            password: 'p',
-            domain: 'pbx.test',
-          ),
-          extensions: [
-            Extension('Manuale', '400'),
-            Extension('Doppione', '301'),
-          ],
-        ),
-      );
-      final phone = PhoneController(
-        engine,
-        settings,
-        engineDataDir: tmp.path,
-        logDir: tmp.path,
-        apiStore: store,
-      );
-      await phone.init();
+      final phone = await controllerWith(engine, {'a': pbx.baseUrl});
+      final conn = phone.connections.single;
 
-      expect(phone.apiStatus, 'Connessa · 3 interni');
+      expect(conn.status, 'Sincronizzata · 3 interni, 2 reparti');
       expect(phone.allExtensions.map((e) => e.number), ['400', '301', '350']);
       expect(phone.isManual(phone.allExtensions.first), isTrue);
       expect(phone.isManual(phone.allExtensions.last), isFalse);
-
-      expect(phone.pbxOrgs.map((o) => (o.name, o.depth)), [
-        ('Econnet', 0),
-        ('Commerciale', 1),
+      expect(conn.orgs.map((o) => (o.name, o.depth, o.parentId)), [
+        ('Econnet', 0, 0),
+        ('Commerciale', 1, 1),
       ]);
+      expect(phone.presenceOf(phone.allExtensions[1]), 'available');
 
-      expect(phone.presenceOf('301'), 'available');
-
-      phone.selectOrg(2);
-
+      phone.selectGroup('a:2');
       expect(phone.visibleExtensions.map((e) => e.number), ['301']);
-
-      phone.selectOrg(null);
-
+      phone.selectGroup(null);
       expect(phone.visibleExtensions.length, 3);
 
       engine.registrationsCtl.add(
@@ -280,6 +282,92 @@ void main() {
       expect(engine.watched, {'400', '301', '350'});
       await phone.shutdown();
       expect(pbx.requests.last.uri.path, '/openapi/v1.0/del_token');
+    },
+    skip: !Platform.isWindows,
+  );
+
+  test(
+    'sync: senza modifiche nessun cambio segnalato, gli id persistono',
+    () async {
+      final phone = await controllerWith(FakeSipEngine(), {'a': pbx.baseUrl});
+      final conn = phone.connections.single;
+      final before = pbx.requests.length;
+      final changes = <bool>[];
+      final probe = PbxConnection(
+        id: 'probe',
+        label: 'x',
+        store: conn.store,
+        apiFactory: YeastarApi.new,
+        onUpdate: (_, changed) => changes.add(changed),
+      );
+      await probe.start();
+      expect(changes.last, isTrue); // prima lettura
+      await probe.sync(force: true);
+      expect(changes.last, isFalse); // stessi dati: niente riallineamenti
+      await probe.sync(); // < 10 s dall'ultima: saltata
+      expect(pbx.requests.length - before, greaterThan(0));
+      await probe.stop();
+      await phone.shutdown();
+    },
+    skip: !Platform.isWindows,
+  );
+
+  test(
+    'multi-PBX: interni di un PBX senza account SIP visibili ma non chiamabili',
+    () async {
+      final other = FakePbx();
+      await other.start();
+      final engine = FakeSipEngine();
+      // 'a' ha host 127.0.0.1 = dominio SIP: è il PBX dell'account.
+      final phone = await controllerWith(engine, {
+        'a': pbx.baseUrl,
+        'b': other.baseUrl.replaceFirst('127.0.0.1', 'localhost'),
+      });
+      expect(phone.primaryConnection!.id, 'a');
+      final fromB = phone.allExtensions.where((e) => e.source == 'b').toList();
+      expect(fromB.map((e) => e.number), ['301', '305', '350']);
+      expect(fromB.every((e) => !phone.isCallable(e)), isTrue);
+      phone.selectGroup('b');
+      expect(phone.visibleExtensions.every((e) => e.source == 'b'), isTrue);
+
+      engine.registrationsCtl.add(
+        const RegistrationEvent(RegistrationStatus.ok),
+      );
+      // BLF solo per manuali + PBX dell'account (numeri, senza il proprio 305).
+      expect(engine.watched, {'400', '301', '350'});
+      await phone.shutdown();
+      await other.server.close(force: true);
+    },
+    skip: !Platform.isWindows,
+  );
+
+  test(
+    'migrazione da connessione singola: credenziali e interni manuali conservati',
+    () async {
+      FlutterSecureStorage.setMockInitialValues({});
+      final sep = Platform.pathSeparator;
+      ApiCredentialStore storeFor(String id) =>
+          ApiCredentialStore('${tmp.path}${sep}api-$id.dpapi');
+      await storeFor(PhoneController.legacyConnectionId).save(
+        ApiCredentials(baseUrl: pbx.baseUrl, clientId: _id, clientSecret: _secret),
+      );
+      final settings = SettingsStore('${tmp.path}${sep}s.json');
+      await settings.save(
+        const Settings(extensions: [Extension('Manuale', '400')]),
+      );
+      final phone = PhoneController(
+        FakeSipEngine(),
+        settings,
+        engineDataDir: tmp.path,
+        logDir: tmp.path,
+        apiStoreFor: storeFor,
+      );
+      await phone.init();
+      expect(phone.connections.single.id, 'default');
+      final saved = await settings.load();
+      expect(saved.pbx.single.id, 'default');
+      expect(saved.extensions.single.number, '400');
+      await phone.shutdown();
     },
     skip: !Platform.isWindows,
   );
