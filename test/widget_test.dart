@@ -191,7 +191,15 @@ void main() {
       await phone.dial('300', via: const Extension('Sala', '300'));
       expect(engine.log.last, 'dial 300');
 
+      // "Chiama con": i numeri liberi passano dall'account scelto, salvato.
+      await phone.setCallWith('b2');
+      await phone.dial('0612345');
+      expect(engine.log.last, 'dial 0612345 via b2');
+      expect((await store.load()).callWith, 'b2');
+
       await phone.removeAccount('b2');
+      // Account tolto: si torna al principale.
+      expect(phone.outgoingAccount?.id, 'main');
       expect((await store.load()).accounts.single.id, 'main');
     },
   );

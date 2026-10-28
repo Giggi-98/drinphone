@@ -199,6 +199,24 @@ class _HomeScreenState extends State<HomeScreen> {
       ].join('\n');
     }
     final account = p.settings.account;
+    final via = p.outgoingAccount;
+    Color dotOf(SipAccount a) => switch (p.registrations[a.id]?.status) {
+      RegistrationStatus.ok => c.ok,
+      RegistrationStatus.progress => c.ringing,
+      RegistrationStatus.failed => c.busy,
+      _ => c.muted,
+    };
+    final presence = presenceOf(c, p.ownPresence);
+    Widget pill(List<Widget> children) => Container(
+      height: 36,
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      decoration: BoxDecoration(
+        color: c.field,
+        border: Border.all(color: c.border),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Row(mainAxisSize: MainAxisSize.min, children: children),
+    );
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
       decoration: BoxDecoration(
@@ -207,32 +225,90 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       child: Row(
         children: [
+          // "Chiama con" (come "Call Using" di Linkus): account per i numeri
+          // liberi, con lo stato di registrazione.
           Tooltip(
             message: tooltip,
-            child: Container(
-              height: 36,
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              decoration: BoxDecoration(
-                color: c.field,
-                border: Border.all(color: c.border),
-                borderRadius: BorderRadius.circular(999),
-              ),
-              child: Row(
-                children: [
-                  Container(
-                    width: 8,
-                    height: 8,
-                    decoration: BoxDecoration(
-                      color: dot,
-                      shape: BoxShape.circle,
+            child: PopupMenuButton<String>(
+              tooltip: '',
+              position: PopupMenuPosition.under,
+              onSelected: (id) =>
+                  id.isEmpty ? _openPreferences() : p.setCallWith(id),
+              itemBuilder: (_) => [
+                PopupMenuItem(
+                  enabled: false,
+                  child: Text(
+                    tr('Chiama con'),
+                    style: TextStyle(fontSize: 12, color: c.muted),
+                  ),
+                ),
+                for (final a in accounts)
+                  PopupMenuItem(
+                    value: a.id,
+                    child: Row(
+                      children: [
+                        Icon(Icons.circle, size: 10, color: dotOf(a)),
+                        const SizedBox(width: 10),
+                        Text(
+                          a.displayName.isNotEmpty
+                              ? '${a.displayName} (${a.username})'
+                              : a.username,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          a.domain,
+                          style: TextStyle(fontSize: 12, color: c.muted),
+                        ),
+                        const SizedBox(width: 12),
+                        if (a.id == via?.id)
+                          Icon(Icons.check_rounded, size: 18, color: c.accent),
+                      ],
                     ),
                   ),
-                  const SizedBox(width: 8),
-                  Text(label, style: TextStyle(fontSize: 13, color: c.text)),
+                const PopupMenuDivider(),
+                PopupMenuItem(value: '', child: Text(tr('Gestisci account…'))),
+              ],
+              child: pill([
+                Container(
+                  width: 8,
+                  height: 8,
+                  decoration: BoxDecoration(color: dot, shape: BoxShape.circle),
+                ),
+                const SizedBox(width: 8),
+                Text(label, style: TextStyle(fontSize: 13, color: c.text)),
+                if (via != null) ...[
+                  Text('  ·  ', style: TextStyle(color: c.muted)),
+                  Icon(Icons.call_made_rounded, size: 14, color: c.muted),
+                  const SizedBox(width: 4),
+                  Text(
+                    via.username,
+                    style: mono(c.text, size: 12, weight: FontWeight.w600),
+                  ),
                 ],
-              ),
+                const SizedBox(width: 4),
+                Icon(Icons.expand_more_rounded, size: 18, color: c.muted),
+              ]),
             ),
           ),
+          // Presenza del proprio interno (dal PBX); dettaglio in Preferenze.
+          if (presence != null) ...[
+            const SizedBox(width: 8),
+            Tooltip(
+              message: tr('Stato di presenza'),
+              child: InkWell(
+                onTap: () => _openPreferences(1),
+                borderRadius: BorderRadius.circular(999),
+                child: pill([
+                  Icon(presence.$1, size: 16, color: presence.$2),
+                  const SizedBox(width: 8),
+                  Text(
+                    presence.$3,
+                    style: TextStyle(fontSize: 13, color: c.text),
+                  ),
+                ]),
+              ),
+            ),
+          ],
           const Spacer(),
           SearchBox(phone: p, onCall: _call),
           const SizedBox(width: 12),

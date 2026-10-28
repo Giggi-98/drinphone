@@ -29,8 +29,21 @@ class LiveCall {
   bool get talking =>
       members.any((m) => m.status == 'ANSWER' || m.status == 'ANSWERED');
 
-  /// Chiamata verso l'esterno (Linkus: "Outbound Calls").
-  bool get outbound => members.any((m) => m.kind == 'outbound');
+  /// Tipo da `call/query` (`inbound`, `outbound`, `internal`); vuoto finché
+  /// la chiamata è nota solo dagli eventi.
+  String type = '';
+
+  /// Direzione stimata dagli interni noti quando mancano le tratte trunk:
+  /// true = da interno verso esterno; null = nessun capo esterno riconosciuto.
+  bool? viaExternal;
+
+  /// Chiamata verso l'esterno (Linkus: "Outbound Calls"): prima le tratte
+  /// trunk, poi la stima dagli interni, infine il tipo di `call/query`.
+  bool get outbound {
+    if (members.any((m) => m.kind == 'outbound')) return true;
+    if (members.any((m) => m.kind == 'inbound')) return false;
+    return viaExternal ?? type == 'outbound';
+  }
 
   LiveMember? _of(String kind) =>
       members.where((m) => m.kind == kind).firstOrNull;
@@ -96,6 +109,32 @@ class PbxConnection {
   /// Chiamate in corso sul PBX (evento 30011 + fotografia call/query).
   final liveCalls = <String, LiveCall>{};
 
+  /// Chiamate da mostrare, dalla più vecchia. Il PBX dà id diversi alla tratta
+  /// trunk e a quella dell'interno della stessa conversazione: una riga per
+  /// coppia di capi, preferendo quella con il trunk.
+  List<LiveCall> get visibleCalls {
+    final exts = {for (final e in directory) e.number};
+    final byPair = <String, LiveCall>{};
+    final sorted = liveCalls.values.toList()
+      ..sort((a, b) => a.seen.compareTo(b.seen));
+    for (final c in sorted) {
+      final callerExt = exts.contains(c.caller);
+      final calleeExt = exts.contains(c.callee);
+      c.viaExternal =
+          c.caller.isEmpty || c.callee.isEmpty || callerExt == calleeExt
+          ? null
+          : callerExt;
+      final pair = c.caller.isEmpty || c.callee.isEmpty
+          ? c.id
+          : ([c.caller, c.callee]..sort()).join('|');
+      final prev = byPair[pair];
+      if (prev == null || (prev.trunk.isEmpty && c.trunk.isNotEmpty)) {
+        byPair[pair] = c;
+      }
+    }
+    return byPair.values.toList()..sort((a, b) => a.seen.compareTo(b.seen));
+  }
+
   /// Stato leggibile del canale eventi; vuoto se spento.
   String eventsStatus = '';
   bool get eventsConnected => _ws != null;
@@ -110,14 +149,24 @@ class PbxConnection {
   /// presenza (30009), anagrafica interno cambiata (30022).
   static const eventTopics = [30007, 30008, 30009, 30011, 30022];
 
-  /// Tipi di call/query per la fotografia iniziale (DA VALIDARE sul PBX).
+  /// Tipi di `call/query` (documentati per le tre edition).
   static const _callTypes = ['inbound', 'outbound', 'internal'];
+
+  /// Con chiamate in corso, riallineamento periodico via `call/query`: un BYE
+  /// perso o non inviato non lascia chiamate fantasma.
+  static const callsCheckEvery = Duration(seconds: 15);
+  Timer? _callsTimer;
+  bool _snapshotting = false;
 
   /// Interno di cui leggere la casella vocale (l'account SIP); null = nessuno.
   String? voicemailOf;
 
   /// Messaggi in casella; null = non letti dall'API (non disponibile o errore).
   List<PbxVoicemail>? voicemail;
+
+  /// Dettaglio del proprio interno ([voicemailOf]): presenze e inoltri.
+  PbxExtensionDetail? ownDetail;
+  bool _detailStale = true;
   String status = tr('Non connessa');
   bool ok = false;
   bool syncing = false;
@@ -214,6 +263,7 @@ class PbxConnection {
           optionalErrors.add('rubrica: ${_short(e)}');
         }
         _orgsAt = DateTime.now();
+        _detailStale = true;
       }
       // Casella vocale a ogni giro: è ciò che l'utente si aspetta di vedere subito.
       final vmOf = voicemailOf;
@@ -225,6 +275,20 @@ class PbxConnection {
           optionalErrors.add('casella vocale: ${_short(e)}');
         }
       }
+      // Dettaglio del proprio interno: cadenza lenta, su 30022 o su richiesta.
+      var newDetail = ownDetail;
+      final own = vmOf == null
+          ? null
+          : ext.where((e) => e.number == vmOf).firstOrNull;
+      if (own != null && (_detailStale || force)) {
+        try {
+          newDetail = await api.getExtension(own.id);
+          _detailStale = false;
+        } catch (e) {
+          optionalErrors.add('dettaglio interno: ${_short(e)}');
+        }
+      }
+      ownDetail = newDetail;
       final fp =
           '${_fingerprintOf(ext, newOrgs, newContacts)}\n'
           '${newVm?.map((m) => '${m.id}|${m.read}').join(',')}';
@@ -256,6 +320,12 @@ class PbxConnection {
       onUpdate(this, changed);
     }
     if (ok && realtime && _ws == null && _wsRetry == null) _connectEvents();
+  }
+
+  /// Rilegge subito il dettaglio del proprio interno.
+  Future<void> refreshDetail() async {
+    _detailStale = true;
+    await sync(force: true);
   }
 
   /// Accende o spegne il canale eventi senza riavviare la connessione.
@@ -327,47 +397,95 @@ class PbxConnection {
   void _closeEvents() {
     _wsRetry?.cancel();
     _wsRetry = null;
+    _callsTimer?.cancel();
+    _callsTimer = null;
     _heartbeat?.cancel();
     _ws?.close();
     _ws = null;
   }
 
-  /// Fotografia delle chiamate in corso: gli eventi 30011 arrivano solo sui cambi.
+  /// Fotografia via `call/query`: chi non c'è più è terminata, e dà il tipo
+  /// (entrante / uscente / interna). Si applica solo se riescono tutte e tre.
   Future<void> _snapshotCalls() async {
     final api = _api;
-    if (api == null) return;
-    for (final type in _callTypes) {
-      try {
-        final calls = await api.queryCalls(type);
-        for (final e in calls.entries) {
-          liveCalls.putIfAbsent(e.key, () => LiveCall(e.key, e.value)).members =
-              e.value;
+    if (api == null || _snapshotting) return;
+    _snapshotting = true;
+    final started = DateTime.now();
+    try {
+      final fresh = <String, (String, List<LiveMember>)>{};
+      for (final type in _callTypes) {
+        try {
+          for (final e in (await api.queryCalls(type)).entries) {
+            fresh[e.key] = (type, e.value);
+          }
+        } catch (e) {
+          debugPrint('[drinphone] call/query $type: ${_short(e)}');
+          return;
         }
-      } catch (e) {
-        debugPrint('[drinphone] call/query $type: ${_short(e)}');
       }
+      // Le chiamate nate durante la lettura restano: le vedrà il giro dopo.
+      liveCalls.removeWhere(
+        (id, c) => !fresh.containsKey(id) && c.seen.isBefore(started),
+      );
+      for (final e in fresh.entries) {
+        final members = [
+          for (final m in e.value.$2)
+            if (m.status != 'BYE') m,
+        ];
+        if (members.isEmpty) {
+          liveCalls.remove(e.key);
+          continue;
+        }
+        final c = liveCalls.putIfAbsent(e.key, () => LiveCall(e.key, members))
+          ..members = members
+          ..type = e.value.$1;
+        if (c.talking) c.answered ??= DateTime.now();
+      }
+      onUpdate(this, false);
+    } finally {
+      _snapshotting = false;
+      _scheduleCallsCheck(callsCheckEvery);
     }
-    liveCalls.removeWhere((_, c) => c.members.isEmpty);
-    onUpdate(this, false);
   }
 
-  /// Evento 30011: aggiorna i membri per canale; i BYE escono, la chiamata
-  /// sparisce quando non resta nessuno.
+  void _scheduleCallsCheck(Duration after) {
+    _callsTimer?.cancel();
+    _callsTimer = null;
+    if (_stopped || _ws == null || liveCalls.isEmpty) return;
+    _callsTimer = Timer(after, _snapshotCalls);
+  }
+
+  /// Evento 30011: membri per identità; chi è in BYE esce. Una chiamata finisce
+  /// quando non resta nessuno o, dopo un BYE, resta al più un capo.
   void _applyCall(Map<String, dynamic> msg) {
     final id = '${msg['call_id'] ?? ''}';
     if (id.isEmpty) return;
     final incoming = LiveMember.parse(msg['members'] as List? ?? const []);
+    final isNew = !liveCalls.containsKey(id);
     final call = liveCalls.putIfAbsent(id, () => LiveCall(id, const []));
-    final byChannel = {for (final m in call.members) m.channel: m};
+    final byKey = {for (final m in call.members) m.key: m};
+    var hungUp = false;
     for (final m in incoming) {
-      byChannel[m.channel] = m;
+      if (m.status == 'BYE') {
+        byKey.remove(m.key);
+        hungUp = true;
+      } else {
+        byKey[m.key] = m;
+      }
     }
-    call.members = [
-      for (final m in byChannel.values)
-        if (m.status != 'BYE') m,
-    ];
+    call.members = byKey.values.toList();
     if (call.talking) call.answered ??= DateTime.now();
-    if (call.members.isEmpty) liveCalls.remove(id);
+    // `internal` descrive la tratta, non è un capo della chiamata.
+    final parties = call.members.where((m) => m.kind != 'internal').length;
+    if (call.members.isEmpty || (hungUp && parties <= 1)) {
+      liveCalls.remove(id);
+    }
+    // Chiamata nuova: tipo da call/query a breve; poi controllo periodico.
+    if (isNew && liveCalls.containsKey(id)) {
+      _scheduleCallsCheck(const Duration(seconds: 2));
+    } else if (_callsTimer == null) {
+      _scheduleCallsCheck(callsCheckEvery);
+    }
   }
 
   static BlfStatus? _callState(String s) => switch (s.toLowerCase()) {
@@ -408,8 +526,14 @@ class PbxConnection {
       }
     }
     if (msg is! Map<String, dynamic>) return;
-    // Solo tipo e nomi dei campi nel log (i valori sono dati personali).
-    debugPrint('[drinphone] evento pbx $type ${msg.keys.toList()}');
+    // Solo tipo e nomi dei campi nel log (i valori sono dati personali);
+    // per 30011 anche tipo e stato dei membri, senza numeri.
+    final shape = type == 30011
+        ? LiveMember.parse(msg['members'] as List? ?? const [])
+              .map((m) => '${m.kind}:${m.status}')
+              .toList()
+        : msg.keys.toList();
+    debugPrint('[drinphone] evento pbx $type $shape');
     final ext = '${msg['extension'] ?? msg['number'] ?? ''}';
     switch (type) {
       case 30008:
@@ -419,6 +543,7 @@ class PbxConnection {
       case 30009:
         final presence = '${msg['presence_status'] ?? msg['status'] ?? ''}';
         if (ext.isNotEmpty && presence.isNotEmpty) {
+          if (ext == voicemailOf) ownDetail = ownDetail?.withPresence(presence);
           directory = [
             for (final e in directory)
               e.number == ext
@@ -439,6 +564,7 @@ class PbxConnection {
         onUpdate(this, false);
       case 30022:
         // Anagrafica cambiata: rilettura a breve (più eventi ravvicinati = una).
+        if (ext.isEmpty || ext == voicemailOf) _detailStale = true;
         _resyncSoon?.cancel();
         _resyncSoon = Timer(
           const Duration(seconds: 3),

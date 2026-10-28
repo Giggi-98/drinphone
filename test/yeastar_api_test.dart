@@ -25,6 +25,9 @@ class FakePbx {
   WebSocket? events;
   final eventMessages = <String>[];
 
+  /// Risposte di call/query per tipo; null = errore (PBX senza la funzione).
+  Map<String, List<Map<String, Object>>>? calls;
+
   String get baseUrl => 'http://127.0.0.1:${server.port}';
 
   Future<void> start() async {
@@ -123,6 +126,42 @@ class FakePbx {
                 ],
               },
             ],
+          };
+        case '/openapi/v1.0/call/query' when calls != null:
+          reply = {
+            'errcode': 0,
+            'errmsg': 'SUCCESS',
+            'data': calls![req.uri.queryParameters['type']] ?? const [],
+          };
+        case '/openapi/v1.0/extension/get':
+          reply = {
+            'errcode': 0,
+            'errmsg': 'SUCCESS',
+            'data': {
+              'id': 15,
+              'number': '305',
+              'presence_status': 'available',
+              'custom_presence_status': 'Ufficio',
+              'ring_timeout': 60,
+              'enb_ring_mobile': 0,
+              'enb_accept_call_from_rg': 1,
+              'enb_vm': 1,
+              'enb_vm_pin': 1,
+              'vm_pin': '6666',
+              'new_vm_notification': 'with_attach',
+              'vm_after_notification': 'mark_read',
+              'presence_list': [
+                {'status': 'available', 'enb_in_always_forward': 0},
+                {
+                  'status': 'off_work',
+                  'enb_ex_always_forward': 1,
+                  'ex_always_forward_dest': 'extension',
+                  'ex_always_forward_value': '11',
+                  'enb_in_busy_forward': 1,
+                  'in_busy_forward_dest': 'ext_vm',
+                },
+              ],
+            },
           };
         case '/openapi/v1.0/del_token':
           reply = {'errcode': 0, 'errmsg': 'SUCCESS'};
@@ -519,6 +558,143 @@ void main() {
     expect(conn.eventsStatus, isNot(contains('AT1')));
     await phone.setRealtime(conn, false);
     expect(conn.eventsConnected, isFalse);
+    await phone.shutdown();
+  }, skip: !Platform.isWindows);
+
+  test(
+    'dettaglio interno: presenze e inoltri letti, PIN della casella non tenuto',
+    () async {
+      // Due PBX con host diversi: il principale si riconosce solo dall'host.
+      final phone = await controllerWith(FakeSipEngine(), {
+        'a': pbx.baseUrl,
+        'b': pbx.baseUrl.replaceFirst('127.0.0.1', 'localhost'),
+      });
+      expect(phone.primaryConnection?.id, 'a');
+      final d = phone.ownDetail!;
+      expect(d.presence, 'available');
+      expect(d.customPresence, 'Ufficio');
+      expect(d.ringTimeout, 60);
+      expect(d.acceptRingGroup, isTrue);
+      expect(d.vmPinAuth, isTrue);
+      final off = d.settingOf('off_work')!;
+      expect(off.forwards['ex_always']!.enabled, isTrue);
+      expect(off.forwards['ex_always']!.dest, 'extension');
+      expect(off.forwards['ex_always']!.value, '11');
+      expect(off.forwards['in_busy']!.dest, 'ext_vm');
+      expect(off.forwards['in_always']!.enabled, isFalse);
+      // Nessun campo del dettaglio contiene il PIN.
+      expect([
+        d.vmGreeting,
+        d.vmNotification,
+        d.customPresence,
+        d.mobileNumber,
+      ], isNot(contains('6666')));
+      await phone.shutdown();
+    },
+    skip: !Platform.isWindows,
+  );
+
+  test('live calls: BYE con canale cambiato chiude; call/query riallinea e dà il tipo', () async {
+    final phone = await controllerWith(FakeSipEngine(), {'a': pbx.baseUrl});
+    final conn = phone.connections.single;
+    pbx.calls = {
+      'outbound': [
+        {
+          'call_id': 'OUT1',
+          'members': [
+            {
+              'extension': {
+                'number': '305',
+                'channel_id': 'a',
+                'member_status': 'ANSWERED',
+              },
+            },
+          ],
+        },
+      ],
+    };
+    await phone.setRealtime(conn, true);
+    for (var i = 0; i < 50 && conn.liveCalls.isEmpty; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+    }
+    // Fotografia iniziale: chiamata uscente anche senza membro `outbound`.
+    expect(conn.liveCalls['OUT1']!.outbound, isTrue);
+
+    Map<String, Object> ev(String id, List<Map<String, Object>> m) => {
+      'type': 30011,
+      'msg': jsonEncode({'call_id': id, 'members': m}),
+    };
+    Map<String, Object> ext(String n, String ch, String st) => {
+      'extension': {'number': n, 'channel_id': ch, 'member_status': st},
+    };
+    // Interna 305 -> 301; alla risposta il canale cambia, poi BYE di uno solo.
+    pbx.events!.add(
+      jsonEncode(
+        ev('I1', [ext('305', 'c1', 'RING'), ext('301', 'c2', 'ALERT')]),
+      ),
+    );
+    pbx.events!.add(
+      jsonEncode(
+        ev('I1', [ext('305', 'c1b', 'ANSWERED'), ext('301', 'c2b', 'ANSWER')]),
+      ),
+    );
+    for (var i = 0; i < 50 && conn.liveCalls['I1']?.talking != true; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+    }
+    expect(conn.liveCalls['I1']!.members.length, 2);
+    pbx.events!.add(jsonEncode(ev('I1', [ext('301', 'c2c', 'bye')])));
+    for (var i = 0; i < 50 && conn.liveCalls.containsKey('I1'); i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+    }
+    expect(conn.liveCalls.containsKey('I1'), isFalse);
+
+    // OUT1 termina senza BYE: la prossima call/query la toglie.
+    pbx.calls = {};
+    pbx.events!.add(
+      jsonEncode(ev('N2', [ext('305', 'z', 'RING'), ext('350', 'y', 'ALERT')])),
+    );
+    for (var i = 0; i < 200 && conn.liveCalls.containsKey('OUT1'); i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+    }
+    expect(conn.liveCalls.containsKey('OUT1'), isFalse);
+
+    // Stessa conversazione con due id (tratta trunk + tratta dell'interno):
+    // una sola riga, quella col trunk. Senza trunk la direzione viene dagli
+    // interni noti.
+    LiveMember m(
+      String kind,
+      String st, {
+      String n = '',
+      String f = '',
+      String t = '',
+      String trunk = '',
+    }) => LiveMember(
+      kind: kind,
+      channel: '$kind$n$f',
+      status: st,
+      number: n,
+      from: f,
+      to: t,
+      trunk: trunk,
+    );
+    conn.liveCalls
+      ..clear()
+      ..['T'] = LiveCall('T', [
+        m('inbound', 'ANSWERED', f: '0612345', t: '301', trunk: 'Trunk1'),
+      ])
+      ..['E'] = LiveCall('E', [
+        m('extension', 'ANSWERED', n: '301'),
+        m('internal', 'ANSWERED', f: '301', t: '0612345'),
+      ])
+      ..['O'] = LiveCall('O', [
+        m('extension', 'ANSWERED', n: '305'),
+        m('internal', 'ANSWERED', f: '305', t: '3331234567'),
+      ]);
+    final shown = conn.visibleCalls;
+    expect(shown.map((x) => x.id), ['T', 'O']);
+    expect(shown.first.outbound, isFalse);
+    expect(shown.last.outbound, isTrue);
+    await phone.setRealtime(conn, false);
     await phone.shutdown();
   }, skip: !Platform.isWindows);
 }

@@ -209,6 +209,9 @@ class PhoneController extends ChangeNotifier {
   }
 
   void _onConnectionUpdate(PbxConnection c, bool directoryChanged) {
+    // Il PBX principale si riconosce dall'host, noto solo dopo aver letto le
+    // credenziali: si riassegna qui (arriva a inizio sync, prima delle letture).
+    _assignVoicemail();
     if (!c.syncing && (!c.ok || c.optionalErrors.isNotEmpty)) {
       debugPrint(
         '[drinphone] pbx ${c.id}: ${c.status} ${c.optionalErrors.join('; ')}',
@@ -441,6 +444,32 @@ class PhoneController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Account per le chiamate a numeri liberi ("Chiama con" in alto).
+  SipAccount? get outgoingAccount =>
+      settings.accounts.where((a) => a.id == settings.callWith).firstOrNull ??
+      settings.account;
+
+  Future<void> setCallWith(String accountId) async {
+    settings = settings.copyWith(callWith: accountId);
+    await _store.save(settings);
+    notifyListeners();
+  }
+
+  /// Dettaglio del proprio interno sul PBX dell'account (presenze, inoltri).
+  PbxExtensionDetail? get ownDetail => primaryConnection?.ownDetail;
+
+  /// Presenza del proprio interno; '' se il PBX non è collegato.
+  String get ownPresence {
+    final own = settings.account?.username;
+    return primaryConnection?.directory
+            .where((x) => x.number == own)
+            .firstOrNull
+            ?.presence ??
+        '';
+  }
+
+  Future<void> refreshOwnDetail() async => primaryConnection?.refreshDetail();
+
   /// Ascolto messaggi: si chiama il codice funzione della casella vocale.
   Future<void> callVoicemail() => dial(settings.voicemailCode);
 
@@ -670,7 +699,7 @@ class PhoneController extends ChangeNotifier {
   Future<void> dial(String number, {Extension? via}) async {
     final n = number.trim();
     if (n.isEmpty || !canDial) return;
-    final a = via == null ? null : accountFor(via);
+    final a = via == null ? outgoingAccount : accountFor(via);
     await _engine.dial(
       n,
       accountId: a == null || a == settings.account ? null : a.id,

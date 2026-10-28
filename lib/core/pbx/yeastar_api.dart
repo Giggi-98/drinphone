@@ -86,6 +86,12 @@ class LiveMember {
   /// IVR, Queue, Ring Group… se la chiamata ci è passata.
   final String path;
 
+  /// Identità nella chiamata: l'interno per numero, le tratte per estremi.
+  /// Il `channel_id` può cambiare (risposta, trasferimento): non basta.
+  String get key => number.isEmpty && from.isEmpty && to.isEmpty
+      ? '$kind|$channel'
+      : (kind == 'extension' ? '$kind|$number' : '$kind|$from|$to');
+
   static List<LiveMember> parse(List<dynamic> members) => [
     for (final m in members.whereType<Map<String, dynamic>>())
       for (final e in m.entries)
@@ -93,7 +99,7 @@ class LiveMember {
           LiveMember(
             kind: e.key,
             channel: '${e.value['channel_id'] ?? ''}',
-            status: '${e.value['member_status'] ?? ''}',
+            status: '${e.value['member_status'] ?? ''}'.toUpperCase(),
             number: '${e.value['number'] ?? ''}',
             from: '${e.value['from'] ?? ''}',
             to: '${e.value['to'] ?? ''}',
@@ -101,6 +107,132 @@ class LiveMember {
             path: '${e.value['call_path'] ?? ''}',
           ),
   ];
+}
+
+/// Inoltro di una presenza (`extension/get` → `presence_list`).
+class PresenceForward {
+  const PresenceForward({
+    required this.enabled,
+    required this.dest,
+    this.value = '',
+    this.number = '',
+  });
+  final bool enabled;
+
+  /// `extension`, `ext_vm`, `ivr`, `queue`, `ring_group`, `mobile_number`,
+  /// `external_num`, `play_greeting`, `end_call`, `send_busy`…
+  final String dest;
+
+  /// Id della destinazione interna (o file del messaggio).
+  final String value;
+
+  /// Numero esterno per `external_num`.
+  final String number;
+}
+
+/// Impostazioni di una presenza: inoltri per chiamate interne ed esterne.
+class PresenceSetting {
+  const PresenceSetting(this.status, this.forwards);
+  final String status;
+
+  /// Chiavi: `in_always`, `in_no_answer`, `in_busy`, `ex_always`,
+  /// `ex_no_answer`, `ex_busy`.
+  final Map<String, PresenceForward> forwards;
+
+  static const conditions = [
+    'in_always',
+    'in_no_answer',
+    'in_busy',
+    'ex_always',
+    'ex_no_answer',
+    'ex_busy',
+  ];
+}
+
+/// Dettaglio del proprio interno (`extension/get`), in sola lettura.
+/// Il PIN della casella (`vm_pin`) arriva nella risposta ma non viene tenuto.
+class PbxExtensionDetail {
+  const PbxExtensionDetail({
+    required this.presence,
+    this.customPresence = '',
+    this.presences = const [],
+    this.ringTimeout,
+    this.ringMobile = false,
+    this.mobileNumber = '',
+    this.acceptRingGroup = false,
+    this.vmEnabled = false,
+    this.vmPinAuth = false,
+    this.vmNotification = '',
+    this.vmAfterNotification = '',
+    this.vmPlayDatetime = false,
+    this.vmGreeting = '',
+  });
+
+  final String presence;
+  final String customPresence;
+  final List<PresenceSetting> presences;
+  final int? ringTimeout;
+  final bool ringMobile;
+  final String mobileNumber;
+  final bool acceptRingGroup;
+  final bool vmEnabled;
+  final bool vmPinAuth;
+  final String vmNotification;
+  final String vmAfterNotification;
+  final bool vmPlayDatetime;
+  final String vmGreeting;
+
+  PresenceSetting? settingOf(String status) =>
+      presences.where((p) => p.status == status).firstOrNull;
+
+  PbxExtensionDetail withPresence(String p) => PbxExtensionDetail(
+    presence: p,
+    customPresence: customPresence,
+    presences: presences,
+    ringTimeout: ringTimeout,
+    ringMobile: ringMobile,
+    mobileNumber: mobileNumber,
+    acceptRingGroup: acceptRingGroup,
+    vmEnabled: vmEnabled,
+    vmPinAuth: vmPinAuth,
+    vmNotification: vmNotification,
+    vmAfterNotification: vmAfterNotification,
+    vmPlayDatetime: vmPlayDatetime,
+    vmGreeting: vmGreeting,
+  );
+
+  static PbxExtensionDetail parse(Map<String, dynamic> j) {
+    String str(Map<String, dynamic> m, String k) => '${m[k] ?? ''}';
+    bool flag(Map<String, dynamic> m, String k) => str(m, k) == '1';
+    return PbxExtensionDetail(
+      presence: str(j, 'presence_status'),
+      customPresence: str(j, 'custom_presence_status'),
+      presences: [
+        for (final p
+            in (j['presence_list'] as List? ?? const [])
+                .whereType<Map<String, dynamic>>())
+          PresenceSetting(str(p, 'status'), {
+            for (final k in PresenceSetting.conditions)
+              k: PresenceForward(
+                enabled: flag(p, 'enb_${k}_forward'),
+                dest: str(p, '${k}_forward_dest'),
+                value: str(p, '${k}_forward_value'),
+                number: str(p, '${k}_forward_num'),
+              ),
+          }),
+      ],
+      ringTimeout: int.tryParse(str(j, 'ring_timeout')),
+      ringMobile: flag(j, 'enb_ring_mobile'),
+      mobileNumber: str(j, 'mobile_number'),
+      acceptRingGroup: flag(j, 'enb_accept_call_from_rg'),
+      vmEnabled: flag(j, 'enb_vm'),
+      vmPinAuth: flag(j, 'enb_vm_pin'),
+      vmNotification: str(j, 'new_vm_notification'),
+      vmAfterNotification: str(j, 'vm_after_notification'),
+      vmPlayDatetime: flag(j, 'enb_vm_play_datetime'),
+      vmGreeting: str(j, 'vm_greeting'),
+    );
+  }
 }
 
 /// Messaggio in casella vocale (vm/get).
@@ -379,6 +511,17 @@ class YeastarApi {
           in (j['data'] as List? ?? const []).whereType<Map<String, dynamic>>())
         '${c['call_id']}': LiveMember.parse(c['members'] as List? ?? const []),
     };
+  }
+
+  /// Dettaglio di un interno (presenze, inoltri, squillo, casella vocale).
+  Future<PbxExtensionDetail> getExtension(int id) async {
+    final j = await _call(
+      'extension/get',
+      'GET',
+      _uri('extension/get', {'id': '$id'}),
+    );
+    final d = j['data'];
+    return PbxExtensionDetail.parse(d is Map<String, dynamic> ? d : j);
   }
 
   /// Messaggi della casella vocale di un interno (più recenti per primi).

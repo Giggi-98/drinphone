@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../app/l10n.dart';
 import '../../app/phone_controller.dart';
 import '../../app/theme.dart';
+import '../../core/pbx/yeastar_api.dart';
 import '../../core/sip/sip_engine.dart';
 import '../account/api_dialog.dart';
 import '../shell/widgets.dart';
@@ -476,52 +477,241 @@ class _AccountEditorState extends State<AccountEditor> {
 
 // ----------------------------------------------------------------- Presenza
 
-class _PresenceTab extends StatelessWidget {
+/// Presenza in profondità (stile Linkus): le sei presenze Yeastar, ognuna con
+/// i suoi inoltri; squillo e opzioni. Dati da `extension/get`, sola lettura.
+class _PresenceTab extends StatefulWidget {
   const _PresenceTab({required this.phone});
   final PhoneController phone;
 
   @override
+  State<_PresenceTab> createState() => _PresenceTabState();
+}
+
+class _PresenceTabState extends State<_PresenceTab> {
+  static const _statuses = [
+    'available',
+    'away',
+    'business_trip',
+    'do_not_disturb',
+    'lunch',
+    'off_work',
+  ];
+
+  /// Presenza di cui si guardano le impostazioni (null = quella attuale).
+  String? _viewed;
+  bool _refreshing = false;
+
+  Future<void> _refresh() async {
+    setState(() => _refreshing = true);
+    await widget.phone.refreshOwnDetail();
+    if (mounted) setState(() => _refreshing = false);
+  }
+
+  String _dest(PresenceForward f) {
+    final dir = widget.phone.primaryConnection?.directory ?? const [];
+    String ext() {
+      final e = dir.where((x) => '${x.id}' == f.value).firstOrNull;
+      return e == null ? f.value : '${e.number} ${e.name}';
+    }
+
+    return switch (f.dest) {
+      'extension' => tr('Interno {n}', {'n': ext()}),
+      'ext_vm' => tr('Casella vocale'),
+      'mobile_number' => tr('Cellulare'),
+      'external_num' => f.number,
+      'ivr' => 'IVR',
+      'queue' => tr('Coda'),
+      'ring_group' => tr('Gruppo di squillo'),
+      'call_flow' => 'Call flow',
+      'group_vm' => tr('Casella vocale di gruppo'),
+      'play_greeting' => tr('Messaggio registrato'),
+      'end_call' => tr('Termina la chiamata'),
+      'send_busy' => tr('Segnale di occupato'),
+      _ => f.dest,
+    };
+  }
+
+  Widget _forward(DrinColors c, String label, PresenceForward? f) {
+    final on = f?.enabled ?? false;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 5),
+      child: Row(
+        children: [
+          _ReadOnlyCheck(on),
+          const SizedBox(width: 8),
+          SizedBox(
+            width: 150,
+            child: Text(label, style: TextStyle(color: c.text)),
+          ),
+          if (on)
+            Expanded(
+              child: Row(
+                children: [
+                  Icon(Icons.arrow_forward_rounded, size: 14, color: c.muted),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      _dest(f!),
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(color: c.text),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _forwards(
+    DrinColors c,
+    String title,
+    String scope,
+    PresenceSetting? s,
+  ) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Text(
+        title,
+        style: TextStyle(fontWeight: FontWeight.w600, color: c.text),
+      ),
+      const SizedBox(height: 4),
+      _forward(c, tr('Sempre'), s?.forwards['${scope}_always']),
+      _forward(c, tr('Nessuna risposta'), s?.forwards['${scope}_no_answer']),
+      _forward(c, tr('Occupato'), s?.forwards['${scope}_busy']),
+    ],
+  );
+
+  Widget _option(DrinColors c, bool on, String label, [String extra = '']) =>
+      Padding(
+        padding: const EdgeInsets.symmetric(vertical: 5),
+        child: Row(
+          children: [
+            _ReadOnlyCheck(on),
+            const SizedBox(width: 8),
+            Text(label, style: TextStyle(color: c.text)),
+            if (extra.isNotEmpty) ...[
+              const SizedBox(width: 10),
+              Text(extra, style: mono(c.muted, size: 12)),
+            ],
+          ],
+        ),
+      );
+
+  @override
   Widget build(BuildContext context) {
     final c = context.drin;
-    final own = phone.settings.account?.username;
-    final me = phone.primaryConnection?.directory
-        .where((x) => x.number == own)
-        .firstOrNull;
-    final p = me == null ? null : presenceOf(c, me.presence);
-    return _Card(
-      title: tr('Stato di presenza'),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
+    final d = widget.phone.ownDetail;
+    final current = d?.presence ?? widget.phone.ownPresence;
+    final viewed = _viewed ?? (current.isEmpty ? 'available' : current);
+    final setting = d?.settingOf(viewed);
+    final note = Text(
+      tr(
+        'Sola lettura: presenze e inoltri si cambiano sul PBX o da Linkus. '
+        'Cambiarli da qui richiede l’API in scrittura (extension/update), '
+        'esclusa dalle decisioni di progetto.',
+      ),
+      style: TextStyle(fontSize: 12, color: c.muted),
+    );
+    if (widget.phone.primaryConnection == null) {
+      return _Card(
+        title: tr('Stato di presenza'),
+        child: Text(
+          tr('Non disponibile (collega il PBX)'),
+          style: TextStyle(color: c.muted),
+        ),
+      );
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _Card(
+          title: tr('Stato di presenza'),
+          action: IconButton(
+            tooltip: tr('Rileggi dal PBX'),
+            onPressed: _refreshing ? null : _refresh,
+            icon: const Icon(Icons.refresh_rounded, size: 20),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Icon(
-                p?.$1 ?? Icons.help_outline,
-                size: 28,
-                color: p?.$2 ?? c.muted,
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: [
+                  for (final st in _statuses)
+                    () {
+                      final pr = presenceOf(c, st)!;
+                      return ChoiceChip(
+                        selected: st == viewed,
+                        onSelected: (_) => setState(() => _viewed = st),
+                        avatar: Icon(pr.$1, size: 16, color: pr.$2),
+                        label: Text(
+                          st == current ? '${pr.$3} · ${tr('attuale')}' : pr.$3,
+                        ),
+                      );
+                    }(),
+                ],
               ),
-              const SizedBox(width: 12),
-              Text(
-                p?.$3 ?? tr('Non disponibile (collega il PBX)'),
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w600,
-                  color: c.text,
+              const SizedBox(height: 14),
+              _Field(tr('Informazioni di presenza'), d?.customPresence ?? ''),
+              if (d == null) ...[
+                const SizedBox(height: 10),
+                Text(
+                  tr('Dettaglio non ancora letto dal PBX.'),
+                  style: TextStyle(fontSize: 12, color: c.muted),
                 ),
+              ],
+              const SizedBox(height: 12),
+              note,
+            ],
+          ),
+        ),
+        _Card(
+          title: tr('Inoltro di chiamata · {p}', {
+            'p': presenceOf(c, viewed)!.$3,
+          }),
+          child: Wrap(
+            spacing: 40,
+            runSpacing: 16,
+            children: [
+              SizedBox(
+                width: 380,
+                child: _forwards(c, tr('Chiamate interne'), 'in', setting),
+              ),
+              SizedBox(
+                width: 380,
+                child: _forwards(c, tr('Chiamate esterne'), 'ex', setting),
               ),
             ],
           ),
-          const SizedBox(height: 12),
-          Text(
-            tr(
-              'Lo stato arriva dal PBX in tempo reale. Cambiarlo da qui richiede '
-              'l’API in scrittura (extension/update), oggi non usata: '
-              'l’integrazione è in sola lettura.',
-            ),
-            style: TextStyle(fontSize: 12, color: c.muted),
+        ),
+        _Card(
+          title: tr('Squillo e opzioni'),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _Field(
+                tr('Timeout squillo (s)'),
+                d?.ringTimeout == null ? '' : '${d!.ringTimeout}',
+              ),
+              const SizedBox(height: 10),
+              _option(
+                c,
+                d?.ringMobile ?? false,
+                tr('Squilla anche il cellulare'),
+                d?.mobileNumber ?? '',
+              ),
+              _option(
+                c,
+                d?.acceptRingGroup ?? false,
+                tr('Accetta chiamate dai gruppi di squillo'),
+              ),
+            ],
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }
@@ -547,9 +737,61 @@ class _VoicemailTabState extends State<_VoicemailTab> {
     super.dispose();
   }
 
+  String _yes(bool v) => v ? tr('Sì') : tr('No');
+
   @override
   Widget build(BuildContext context) {
     final c = context.drin;
+    final d = widget.phone.ownDetail;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [_codeCard(c), if (d != null) _pbxCard(c, d)],
+    );
+  }
+
+  /// Impostazioni della casella sul PBX (`extension/get`); il PIN non si
+  /// legge né si mostra, solo se è richiesto.
+  Widget _pbxCard(DrinColors c, PbxExtensionDetail d) => _Card(
+    title: tr('Impostazioni sul PBX'),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Wrap(
+          spacing: 16,
+          runSpacing: 12,
+          children: [
+            _Field(tr('Casella vocale attiva'), _yes(d.vmEnabled)),
+            _Field(tr('PIN richiesto'), _yes(d.vmPinAuth)),
+            _Field(tr('Notifica nuovi messaggi'), switch (d.vmNotification) {
+              'no' => tr('Nessuna email'),
+              'with_attach' => tr('Email con allegato'),
+              'without_attach' => tr('Email senza allegato'),
+              _ => d.vmNotification,
+            }),
+            _Field(tr('Dopo la notifica'), switch (d.vmAfterNotification) {
+              'no' => tr('Lascia da ascoltare'),
+              'mark_read' => tr('Segna come ascoltato'),
+              'delete' => tr('Elimina'),
+              _ => d.vmAfterNotification,
+            }),
+            _Field(tr('Annuncia data e ora'), _yes(d.vmPlayDatetime)),
+            _Field(tr('Messaggio di benvenuto'), switch (d.vmGreeting) {
+              'follow_system' => tr('Come il sistema'),
+              'no_greeting' => tr('Nessuno'),
+              _ => d.vmGreeting,
+            }),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Text(
+          tr('Sola lettura: si modificano sul PBX o da Linkus.'),
+          style: TextStyle(fontSize: 12, color: c.muted),
+        ),
+      ],
+    ),
+  );
+
+  Widget _codeCard(DrinColors c) {
     return _Card(
       title: tr('Casella vocale'),
       child: Column(
@@ -809,6 +1051,29 @@ class _DiagnosticsTab extends StatelessWidget {
             label: Text(tr('Apri cartella log')),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Casella di sola lettura (valore letto dal PBX, non modificabile).
+class _ReadOnlyCheck extends StatelessWidget {
+  const _ReadOnlyCheck(this.on);
+  final bool on;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.drin;
+    return SizedBox(
+      width: 20,
+      height: 20,
+      child: Checkbox(
+        value: on,
+        onChanged: null,
+        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        visualDensity: VisualDensity.compact,
+        fillColor: WidgetStatePropertyAll(on ? c.accent : Colors.transparent),
+        side: BorderSide(color: c.muted, width: 1.5),
       ),
     );
   }

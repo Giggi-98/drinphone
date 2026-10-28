@@ -63,8 +63,7 @@ class _LiveCallsViewState extends State<LiveCallsView> {
         ),
       );
     }
-    final calls = conn.liveCalls.values.toList()
-      ..sort((a, b) => a.seen.compareTo(b.seen));
+    final calls = conn.visibleCalls;
     return Padding(
       padding: const EdgeInsets.all(16),
       child: Row(
@@ -125,7 +124,7 @@ class _LiveCallsViewState extends State<LiveCallsView> {
         ),
       ),
       const SizedBox(width: 12),
-      CountBadge(conn.liveCalls.length),
+      CountBadge(conn.visibleCalls.length),
       const Spacer(),
       Tooltip(
         message: conn.eventsStatus,

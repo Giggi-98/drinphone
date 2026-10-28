@@ -65,13 +65,27 @@ spikes/f0a/                         spike F0-A (non prodotto)
   `PbxConnection.setRealtime`: WebSocket `wss://…/openapi/v1.0/subscribe`, topic
   30007/30008/30009/30011/30022, heartbeat, riconnessione; interruttore in
   Preferenze > Integrazione PBX. Presenza via 30009 `VERIFICATA` sul pilota.
-- **Live Calls** (`IMPLEMENTATO`, `DA VALIDARE` con chiamate reali) —
-  `PbxConnection.liveCalls`: evento 30011 (membri per `channel_id`, i `BYE` escono,
-  chiamata rimossa quando vuota) + fotografia `call/query?type=inbound|outbound|internal`
-  dopo la sottoscrizione (tipi accettati dal PBX pilota, contenuto da verificare).
+- **Live Calls** (`IMPLEMENTATO`; eventi osservati sul pilota, riaggancio `DA VALIDARE`) —
+  `PbxConnection.liveCalls`: evento 30011 (membri per identità — interno per numero,
+  tratte per estremi — perché `channel_id` cambia; i `BYE` escono; dopo un BYE con al
+  più un capo rimasto la chiamata è finita: Yeastar manda `[extension:BYE,
+  outbound:ANSWER]` e nient'altro). `call/query?type=inbound|outbound|internal` dopo
+  la sottoscrizione, 2 s dopo ogni chiamata nuova e ogni 15 s finché ce ne sono:
+  toglie le chiamate sparite e dà il tipo. `visibleCalls`: una riga per coppia di
+  capi (il PBX dà id diversi a tratta trunk e tratta dell'interno), direzione da
+  tratte trunk, poi interni noti, poi tipo. Log: solo tipo e stato dei membri.
   Inizio = prima volta vista, durata da prima risposta. Vista `features/live/`:
   tabelle "Entranti e interne" / "Uscenti", scelta del PBX, colonna BLF a gruppi
   (Preferiti + reparti, attivi/totale); solo lettura, nessun controllo di chiamata.
+- **Presenza in profondità** (`IMPLEMENTATO`, verificato sul pilota) — `extension/get`
+  del proprio interno (cadenza dei reparti, su 30022, su "Rileggi"): presenza e testo,
+  per ognuna delle 6 presenze gli inoltri interni/esterni (sempre, nessuna risposta,
+  occupato → destinazione), timeout squillo, cellulare in contemporanea, gruppi di
+  squillo, impostazioni casella vocale. **Sola lettura** (DECISIONS 2026-10-28 bis):
+  `vm_pin` arriva nella risposta e viene scartato nel parse. Preferenze > Presenza e
+  Casella vocale; chip presenza in alto.
+- **Chiama con** — menu in alto a sinistra (come "Call Using" di Linkus): account SIP
+  per i numeri liberi (`Settings.callWith`, '' = principale) con stato di registrazione.
 - **Dispositivi audio** (`IMPLEMENTATO`, `DA VALIDARE`) — `linphone_core_get_sound_devices`
   + set capture/playback/ringer; scelta in Preferenze > Audio, salvata in
   `settings.json` e riapplicata all'avvio.

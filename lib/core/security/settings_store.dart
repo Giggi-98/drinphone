@@ -40,6 +40,7 @@ class Settings {
     this.voicemailCode = '*2',
     this.favorites = const [],
     this.audio = const ('', '', ''),
+    this.callWith = '',
   });
 
   /// Account SIP; il primo è il principale (predefinito per le chiamate).
@@ -63,6 +64,9 @@ class Settings {
   /// Dispositivi audio scelti (microfono, altoparlante, suoneria); '' = predefinito.
   final (String, String, String) audio;
 
+  /// Account SIP per le chiamate a numeri liberi ("Chiama con"); '' = principale.
+  final String callWith;
+
   Settings copyWith({
     List<SipAccount>? accounts,
     bool? debugLog,
@@ -72,6 +76,7 @@ class Settings {
     String? voicemailCode,
     List<String>? favorites,
     (String, String, String)? audio,
+    String? callWith,
   }) => Settings(
     accounts: accounts ?? this.accounts,
     debugLog: debugLog ?? this.debugLog,
@@ -81,6 +86,7 @@ class Settings {
     voicemailCode: voicemailCode ?? this.voicemailCode,
     favorites: favorites ?? this.favorites,
     audio: audio ?? this.audio,
+    callWith: callWith ?? this.callWith,
   );
 }
 
@@ -136,6 +142,7 @@ class SettingsStore {
       lang: j['lang'] as String? ?? 'it',
       voicemailCode: j['voicemailCode'] as String? ?? '*2',
       favorites: [for (final f in (j['favorites'] as List? ?? const [])) '$f'],
+      callWith: j['callWith'] as String? ?? '',
       audio: (
         j['audioCapture'] as String? ?? '',
         j['audioPlayback'] as String? ?? '',
@@ -186,6 +193,7 @@ class SettingsStore {
         'lang': s.lang,
         'voicemailCode': s.voicemailCode,
         'favorites': s.favorites,
+        'callWith': s.callWith,
         'audioCapture': s.audio.$1,
         'audioPlayback': s.audio.$2,
         'audioRinger': s.audio.$3,
