@@ -50,4 +50,6 @@
 | Yeastar P-Series Cloud | TBD | TBD | TBD | TBD | TBD | NON TESTATO |
 | Asterisk/FreePBX | TBD | TBD | TBD | n/a | TBD | NON TESTATO |
 
+Dettaglio OpenAPI (token, refresh, endpoint interni/reparti/rubrica, eventi, architettura gateway): `docs/yeastar-openapi.md`.
+
 Riferimenti: `docs/fonti.md`. Non usare reversing del client Linkus come fonte autoritativa né copiare asset o codice di Yeastar.
