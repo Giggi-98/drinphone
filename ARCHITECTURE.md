@@ -41,7 +41,9 @@ spikes/f0a/                         spike F0-A (non prodotto)
   viene chiusa.
 - **Macchina a stati chiamata** — `CallPhase`: incoming / outgoing / active /
   paused / ended / error, mappata dagli stati `LinphoneCallState`; `Released` libera
-  il puntatore. Hold/transfer: F3.
+  il puntatore. Attesa (`linphone_call_pause/resume`) e trasferimento cieco
+  (`linphone_call_transfer_to`, REFER) con esito dal callback transfer-state
+  (`DA VALIDARE` sul PBX). Trasferimento assistito: richiede più chiamate, non c'è.
 - **BLF SIP** (`IMPLEMENTATO`; stato Libero `VERIFICATO` su Yeastar via RAS) —
   `watchDialogs(numeri)`: una SUBSCRIBE `Event: dialog` (600 s, `Accept:
   application/dialog-info+xml`) per interno della lista locale, a registrazione OK;

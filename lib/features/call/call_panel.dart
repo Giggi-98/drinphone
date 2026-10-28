@@ -143,14 +143,43 @@ class _CallPanelState extends State<CallPanel> {
                   Expanded(
                     child: _toggle(
                       context,
+                      p.onHold ? tr('Riprendi') : tr('Attesa'),
+                      p.onHold,
+                      Icons.pause_rounded,
+                      p.toggleHold,
+                    ),
+                  ),
+                ],
+              ),
+            if (call.phase != CallPhase.outgoing) ...[
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  Expanded(
+                    child: _toggle(
+                      context,
                       tr('Tastiera'),
                       _dtmfOpen,
                       Icons.dialpad,
                       () => setState(() => _dtmfOpen = !_dtmfOpen),
                     ),
                   ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: _toggle(
+                      context,
+                      tr('Trasferisci'),
+                      false,
+                      Icons.phone_forwarded_rounded,
+                      () => showDialog<void>(
+                        context: context,
+                        builder: (_) => _TransferDialog(phone: p),
+                      ),
+                    ),
+                  ),
                 ],
               ),
+            ],
             if (_dtmfOpen) ...[
               const SizedBox(height: 12),
               Text(
@@ -211,6 +240,81 @@ class _CallPanelState extends State<CallPanel> {
       onPressed: onTap,
       icon: Icon(icon, size: 18),
       label: Text(label),
+    );
+  }
+}
+
+/// Trasferimento cieco: numero libero o scelta tra interni e rubrica.
+class _TransferDialog extends StatefulWidget {
+  const _TransferDialog({required this.phone});
+  final PhoneController phone;
+
+  @override
+  State<_TransferDialog> createState() => _TransferDialogState();
+}
+
+class _TransferDialogState extends State<_TransferDialog> {
+  final _text = TextEditingController();
+
+  @override
+  void dispose() {
+    _text.dispose();
+    super.dispose();
+  }
+
+  void _go(String number) {
+    if (number.trim().isEmpty) return;
+    widget.phone.transfer(number);
+    Navigator.of(context).pop();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.drin;
+    final hits = widget.phone.search(_text.text, limit: 6);
+    return AlertDialog(
+      backgroundColor: c.surface,
+      title: Text(tr('Trasferisci chiamata')),
+      content: SizedBox(
+        width: 380,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            TextField(
+              controller: _text,
+              autofocus: true,
+              onChanged: (_) => setState(() {}),
+              onSubmitted: _go,
+              style: mono(c.text, size: 15),
+              decoration: InputDecoration(
+                prefixIcon: const Icon(Icons.search_rounded, size: 18),
+                hintText: tr('Numero, interno o nome'),
+              ),
+            ),
+            const SizedBox(height: 8),
+            for (final h in hits)
+              ListTile(
+                dense: true,
+                contentPadding: EdgeInsets.zero,
+                title: Text(h.name),
+                subtitle: Text(h.number, style: mono(c.muted, size: 12)),
+                trailing: Icon(Icons.phone_forwarded_rounded, color: c.accent),
+                onTap: () => _go(h.number),
+              ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: Text(tr('Annulla')),
+        ),
+        FilledButton(
+          onPressed: () => _go(_text.text),
+          child: Text(tr('Trasferisci')),
+        ),
+      ],
     );
   }
 }

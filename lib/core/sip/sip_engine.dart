@@ -76,6 +76,9 @@ class VoicemailEvent {
 abstract class SipEngine {
   Stream<RegistrationEvent> get registrations;
   Stream<VoicemailEvent> get voicemail;
+
+  /// Esito di un trasferimento: true = accettato dal destinatario.
+  Stream<bool> get transfers;
   Stream<CallEvent> get calls;
   Stream<BlfEvent> get dialogs;
 
@@ -94,6 +97,13 @@ abstract class SipEngine {
   Future<void> hangup();
   Future<void> setMicMuted(bool muted);
   Future<void> sendDtmf(String digit);
+
+  /// Attesa / ripresa della chiamata corrente (re-INVITE sendonly/sendrecv).
+  Future<void> hold();
+  Future<void> resume();
+
+  /// Trasferimento cieco (REFER, RFC 3515) della chiamata corrente a [number].
+  Future<void> transfer(String number);
 
   /// Sostituisce l'insieme degli interni osservati via SUBSCRIBE `dialog`.
   /// Va chiamato a registrazione avvenuta; le subscription non più presenti

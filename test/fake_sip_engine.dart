@@ -10,6 +10,7 @@ class FakeSipEngine implements SipEngine {
   final callsCtl = StreamController<CallEvent>.broadcast(sync: true);
   final dialogsCtl = StreamController<BlfEvent>.broadcast(sync: true);
   final voicemailCtl = StreamController<VoicemailEvent>.broadcast(sync: true);
+  final transfersCtl = StreamController<bool>.broadcast(sync: true);
   Set<String> watched = {};
   final log = <String>[];
   SipAccount? registered;
@@ -22,6 +23,14 @@ class FakeSipEngine implements SipEngine {
   Stream<BlfEvent> get dialogs => dialogsCtl.stream;
   @override
   Stream<VoicemailEvent> get voicemail => voicemailCtl.stream;
+  @override
+  Stream<bool> get transfers => transfersCtl.stream;
+  @override
+  Future<void> hold() async => log.add('hold');
+  @override
+  Future<void> resume() async => log.add('resume');
+  @override
+  Future<void> transfer(String number) async => log.add('transfer $number');
 
   @override
   Future<void> watchDialogs(Set<String> numbers) async =>

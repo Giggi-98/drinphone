@@ -100,6 +100,14 @@ class PhoneController extends ChangeNotifier {
     _subs.add(_engine.calls.listen(_onCall));
     _subs.add(_engine.dialogs.listen(_onDialog));
     _subs.add(
+      _engine.transfers.listen((ok) {
+        notice = ok
+            ? tr('Chiamata trasferita')
+            : tr('Trasferimento non riuscito');
+        notifyListeners();
+      }),
+    );
+    _subs.add(
       _engine.voicemail.listen((v) {
         debugPrint(
           '[drinphone] casella vocale ${v.newMessages}/${v.oldMessages}',
@@ -491,6 +499,17 @@ class PhoneController extends ChangeNotifier {
   Future<void> hangup() => _engine.hangup();
   Future<void> sendDtmf(String d) => _engine.sendDtmf(d);
 
+  /// Chiamata in attesa messa da noi (non dall'altro capo).
+  bool onHold = false;
+
+  Future<void> toggleHold() async {
+    onHold = !onHold;
+    await (onHold ? _engine.hold() : _engine.resume());
+    notifyListeners();
+  }
+
+  Future<void> transfer(String number) => _engine.transfer(number.trim());
+
   Future<void> toggleMute() async {
     muted = !muted;
     await _engine.setMicMuted(muted);
@@ -539,6 +558,7 @@ class PhoneController extends ChangeNotifier {
       }
       call = null;
       callConnectedAt = null;
+      onHold = false;
       if (muted) {
         muted = false;
         _engine.setMicMuted(false);

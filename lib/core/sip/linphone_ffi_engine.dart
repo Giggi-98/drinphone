@@ -38,6 +38,11 @@ typedef _SubStateCb = Void Function(
 );
 
 typedef _MwiCb = Void Function(Pointer<Void> account, Pointer<Void> mwi);
+typedef _TransferCb = Void Function(
+  Pointer<Void> core,
+  Pointer<Void> call,
+  Int32 state,
+);
 
 typedef _VoidP = Void Function(Pointer<Void>);
 typedef _VoidPDart = void Function(Pointer<Void>);
@@ -57,6 +62,8 @@ class LinphoneFfiEngine implements SipEngine {
   final _calls = StreamController<CallEvent>.broadcast();
   final _dialogs = StreamController<BlfEvent>.broadcast();
   final _voicemail = StreamController<VoicemailEvent>.broadcast();
+  final _transfers = StreamController<bool>.broadcast();
+  NativeCallable<_TransferCb>? _transferCb;
   NativeCallable<_MwiCb>? _mwiCb;
 
   late final DynamicLibrary _lib;
@@ -82,6 +89,57 @@ class LinphoneFfiEngine implements SipEngine {
   Stream<BlfEvent> get dialogs => _dialogs.stream;
   @override
   Stream<VoicemailEvent> get voicemail => _voicemail.stream;
+  @override
+  Stream<bool> get transfers => _transfers.stream;
+
+  late final _pause = _lib.lookupFunction<_IntP, _IntPDart>(
+    'linphone_call_pause',
+  );
+  late final _resume = _lib.lookupFunction<_IntP, _IntPDart>(
+    'linphone_call_resume',
+  );
+  late final _transferTo = _lib.lookupFunction<_IntPP, _IntPPDart>(
+    'linphone_call_transfer_to',
+  );
+  late final _setTransferCb = _lib
+      .lookupFunction<
+        Void Function(Pointer<Void>, Pointer<NativeFunction<_TransferCb>>),
+        void Function(Pointer<Void>, Pointer<NativeFunction<_TransferCb>>)
+      >('linphone_core_cbs_set_transfer_state_changed');
+
+  // Stato della chiamata trasferita (LinphoneCallState): Connected 7 /
+  // StreamsRunning 8 = trasferimento riuscito, Error 13 = rifiutato.
+  void _onTransfer(Pointer<Void> core, Pointer<Void> call, int state) {
+    if (state == 7 || state == 8) _transfers.add(true);
+    if (state == 13) _transfers.add(false);
+  }
+
+  @override
+  Future<void> hold() async {
+    if (_call != nullptr) _pause(_call);
+  }
+
+  @override
+  Future<void> resume() async {
+    if (_call != nullptr) _resume(_call);
+  }
+
+  @override
+  Future<void> transfer(String number) async {
+    if (_call == nullptr || number.isEmpty) return;
+    using((a) {
+      final to = _createAddress(
+        _factory,
+        'sip:$number@$_host'.toNativeUtf8(allocator: a),
+      );
+      if (to == nullptr) {
+        _transfers.add(false);
+        return;
+      }
+      if (_transferTo(_call, to) != 0) _transfers.add(false);
+      _addressUnref(to);
+    });
+  }
 
   late final _createAccountCbs = _lib.lookupFunction<_PP, _PP>(
     'linphone_factory_create_account_cbs',
@@ -449,6 +507,8 @@ class LinphoneFfiEngine implements SipEngine {
     _setCallCb(cbs, _callCb!.nativeFunction);
     _setNotifyCb(cbs, _notifyCb!.nativeFunction);
     _setSubStateCb(cbs, _subStateCb!.nativeFunction);
+    _transferCb = NativeCallable<_TransferCb>.isolateLocal(_onTransfer);
+    _setTransferCb(cbs, _transferCb!.nativeFunction);
     _addCbs(_core, cbs);
     _cbsUnref(cbs);
 
@@ -708,6 +768,7 @@ class LinphoneFfiEngine implements SipEngine {
     _callCb?.close();
     _notifyCb?.close();
     _mwiCb?.close();
+    _transferCb?.close();
     _subStateCb?.close();
   }
 

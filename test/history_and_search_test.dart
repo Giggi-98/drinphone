@@ -110,4 +110,19 @@ void main() {
     expect(PhoneController.sameNumber('201', '201'), isTrue);
     expect(PhoneController.sameNumber('', '201'), isFalse);
   });
+
+  test('attesa/riprendi, trasferimento e avviso esito', () async {
+    ev(CallPhase.active, CallDirection.outgoing, '301');
+    await phone.toggleHold();
+    expect((phone.onHold, engine.log.last), (true, 'hold'));
+    await phone.toggleHold();
+    expect((phone.onHold, engine.log.last), (false, 'resume'));
+    await phone.toggleHold();
+    await phone.transfer(' 210 ');
+    expect(engine.log.last, 'transfer 210');
+    engine.transfersCtl.add(true);
+    expect(phone.notice, 'Chiamata trasferita');
+    ev(CallPhase.ended, CallDirection.outgoing, '301');
+    expect(phone.onHold, isFalse);
+  });
 }
