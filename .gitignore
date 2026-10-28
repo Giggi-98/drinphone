@@ -1,0 +1,24 @@
+# Flutter/Dart
+.dart_tool/
+.packages
+build/
+.flutter-plugins
+.flutter-plugins-dependencies
+.idea/
+*.iml
+# Android
+android/.gradle/
+android/local.properties
+android/key.properties
+*.jks
+*.keystore
+# iOS/macOS
+ios/Pods/
+macos/Pods/
+**/*.xcworkspace/xcuserdata/
+# Segreti / ambiente
+.env
+*.env
+secrets/
+# Sistema
+.DS_Store
