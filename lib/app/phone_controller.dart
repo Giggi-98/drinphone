@@ -4,6 +4,7 @@ import 'dart:math';
 import 'package:flutter/foundation.dart';
 
 import '../core/call_history.dart';
+import '../core/contacts/personal_contacts.dart';
 import 'l10n.dart';
 import '../core/pbx/pbx_connection.dart';
 import '../core/pbx/yeastar_api.dart';
@@ -20,12 +21,23 @@ class PhoneController extends ChangeNotifier {
     required this.engineDataDir,
     required this.logDir,
     this.apiStoreFor,
-    this.historyStore,
+    this.historyStoreFor,
+    this.personalStoreFor,
     this.onIncomingCall,
     YeastarApi Function(ApiCredentials)? apiFactory,
   }) : _apiFactory = apiFactory ?? YeastarApi.new;
 
-  final CallHistoryStore? historyStore;
+  /// Registro chiamate per profilo (DECISIONS "Profili").
+  final CallHistoryStore Function(String profileId)? historyStoreFor;
+  CallHistoryStore? get historyStore =>
+      historyStoreFor?.call(settings.profileId);
+
+  /// Contatti personali per profilo (DECISIONS "Profili").
+  final PersonalContactsStore Function(String profileId)? personalStoreFor;
+  List<PersonalContact> personal = [];
+
+  /// Nome della rubrica dei contatti personali nel menu delle rubriche.
+  static const personalBook = '*personal';
 
   /// Chiamata entrante: richiamo di attenzione della piattaforma (finestra davanti).
   final void Function()? onIncomingCall;
@@ -127,6 +139,7 @@ class PhoneController extends ChangeNotifier {
     settings = await _store.load();
     appLang.value = AppLang.fromCode(settings.lang);
     history = await historyStore?.load() ?? [];
+    personal = await personalStoreFor?.call(settings.profileId).load() ?? [];
     _subs.add(_engine.registrations.listen(_onRegistration));
     _subs.add(_engine.calls.listen(_onCall));
     _subs.add(_engine.dialogs.listen(_onDialog));
@@ -415,6 +428,15 @@ class PhoneController extends ChangeNotifier {
       final r = rank(e.name, e.number);
       if (r >= 0) hits.add((r, SearchHit(e.name, e.number, extension: e)));
     }
+    for (final x in personal) {
+      for (final (label, number) in x.numbers) {
+        final r = rank('${x.name} ${x.company}', number);
+        if (r >= 0) {
+          hits.add((r + 3, SearchHit(x.name, number, label: label)));
+          break;
+        }
+      }
+    }
     for (final c in connections) {
       for (final x in c.contacts) {
         for (final (label, number) in x.numbers) {
@@ -443,6 +465,12 @@ class PhoneController extends ChangeNotifier {
     await _store.save(settings);
     notifyListeners();
   }
+
+  /// Profilo Yeastar integrato (altrimenti SIP generico: niente API PBX).
+  bool get isYeastar => settings.profileKind == ProfileKind.yeastar;
+
+  /// Live Calls solo nei profili Yeastar con eventi in tempo reale attivi.
+  bool get hasLiveCalls => isYeastar && connections.any((c) => c.realtime);
 
   /// Account per le chiamate a numeri liberi ("Chiama con" in alto).
   SipAccount? get outgoingAccount =>
@@ -557,17 +585,74 @@ class PhoneController extends ChangeNotifier {
   bool isManual(Extension e) => settings.extensions.contains(e);
 
   /// Rubrica aziendale di tutti i PBX filtrata da [filter] (nome, azienda, cifre).
-  List<(PbxConnection, PbxContact)> contactsMatching(String filter) {
+  /// Righe della rubrica: prima i contatti personali (connessione null,
+  /// rubrica [personalBook]), poi quelli dei PBX.
+  List<(PbxConnection?, PbxContact, PersonalContact?)> contactsMatching(
+    String filter,
+  ) {
     final q = filter.trim().toLowerCase();
+    bool hit(String name, String company, List<(String, String)> numbers) =>
+        q.isEmpty ||
+        name.toLowerCase().contains(q) ||
+        company.toLowerCase().contains(q) ||
+        numbers.any((n) => _digits(n.$2).contains(q));
+    final own = [...personal]
+      ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
     return [
+      for (final x in own)
+        if (hit(x.name, x.company, x.numbers))
+          (
+            null,
+            PbxContact(
+              id: 0,
+              name: x.name,
+              company: x.company,
+              email: x.email,
+              numbers: x.numbers,
+              phonebooks: const [personalBook],
+            ),
+            x,
+          ),
       for (final c in connections)
         for (final x in c.contacts)
-          if (q.isEmpty ||
-              x.name.toLowerCase().contains(q) ||
-              x.company.toLowerCase().contains(q) ||
-              x.numbers.any((n) => _digits(n.$2).contains(q)))
-            (c, x),
+          if (hit(x.name, x.company, x.numbers)) (c, x, null),
     ];
+  }
+
+  /// Aggiunge o sostituisce (stesso id) un contatto personale.
+  Future<void> savePersonal(PersonalContact contact) async {
+    final list = [...personal];
+    final i = list.indexWhere((x) => x.id == contact.id);
+    i >= 0 ? list[i] = contact : list.add(contact);
+    await _setPersonal(list);
+  }
+
+  Future<void> deletePersonal(String id) =>
+      _setPersonal(personal.where((x) => x.id != id).toList());
+
+  /// Già in rubrica personale: almeno un numero uguale ([sameNumber]).
+  bool isPersonalDuplicate(PersonalContact c) => personal.any(
+    (x) => x.numbers.any((a) => c.numbers.any((b) => sameNumber(a.$2, b.$2))),
+  );
+
+  /// Importa [list]; con [skipDuplicates] salta chi ha un numero già presente.
+  /// Restituisce quanti contatti sono stati aggiunti.
+  Future<int> importPersonal(
+    List<PersonalContact> list, {
+    bool skipDuplicates = true,
+  }) async {
+    final add = [
+      for (final c in list)
+        if (!skipDuplicates || !isPersonalDuplicate(c)) c,
+    ];
+    await _setPersonal([...personal, ...add]);
+    return add.length;
+  }
+
+  Future<void> _setPersonal(List<PersonalContact> list) async {
+    personal = list;
+    await personalStoreFor?.call(settings.profileId).save(list);
+    notifyListeners();
   }
 
   static String _digits(String n) => n.replaceAll(RegExp(r'[^0-9]'), '');
@@ -582,11 +667,15 @@ class PhoneController extends ChangeNotifier {
     return x.endsWith(y) || y.endsWith(x);
   }
 
-  /// Nome per un numero: interni (anche di altri PBX), poi rubrica aziendale.
+  /// Nome per un numero: interni (anche di altri PBX), contatti personali,
+  /// poi rubrica aziendale.
   String nameFor(String number) {
     if (number.isEmpty) return '';
     for (final e in allExtensions) {
       if (e.number == number && e.name != e.number) return e.name;
+    }
+    for (final x in personal) {
+      if (x.numbers.any((n) => sameNumber(n.$2, number))) return x.name;
     }
     for (final c in connections) {
       for (final x in c.contacts) {
@@ -642,7 +731,7 @@ class PhoneController extends ChangeNotifier {
   }
 
   /// Nuovo id per un account aggiunto (il primo resta `main`).
-  String newAccountId() => settings.accounts.isEmpty
+  String newAccountId() => settings.allAccounts.isEmpty
       ? 'main'
       : List.generate(
           8,

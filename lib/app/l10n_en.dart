@@ -278,4 +278,25 @@ const en = <String, String>{
   'Gestisci account…': 'Manage accounts…',
   'Inoltro di chiamata · {p}': 'Call forwarding · {p}',
   'Sola lettura: presenze e inoltri si cambiano sul PBX o da Linkus. Cambiarli da qui richiede l’API in scrittura (extension/update), esclusa dalle decisioni di progetto.': 'Read-only: presence and forwarding are changed on the PBX or in Linkus. Changing them here needs the write API (extension/update), excluded by the project decisions.',
+  'Eliminare {n}?': 'Delete {n}?',
+  'Contatti': 'Contacts',
+  'Importa contatti': 'Import contacts',
+  'Nessun contatto con numero di telefono in {f}.':
+      'No contacts with a phone number in {f}.',
+  '{n} contatti in {f}, di cui {d} già presenti (stesso numero).':
+      '{n} contacts in {f}, {d} already present (same number).',
+  'Importa tutti': 'Import all',
+  'Importa i nuovi': 'Import new ones',
+  'Importa': 'Import',
+  '{n} contatti importati': '{n} contacts imported',
+  'Contatti personali': 'Personal contacts',
+  'Importa contatti (CSV, vCard)': 'Import contacts (CSV, vCard)',
+  'Nuovo contatto': 'New contact',
+  'Nessun contatto. Aggiungine uno con + o importali da CSV o vCard.':
+      'No contacts. Add one with + or import them from CSV or vCard.',
+  'Contatto personale': 'Personal contact',
+  'Modifica contatto': 'Edit contact',
+  'Azienda': 'Company',
+  'Numero': 'Number',
+  'Aggiungi numero': 'Add number',
 };

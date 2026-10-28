@@ -17,7 +17,16 @@ class AppPaths {
   String get engineData => '$root${_s}linphone';
   String get logs => '$root${_s}logs';
   String get settingsFile => '$root${_s}settings.json';
-  String get historyFile => '$root${_s}history.json';
+
+  /// Registro chiamate del profilo; `default` = file della versione senza profili.
+  String historyFileFor(String profileId) => profileId == 'default'
+      ? '$root${_s}history.json'
+      : '$root${_s}history-$profileId.json';
+
+  /// Contatti personali del profilo; `default` come per il registro.
+  String contactsFileFor(String profileId) => profileId == 'default'
+      ? '$root${_s}contacts.json'
+      : '$root${_s}contacts-$profileId.json';
 
   /// Un file DPAPI per connessione PBX; `default` = file della versione
   /// a connessione singola.

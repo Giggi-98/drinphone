@@ -7,6 +7,7 @@ import 'app/phone_controller.dart';
 import 'app/theme.dart';
 import 'core/app_paths.dart';
 import 'core/call_history.dart';
+import 'core/contacts/personal_contacts.dart';
 import 'core/platform/window_attention.dart';
 import 'core/security/api_credential_store.dart';
 import 'core/security/settings_store.dart';
@@ -22,7 +23,8 @@ Future<void> main() async {
     engineDataDir: paths.engineData,
     logDir: paths.logs,
     // DPAPI esiste solo su Windows: altrove niente integrazione API per ora.
-    historyStore: CallHistoryStore(paths.historyFile),
+    historyStoreFor: (id) => CallHistoryStore(paths.historyFileFor(id)),
+    personalStoreFor: (id) => PersonalContactsStore(paths.contactsFileFor(id)),
     onIncomingCall: WindowAttention.instance.request,
     apiStoreFor: Platform.isWindows
         ? (id) => ApiCredentialStore(paths.apiCredentialsFileFor(id))

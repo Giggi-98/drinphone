@@ -37,7 +37,7 @@ void main() {
       settings,
       engineDataDir: tmp.path,
       logDir: tmp.path,
-      historyStore: history,
+      historyStoreFor: (_) => history,
       onIncomingCall: () => attention++,
     );
     await phone.init();

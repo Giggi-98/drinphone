@@ -6,6 +6,28 @@ aggiungi una voce nuova in cima che cita la vecchia. Il campo chiave è
 
 ---
 
+## 2026-10-28 · Profili: "Yeastar integrato" e "SIP generico" (di Luigi)
+**Scelta:** l'app gestisce **profili** (utenze) scelti in alto a destra, **uno attivo
+alla volta**: cambiare profilo de-registra gli account del precedente e registra
+quelli del nuovo. Tipo del profilo:
+- **Yeastar integrato** — 1..3 PBX Yeastar con i loro account SIP registrati
+  insieme, API e eventi facoltativi per PBX; interni da API + manuali, reparti,
+  presenza, Live Calls (solo con eventi attivi), rubrica aziendale.
+- **SIP generico** (PBX qualunque o trunk diretto) — interni solo manuali con BLF
+  SIP, niente Live Calls né presenza, casella vocale MWI + codice.
+In entrambi: **contatti personali** creati dall'utente e **registro chiamate**
+legati al profilo. Un profilo Yeastar può includere un account SIP generico
+(trunk) usato **solo per chiamare** ("Chiama con"), senza cambiare la schermata.
+Globali: lingua, audio, diagnostica. Configurazione attuale migrata in un profilo
+Yeastar. Primo avvio e "Nuovo profilo": **procedura guidata** (lingua → tipo →
+account con prova di registrazione → API facoltative → audio).
+**Scartato:** più profili registrati insieme (interfaccia mista Yeastar/generica);
+contatti personali solo nei profili generici; import da file al primo avvio (per ora).
+**Da rivedere se:** serve ricevere chiamate su più profili insieme (es. reperibilità),
+o il provisioning centralizzato Econnet sostituisce la configurazione manuale.
+
+---
+
 ## 2026-10-28 · Multi-account SIP ed eventi WebSocket (aggiorna "Multi-PBX e sincronizzazione dati API")
 **Scelta:** più account SIP registrati insieme, ognuno collegato a una connessione
 PBX (scelta esplicita o stesso host). Gli interni di un PBX si chiamano e vanno in

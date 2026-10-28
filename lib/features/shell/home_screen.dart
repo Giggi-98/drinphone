@@ -84,9 +84,12 @@ class _HomeScreenState extends State<HomeScreen> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _Sidebar(
-            section: _section,
+            section: _section == _Section.live && !p.hasLiveCalls
+                ? _Section.extensions
+                : _section,
             missed: p.history.where((r) => r.missed).length,
             voicemailNew: p.voicemailNew,
+            showLive: p.hasLiveCalls,
             onSection: (s) => setState(() => _section = s),
           ),
           Expanded(
@@ -110,7 +113,11 @@ class _HomeScreenState extends State<HomeScreen> {
                         action: (tr('Configura'), _openPreferences),
                       ),
                     Expanded(
-                      child: switch (_section) {
+                      // Live Calls sparisce senza eventi o nei profili SIP generici.
+                      child: switch (_section == _Section.live &&
+                              !p.hasLiveCalls
+                          ? _Section.extensions
+                          : _section) {
                         _Section.extensions => _ExtensionsView(
                           phone: p,
                           onCall: _call,
@@ -364,11 +371,13 @@ class _Sidebar extends StatelessWidget {
     required this.section,
     required this.missed,
     required this.voicemailNew,
+    required this.showLive,
     required this.onSection,
   });
   final _Section section;
   final int missed;
   final int voicemailNew;
+  final bool showLive;
   final ValueChanged<_Section> onSection;
 
   @override
@@ -474,12 +483,13 @@ class _Sidebar extends StatelessWidget {
             section == _Section.extensions,
             () => onSection(_Section.extensions),
           ),
-          item(
-            Icons.monitor_heart_outlined,
-            tr('Live Calls'),
-            section == _Section.live,
-            () => onSection(_Section.live),
-          ),
+          if (showLive)
+            item(
+              Icons.monitor_heart_outlined,
+              tr('Live Calls'),
+              section == _Section.live,
+              () => onSection(_Section.live),
+            ),
           item(
             Icons.contacts_outlined,
             tr('Rubrica'),

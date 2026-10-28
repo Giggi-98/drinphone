@@ -30,8 +30,42 @@ class PbxConnectionInfo {
   final bool realtime;
 }
 
+/// Tipo di profilo (DECISIONS "Profili"): decide quali sezioni si vedono.
+enum ProfileKind { yeastar, sip }
+
+/// Profilo non attivo: stessi dati per-profilo di [Settings], fermi su disco.
+class Profile {
+  const Profile({
+    required this.id,
+    this.name = '',
+    this.kind = ProfileKind.yeastar,
+    this.accounts = const [],
+    this.extensions = const [],
+    this.pbx = const [],
+    this.voicemailCode = '*2',
+    this.favorites = const [],
+    this.callWith = '',
+  });
+  final String id;
+  final String name;
+  final ProfileKind kind;
+  final List<SipAccount> accounts;
+  final List<Extension> extensions;
+  final List<PbxConnectionInfo> pbx;
+  final String voicemailCode;
+  final List<String> favorites;
+  final String callWith;
+}
+
+/// Impostazioni: i campi per-profilo descrivono il **profilo attivo**
+/// ([profileId]); gli altri profili stanno in [others]. Lingua, audio e
+/// diagnostica sono globali.
 class Settings {
   const Settings({
+    this.profileId = defaultProfileId,
+    this.profileName = '',
+    this.profileKind = ProfileKind.yeastar,
+    this.others = const [],
     this.accounts = const [],
     this.debugLog = false,
     this.extensions = const [],
@@ -42,6 +76,16 @@ class Settings {
     this.audio = const ('', '', ''),
     this.callWith = '',
   });
+
+  /// Id del profilo nato dalla configurazione senza profili (file storici).
+  static const defaultProfileId = 'default';
+
+  final String profileId;
+  final String profileName;
+  final ProfileKind profileKind;
+
+  /// Profili non attivi.
+  final List<Profile> others;
 
   /// Account SIP; il primo è il principale (predefinito per le chiamate).
   final List<SipAccount> accounts;
@@ -67,7 +111,58 @@ class Settings {
   /// Account SIP per le chiamate a numeri liberi ("Chiama con"); '' = principale.
   final String callWith;
 
+  /// Il profilo attivo come [Profile].
+  Profile get active => Profile(
+    id: profileId,
+    name: profileName,
+    kind: profileKind,
+    accounts: accounts,
+    extensions: extensions,
+    pbx: pbx,
+    voicemailCode: voicemailCode,
+    favorites: favorites,
+    callWith: callWith,
+  );
+
+  /// Tutti i profili, per nome.
+  List<Profile> get profiles =>
+      [active, ...others]..sort((a, b) => a.name.compareTo(b.name));
+
+  /// Account di tutti i profili (id univoci, password da conservare).
+  List<SipAccount> get allAccounts => [
+    ...accounts,
+    for (final p in others) ...p.accounts,
+  ];
+
+  /// Rende attivo il profilo [id]; quello attivo torna tra gli altri.
+  Settings switchTo(String id) {
+    if (id == profileId) return this;
+    final t = others.firstWhere((p) => p.id == id);
+    return Settings(
+      profileId: t.id,
+      profileName: t.name,
+      profileKind: t.kind,
+      others: [
+        for (final p in others)
+          if (p.id != id) p,
+        active,
+      ],
+      accounts: t.accounts,
+      debugLog: debugLog,
+      extensions: t.extensions,
+      pbx: t.pbx,
+      lang: lang,
+      voicemailCode: t.voicemailCode,
+      favorites: t.favorites,
+      audio: audio,
+      callWith: t.callWith,
+    );
+  }
+
   Settings copyWith({
+    String? profileName,
+    ProfileKind? profileKind,
+    List<Profile>? others,
     List<SipAccount>? accounts,
     bool? debugLog,
     List<Extension>? extensions,
@@ -78,6 +173,10 @@ class Settings {
     (String, String, String)? audio,
     String? callWith,
   }) => Settings(
+    profileId: profileId,
+    profileName: profileName ?? this.profileName,
+    profileKind: profileKind ?? this.profileKind,
+    others: others ?? this.others,
     accounts: accounts ?? this.accounts,
     debugLog: debugLog ?? this.debugLog,
     extensions: extensions ?? this.extensions,
@@ -116,10 +215,7 @@ class SettingsStore {
         displayName: a['displayName'] as String? ?? '',
       );
 
-  Future<Settings> load() async {
-    final file = File(path);
-    if (!await file.exists()) return const Settings();
-    final j = jsonDecode(await file.readAsString()) as Map<String, dynamic>;
+  Future<Profile> _profileFrom(Map<String, dynamic> j, String id) async {
     final accounts = <SipAccount>[
       for (final a in (j['accounts'] as List? ?? const []))
         await _accountFrom(
@@ -132,75 +228,138 @@ class SettingsStore {
     if (accounts.isEmpty && legacy != null) {
       accounts.add(await _accountFrom(legacy, 'main'));
     }
-    return Settings(
+    final pbx = [
+      for (final c in (j['pbx'] as List? ?? const []))
+        PbxConnectionInfo(
+          (c as Map<String, dynamic>)['id'] as String,
+          c['label'] as String? ?? 'PBX',
+          realtime: c['realtime'] as bool? ?? false,
+        ),
+    ];
+    final kind = j['kind'] as String?;
+    return Profile(
+      id: id,
+      // Senza profili: "Econnet" (installazioni pilota) se c'era l'integrazione
+      // API, altrimenti il dominio del primo account.
+      name:
+          j['name'] as String? ??
+          (pbx.isNotEmpty ? 'Econnet' : accounts.firstOrNull?.domain ?? ''),
+      // Senza profili: Yeastar se c'era un'integrazione API, altrimenti generico.
+      kind: kind != null
+          ? ProfileKind.values.byName(kind)
+          : (pbx.isEmpty && accounts.isNotEmpty
+                ? ProfileKind.sip
+                : ProfileKind.yeastar),
       accounts: accounts,
-      debugLog: j['debugLog'] as bool? ?? false,
       extensions: [
         for (final e in (j['extensions'] as List? ?? const []))
           Extension.fromJson(e as Map<String, dynamic>),
       ],
-      lang: j['lang'] as String? ?? 'it',
+      pbx: pbx,
       voicemailCode: j['voicemailCode'] as String? ?? '*2',
       favorites: [for (final f in (j['favorites'] as List? ?? const [])) '$f'],
       callWith: j['callWith'] as String? ?? '',
+    );
+  }
+
+  Future<Settings> load() async {
+    final file = File(path);
+    if (!await file.exists()) return const Settings();
+    final j = jsonDecode(await file.readAsString()) as Map<String, dynamic>;
+    // Senza `profiles`: file della versione a profilo unico, migrato al volo.
+    final profiles = j['profiles'] is List
+        ? [
+            for (final p
+                in (j['profiles'] as List).cast<Map<String, dynamic>>())
+              await _profileFrom(p, p['id'] as String),
+          ]
+        : [await _profileFrom(j, Settings.defaultProfileId)];
+    final activeId = j['activeProfile'] as String?;
+    final active =
+        profiles.where((p) => p.id == activeId).firstOrNull ??
+        profiles.firstOrNull;
+    return Settings(
+      profileId: active?.id ?? Settings.defaultProfileId,
+      profileName: active?.name ?? '',
+      profileKind: active?.kind ?? ProfileKind.yeastar,
+      others: [
+        for (final p in profiles)
+          if (p != active) p,
+      ],
+      accounts: active?.accounts ?? const [],
+      debugLog: j['debugLog'] as bool? ?? false,
+      extensions: active?.extensions ?? const [],
+      lang: j['lang'] as String? ?? 'it',
+      voicemailCode: active?.voicemailCode ?? '*2',
+      favorites: active?.favorites ?? const [],
+      callWith: active?.callWith ?? '',
       audio: (
         j['audioCapture'] as String? ?? '',
         j['audioPlayback'] as String? ?? '',
         j['audioRinger'] as String? ?? '',
       ),
-      pbx: [
-        for (final c in (j['pbx'] as List? ?? const []))
-          PbxConnectionInfo(
-            (c as Map<String, dynamic>)['id'] as String,
-            c['label'] as String? ?? 'PBX',
-            realtime: c['realtime'] as bool? ?? false,
-          ),
-      ],
+      pbx: active?.pbx ?? const [],
     );
   }
 
+  static Map<String, Object> _profileJson(Profile p) => {
+    'id': p.id,
+    'name': p.name,
+    'kind': p.kind.name,
+    'accounts': [
+      for (final a in p.accounts)
+        {
+          'id': a.id,
+          'pbxId': a.pbxId,
+          'username': a.username,
+          'domain': a.domain,
+          'transport': a.transport.name,
+          'displayName': a.displayName,
+        },
+    ],
+    'extensions': [for (final e in p.extensions) e.toJson()],
+    'voicemailCode': p.voicemailCode,
+    'favorites': p.favorites,
+    'callWith': p.callWith,
+    'pbx': [
+      for (final c in p.pbx)
+        {'id': c.id, 'label': c.label, 'realtime': c.realtime},
+    ],
+  };
+
   Future<void> save(Settings s) async {
-    // Password nello storage sicuro; quelle di account rimossi vengono cancellate.
-    final ids = {for (final a in s.accounts) a.id};
+    // Password nello storage sicuro, per gli account di **tutti** i profili;
+    // quelle di account rimossi vengono cancellate.
+    final all = s.allAccounts;
+    final ids = {for (final a in all) a.id};
     final previous = (await _secure.read(key: _idsKey) ?? '')
         .split(',')
         .where((x) => x.isNotEmpty);
     for (final old in previous) {
       if (!ids.contains(old)) await _secure.delete(key: _passwordKey(old));
     }
-    if (s.accounts.isEmpty) await _secure.delete(key: _passwordKey('main'));
-    for (final a in s.accounts) {
+    if (!ids.contains('main')) await _secure.delete(key: _passwordKey('main'));
+    for (final a in all) {
       await _secure.write(key: _passwordKey(a.id), value: a.password);
     }
     await _secure.write(key: _idsKey, value: ids.join(','));
     final file = File(path);
     await file.parent.create(recursive: true);
+    // Prima riscrittura nel formato a profili: copia del file vecchio, che una
+    // versione precedente dell'app saprebbe ancora leggere.
+    if (await file.exists() &&
+        !(await file.readAsString()).contains('"profiles"')) {
+      await file.copy(path.replaceFirst(RegExp(r'\.json$'), '.v1.json'));
+    }
     await file.writeAsString(
       jsonEncode({
-        'accounts': [
-          for (final a in s.accounts)
-            {
-              'id': a.id,
-              'pbxId': a.pbxId,
-              'username': a.username,
-              'domain': a.domain,
-              'transport': a.transport.name,
-              'displayName': a.displayName,
-            },
-        ],
+        'activeProfile': s.profileId,
+        'profiles': [for (final p in s.profiles) _profileJson(p)],
         'debugLog': s.debugLog,
-        'extensions': [for (final e in s.extensions) e.toJson()],
         'lang': s.lang,
-        'voicemailCode': s.voicemailCode,
-        'favorites': s.favorites,
-        'callWith': s.callWith,
         'audioCapture': s.audio.$1,
         'audioPlayback': s.audio.$2,
         'audioRinger': s.audio.$3,
-        'pbx': [
-          for (final c in s.pbx)
-            {'id': c.id, 'label': c.label, 'realtime': c.realtime},
-        ],
       }),
     );
   }

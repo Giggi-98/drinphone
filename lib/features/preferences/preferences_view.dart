@@ -22,11 +22,12 @@ class PreferencesView extends StatelessWidget {
     final c = context.drin;
     final tabs = [
       (tr('Utente'), _UserTab(phone: phone)),
-      (tr('Presenza'), _PresenceTab(phone: phone)),
+      if (phone.isYeastar) (tr('Presenza'), _PresenceTab(phone: phone)),
       (tr('Casella vocale'), _VoicemailTab(phone: phone)),
       (tr('Audio'), _AudioTab(phone: phone)),
       (tr('Funzionalità'), const _FeaturesTab()),
-      (tr('Integrazione PBX'), PbxConnectionsPanel(phone: phone)),
+      if (phone.isYeastar)
+        (tr('Integrazione PBX'), PbxConnectionsPanel(phone: phone)),
       (tr('Lingua'), _LanguageTab(phone: phone)),
       (tr('Diagnostica'), _DiagnosticsTab(phone: phone)),
     ];
