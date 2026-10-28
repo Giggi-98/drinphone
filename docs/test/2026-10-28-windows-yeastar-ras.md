@@ -14,6 +14,8 @@ parallelo sullo stesso interno. Nessuno STUN/ICE configurato.
 | Audio nei due versi | PASS (ascoltato) | Confermato dall'utente sulla chiamata entrante: "l'audio funzionava perfettamente" |
 | Coesistenza con Linkus Desktop sullo stesso interno | PASS | Registrazioni ed entrante funzionanti con Linkus aperto |
 | BLF SIP (SUBSCRIBE dialog) su interno 301 | PASS (solo Libero) | `Subscription-State: active;expires=613`; NOTIFY `dialog-info` full con dialog `terminated` → Libero. Squilla/Occupato non ancora osservati |
+| OpenAPI via FQDN: token + `extension/list` + `organization/list?is_all=1` | PASS | 50 interni, 6 reparti annidati; presenza mostrata sulle schede |
+| BLF su 49 interni (lista PBX) | PASS | 32 Libero, 1 Occupato, 16 **Non registrato**: Yeastar invia `<state>unregister</state>` (fuori RFC 4235), prima mostrato per errore come Squilla, corretto con test |
 | Password nel log di debug | OK (parole chiave) | vedi `docs/sicurezza/2026-10-28-account-sip-windows.md` |
 
 **Non provato:** muto, DTMF, rifiuto, chiamata persa/occupato, rete degradata o

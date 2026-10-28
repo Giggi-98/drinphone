@@ -18,12 +18,16 @@ class YeastarApiException implements Exception {
 
 class PbxExtension {
   const PbxExtension({
+    this.id = 0,
     required this.number,
     required this.name,
     this.email = '',
     this.mobile = '',
     this.presence = '',
   });
+
+  /// ID interno del PBX: è quello elencato in `ext_list` dei reparti.
+  final int id;
   final String number;
   final String name;
   final String email;
@@ -31,6 +35,19 @@ class PbxExtension {
 
   /// `available`, `away`, `business_trip`, `do_not_disturb`, `lunch`, `off_work`.
   final String presence;
+}
+
+class PbxOrg {
+  const PbxOrg({
+    required this.id,
+    required this.name,
+    required this.depth,
+    required this.extIds,
+  });
+  final int id;
+  final String name;
+  final int depth;
+  final Set<int> extIds;
 }
 
 class YeastarApi {
@@ -134,6 +151,7 @@ class YeastarApi {
       for (final e in data) {
         out.add(
           PbxExtension(
+            id: (e['id'] as num?)?.toInt() ?? 0,
             number: '${e['number'] ?? ''}',
             name: '${e['caller_id_name'] ?? ''}',
             email: '${e['email_addr'] ?? ''}',
@@ -145,6 +163,36 @@ class YeastarApi {
       final total = j['total_number'] as int? ?? out.length;
       if (data.isEmpty || out.length >= total) return out;
     }
+  }
+
+  /// Reparti del PBX, appiattiti in ordine di albero (`depth` = livello).
+  /// `extIds` di un reparto comprende anche gli interni dei sotto-reparti.
+  Future<List<PbxOrg>> listOrganizations() async {
+    final j = await _call(
+      'organization/list',
+      'GET',
+      _uri('organization/list', {'is_all': '1'}),
+    );
+    final out = <PbxOrg>[];
+    void walk(List<dynamic> nodes, int depth) {
+      for (final n in nodes.cast<Map<String, dynamic>>()) {
+        out.add(
+          PbxOrg(
+            id: (n['id'] as num?)?.toInt() ?? 0,
+            name: '${n['name'] ?? ''}',
+            depth: depth,
+            extIds: {
+              for (final x in (n['ext_list'] as List? ?? const []))
+                (x as num).toInt(),
+            },
+          ),
+        );
+        walk(n['children'] as List? ?? const [], depth + 1);
+      }
+    }
+
+    walk(j['organization_list'] as List? ?? const [], 0);
+    return out;
   }
 
   /// Revoca il token: alla chiusura, per non consumare uno degli 8 slot.

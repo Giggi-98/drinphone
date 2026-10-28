@@ -19,6 +19,7 @@
 | dialog terminated / nessun dialog attivo | libero | solo dopo subscription valida |
 | dialog early | squilla | potrebbe dipendere dal PBX |
 | dialog confirmed | occupato | chiamata in corso |
+| `<state>unregister</state>` (Yeastar, fuori RFC 4235) | non registrato | osservato su P-Series via RAS 2026-10-28 |
 | subscription pending / timeout / 403 / formato ignoto | sconosciuto | mai mostrare verde per deduzione |
 
 ## Implementazione BLF per iterazioni

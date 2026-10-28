@@ -56,7 +56,8 @@ class CallEvent {
 /// Stato linea di un interno via SIP BLF (dialog event package, RFC 4235).
 /// `unknown` finché la subscription non è attiva o se il PBX la rifiuta:
 /// mai verde per deduzione (docs/sip-e-blf.md).
-enum BlfStatus { unknown, idle, ringing, busy }
+/// `offline`: interno non registrato (Yeastar invia `<state>unregister</state>`).
+enum BlfStatus { unknown, offline, idle, ringing, busy }
 
 class BlfEvent {
   const BlfEvent(this.number, this.status, [this.reason = '']);

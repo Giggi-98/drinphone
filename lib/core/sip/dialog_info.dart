@@ -50,8 +50,15 @@ class DialogInfoTracker {
     if (_dialogs.isEmpty) return BlfStatus.idle;
     final values = _dialogs.values;
     if (values.any((d) => d.$1 == 'confirmed')) return BlfStatus.busy;
+    final early = values.where((d) => _earlyStates.contains(d.$1));
     // early/proceeding/trying: squilla se la chiamata è verso l'interno.
-    if (values.any((d) => d.$2 != 'initiator')) return BlfStatus.ringing;
-    return BlfStatus.busy;
+    if (early.any((d) => d.$2 != 'initiator')) return BlfStatus.ringing;
+    if (early.isNotEmpty) return BlfStatus.busy;
+    // Estensione Yeastar fuori RFC 4235 per interni non registrati.
+    if (values.any((d) => d.$1 == 'unregister')) return BlfStatus.offline;
+    // Stato non previsto: mai dedurre squilla/libero.
+    return BlfStatus.unknown;
   }
+
+  static const _earlyStates = {'trying', 'proceeding', 'early'};
 }

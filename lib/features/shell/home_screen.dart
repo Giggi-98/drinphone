@@ -491,8 +491,11 @@ class _ExtensionsView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = context.drin;
-    final list = phone.allExtensions;
-    return Container(
+    final list = phone.visibleExtensions;
+    final org = phone.pbxOrgs
+        .where((o) => o.id == phone.selectedOrg)
+        .firstOrNull;
+    final grid = Container(
       margin: const EdgeInsets.all(16),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -506,7 +509,7 @@ class _ExtensionsView extends StatelessWidget {
           Row(
             children: [
               Text(
-                'Tutti gli interni',
+                org?.name ?? 'Tutti gli interni',
                 style: TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.w600,
@@ -548,6 +551,7 @@ class _ExtensionsView extends StatelessWidget {
                       ext: list[i],
                       canCall: phone.canDial,
                       blf: phone.blf[list[i].number],
+                      presence: phone.presenceOf(list[i].number),
                       onCall: () => onCall(list[i].number),
                       onRemove: phone.isManual(list[i])
                           ? () => phone.removeExtension(list[i])
@@ -570,6 +574,86 @@ class _ExtensionsView extends StatelessWidget {
         ],
       ),
     );
+    // Pannello reparti solo se il PBX li fornisce: di default non c'è (DECISIONS 2026-10-28).
+    if (phone.pbxOrgs.isEmpty) return grid;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _GroupsPanel(phone: phone),
+        Expanded(child: grid),
+      ],
+    );
+  }
+}
+
+class _GroupsPanel extends StatelessWidget {
+  const _GroupsPanel({required this.phone});
+  final PhoneController phone;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.drin;
+    Widget entry(String label, int? id, int depth, String count) {
+      final selected = phone.selectedOrg == id;
+      return Material(
+        color: selected ? c.keyBtn : Colors.transparent,
+        borderRadius: BorderRadius.circular(8),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(8),
+          onTap: () => phone.selectOrg(id),
+          child: Container(
+            constraints: const BoxConstraints(minHeight: 40),
+            padding: EdgeInsets.only(left: 10.0 + depth * 14, right: 10),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    label,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: selected ? c.accent : c.text,
+                      fontWeight: selected ? FontWeight.w500 : FontWeight.w400,
+                    ),
+                  ),
+                ),
+                Text(count, style: TextStyle(fontSize: 12, color: c.muted)),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Container(
+      width: 240,
+      margin: const EdgeInsets.fromLTRB(16, 16, 0, 16),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: c.surface,
+        border: Border.all(color: c.border),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          entry('Tutti gli interni', null, 0, '${phone.allExtensions.length}'),
+          Divider(color: c.border, height: 16),
+          Expanded(
+            child: ListView(
+              children: [
+                for (final o in phone.pbxOrgs)
+                  entry(o.name, o.id, o.depth, '${o.extIds.length}'),
+              ],
+            ),
+          ),
+          Divider(color: c.border, height: 16),
+          Text(
+            'Reparti dal PBX Yeastar · sola lettura',
+            style: TextStyle(fontSize: 12, color: c.muted),
+          ),
+        ],
+      ),
+    );
   }
 }
 
@@ -578,12 +662,23 @@ class _ExtensionCard extends StatelessWidget {
     required this.ext,
     required this.canCall,
     required this.blf,
+    required this.presence,
     required this.onCall,
     required this.onRemove,
   });
   final Extension ext;
   final bool canCall;
   final BlfEvent? blf;
+  final String presence;
+
+  static const _presenceLabels = {
+    'available': 'Disponibile',
+    'away': 'Assente',
+    'business_trip': 'In trasferta',
+    'do_not_disturb': 'Non disturbare',
+    'lunch': 'Pausa pranzo',
+    'off_work': 'Fuori ufficio',
+  };
   final VoidCallback onCall;
   final VoidCallback? onRemove;
 
@@ -602,9 +697,16 @@ class _ExtensionCard extends StatelessWidget {
       BlfStatus.idle => (c.ok, c.ok, 'Libero', c.okText),
       BlfStatus.busy => (c.busy, c.busy, 'Occupato', c.busyText),
       BlfStatus.ringing => (c.ringing, c.card, 'Squilla', c.ringing),
+      BlfStatus.offline => (c.muted, c.card, 'Non registrato', c.muted),
       _ => (c.muted, c.card, 'Sconosciuto', c.muted),
     };
     final reason = blf?.reason ?? '';
+    // Presenza Yeastar dopo lo stato linea: "Libero · Non disturbare".
+    final presenceLabel = _presenceLabels[presence] ?? '';
+    final detail = [
+      if (reason.isNotEmpty) reason,
+      if (presenceLabel.isNotEmpty) presenceLabel,
+    ].join(' · ');
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
@@ -676,7 +778,7 @@ class _ExtensionCard extends StatelessWidget {
                     Tooltip(
                       message: reason,
                       child: Text(
-                        reason.isEmpty ? label : '$label · $reason',
+                        detail.isEmpty ? label : '$label · $detail',
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(fontSize: 12, color: labelColor),
                       ),

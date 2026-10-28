@@ -73,4 +73,20 @@ void main() {
         '<dialog-info state="full"><dialog id="a"><state>&e;</state></dialog></dialog-info>';
     expect(DialogInfoTracker().apply(xml), BlfStatus.unknown);
   });
+
+  test('Yeastar: <state>unregister</state> = non registrato, non squilla', () {
+    const xml =
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<dialog-info xmlns="urn:ietf:params:xml:ns:dialog-info" version="0" '
+        'state="full" entity="sip:208@pbx">\n <dialog id="208">\n'
+        '  <state>unregister</state>\n </dialog>\n</dialog-info>';
+    expect(DialogInfoTracker().apply(xml), BlfStatus.offline);
+  });
+
+  test('stato fuori standard sconosciuto = sconosciuto', () {
+    expect(
+      DialogInfoTracker().apply(doc('full', dialog('a', 'parked'))),
+      BlfStatus.unknown,
+    );
+  });
 }

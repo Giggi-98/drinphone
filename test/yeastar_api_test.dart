@@ -51,19 +51,42 @@ class FakePbx {
             'data': page == 1
                 ? [
                     {
+                      'id': 11,
                       'number': '301',
                       'caller_id_name': 'Paolo Guerra',
                       'presence_status': 'available',
                     },
-                    {'number': '305', 'caller_id_name': 'Giggi'},
+                    {'id': 15, 'number': '305', 'caller_id_name': 'Giggi'},
                   ]
                 : [
                     {
+                      'id': 50,
                       'number': '350',
                       'caller_id_name': 'Jack Egards',
                       'email_addr': 'j@x.it',
                     },
                   ],
+          };
+        case '/openapi/v1.0/organization/list':
+          reply = {
+            'errcode': 0,
+            'errmsg': 'SUCCESS',
+            'organization_list': [
+              {
+                'id': 1,
+                'name': 'Econnet',
+                'parent_id': 0,
+                'ext_list': [11, 15, 50],
+                'children': [
+                  {
+                    'id': 2,
+                    'name': 'Commerciale',
+                    'parent_id': 1,
+                    'ext_list': [11],
+                  },
+                ],
+              },
+            ],
           };
         case '/openapi/v1.0/del_token':
           reply = {'errcode': 0, 'errmsg': 'SUCCESS'};
@@ -235,6 +258,21 @@ void main() {
       expect(phone.allExtensions.map((e) => e.number), ['400', '301', '350']);
       expect(phone.isManual(phone.allExtensions.first), isTrue);
       expect(phone.isManual(phone.allExtensions.last), isFalse);
+
+      expect(phone.pbxOrgs.map((o) => (o.name, o.depth)), [
+        ('Econnet', 0),
+        ('Commerciale', 1),
+      ]);
+
+      expect(phone.presenceOf('301'), 'available');
+
+      phone.selectOrg(2);
+
+      expect(phone.visibleExtensions.map((e) => e.number), ['301']);
+
+      phone.selectOrg(null);
+
+      expect(phone.visibleExtensions.length, 3);
 
       engine.registrationsCtl.add(
         const RegistrationEvent(RegistrationStatus.ok),

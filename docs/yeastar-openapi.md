@@ -97,7 +97,12 @@ Decisioni aperte prima di scriverlo: hosting (server Econnet / VM cliente),
 come si autentica l'utente DrinPhone verso il gateway, un gateway per cliente o
 multi-tenant, retention dei dati personali (rubrica, numeri).
 
-## 7. Da verificare sul PBX pilota
+## 7. Verificato sul PBX pilota (2026-10-28, via FQDN RAS)
+`get_token`, `extension/list` (50 interni, `id`/`number`/`caller_id_name`/`presence_status`),
+`organization/list?is_all=1` (6 reparti annidati con `ext_list`), `del_token`.
+Il client rilegge interni e reparti ogni 60 s (presenza); WebSocket eventi non usato.
+
+## 7b. Ancora da verificare sul PBX pilota
 Edition e firmware; piano; API attivabile; `get_token` da IP ammesso; formato
 reale di `extension/list`, `organization/list`, `company_contact/list`; payload
 30007/30009; comportamento del refresh token precedente; codici di errore.

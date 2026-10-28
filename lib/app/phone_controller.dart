@@ -31,6 +31,18 @@ class PhoneController extends ChangeNotifier {
   /// Interni importati dal PBX via OpenAPI (vuoto se l'integrazione è spenta).
   List<PbxExtension> pbxDirectory = const [];
 
+  /// Reparti del PBX (vuoto = nessun pannello gruppi, DECISIONS 2026-10-28).
+  List<PbxOrg> pbxOrgs = const [];
+
+  /// Reparto selezionato nel pannello gruppi; null = tutti gli interni.
+  int? selectedOrg;
+
+  Timer? _apiPoll;
+
+  /// Presenza e reparti si rileggono a intervalli: semplice e 1-2 richieste/min.
+  /// Da rivedere con molti client: WebSocket eventi 30009/30006 (docs/yeastar-openapi.md).
+  static const apiPollInterval = Duration(seconds: 60);
+
   /// Stato leggibile dell'integrazione API; null = non configurata.
   String? apiStatus;
 
@@ -83,16 +95,20 @@ class PhoneController extends ChangeNotifier {
   }
 
   Future<void> clearApiCredentials() async {
+    _apiPoll?.cancel();
     await _api?.close();
     _api = null;
     await apiStore?.clear();
     pbxDirectory = const [];
+    pbxOrgs = const [];
+    selectedOrg = null;
     apiStatus = null;
     await _syncDialogs();
     notifyListeners();
   }
 
   Future<void> _connectApi() async {
+    _apiPoll?.cancel();
     await _api?.close();
     _api = null;
     final creds = await apiStore?.load();
@@ -105,17 +121,68 @@ class PhoneController extends ChangeNotifier {
     final api = _apiFactory(creds);
     try {
       await api.connect();
-      pbxDirectory = await api.listExtensions();
       _api = api;
-      apiStatus = 'Connessa · ${pbxDirectory.length} interni';
-      debugPrint('[drinphone] api yeastar: ${pbxDirectory.length} interni');
-      await _syncDialogs();
+      await _pullDirectory();
+      debugPrint(
+        '[drinphone] api yeastar: ${pbxDirectory.length} interni, '
+        '${pbxOrgs.length} reparti',
+      );
+      _apiPoll = Timer.periodic(apiPollInterval, (_) async {
+        await _pullDirectory();
+        notifyListeners();
+      });
     } catch (e) {
       // e non contiene URL né token (YeastarApiException), solo operazione e codice.
       apiStatus = 'Errore: $e';
       debugPrint('[drinphone] api yeastar: $e');
       await api.close();
     }
+  }
+
+  Future<void> _pullDirectory() async {
+    final api = _api;
+    if (api == null) return;
+    try {
+      pbxDirectory = await api.listExtensions();
+      apiStatus = 'Connessa · ${pbxDirectory.length} interni';
+    } catch (e) {
+      // Si tengono gli ultimi dati letti; e non contiene URL né token.
+      apiStatus = 'Errore aggiornamento: $e';
+      return;
+    }
+    try {
+      pbxOrgs = await api.listOrganizations();
+    } catch (e) {
+      // Reparti facoltativi: senza, niente pannello gruppi.
+      pbxOrgs = const [];
+      debugPrint('[drinphone] api yeastar reparti: $e');
+    }
+    if (!pbxOrgs.any((o) => o.id == selectedOrg)) selectedOrg = null;
+    await _syncDialogs();
+  }
+
+  void selectOrg(int? id) {
+    selectedOrg = id;
+    notifyListeners();
+  }
+
+  /// Presenza Yeastar dell'interno (`available`, `away`, …); vuota se ignota.
+  String presenceOf(String number) {
+    for (final x in pbxDirectory) {
+      if (x.number == number) return x.presence;
+    }
+    return '';
+  }
+
+  /// Interni della griglia: tutti, o solo quelli del reparto selezionato.
+  List<Extension> get visibleExtensions {
+    final org = pbxOrgs.where((o) => o.id == selectedOrg).firstOrNull;
+    if (org == null) return allExtensions;
+    final numbers = {
+      for (final x in pbxDirectory)
+        if (org.extIds.contains(x.id)) x.number,
+    };
+    return allExtensions.where((e) => numbers.contains(e.number)).toList();
   }
 
   /// Interni mostrati: quelli inseriti a mano più quelli del PBX, senza il proprio.
@@ -253,6 +320,7 @@ class PhoneController extends ChangeNotifier {
   /// Chiusura ordinata (uscita dall'app): revoca il token API e ferma il motore,
   /// che invia l'un-REGISTER e scarica il log.
   Future<void> shutdown() async {
+    _apiPoll?.cancel();
     await _api?.close();
     _api = null;
     await _engine.stop();
@@ -260,6 +328,7 @@ class PhoneController extends ChangeNotifier {
 
   @override
   void dispose() {
+    _apiPoll?.cancel();
     for (final s in _subs) {
       s.cancel();
     }

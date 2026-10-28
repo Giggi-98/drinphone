@@ -47,17 +47,20 @@ spikes/f0a/                         spike F0-A (non prodotto)
   application/dialog-info+xml`) per interno della lista locale, a registrazione OK;
   NOTIFY -> `DialogInfoTracker` (`lib/core/sip/dialog_info.dart`, regex senza
   espansione di entità, full/partial) -> `BlfStatus` unknown/idle/ringing/busy.
+  `<state>unregister</state>` di Yeastar -> `offline` (Non registrato).
   Subscription terminata o rifiutata: stato sconosciuto con motivo, ritentata al
   rinnovo REGISTER successivo. Registrazione caduta: tutto sconosciuto.
 - **Yeastar OpenAPI** (`IMPLEMENTATO`, `DA VALIDARE` sul PBX) — `YeastarApi`
   (`lib/core/pbx/`): `get_token` con Client ID/Secret, refresh a 25 min, `del_token`
-  all'uscita, `extension/list` paginato. Interni del PBX uniti a quelli manuali
+  all'uscita, `extension/list` paginato e `organization/list` (reparti), riletti
+  ogni 60 s per la presenza. Interni del PBX uniti a quelli manuali
   (senza il proprio, max 100 in BLF). Solo Windows. Credenziali in
   `ApiCredentialStore` (DPAPI, sola scrittura dalla UI, DECISIONS 2026-10-28 bis).
 - **SettingsStore** — `settings.json` (utente, dominio, trasporto, interni, flag
   debug) + password in `flutter_secure_storage`.
 - **UI** — `ChangeNotifier` senza librerie di stato. Sezioni: Interni (lista locale,
-  pallino e testo da BLF SIP), Impostazioni (account). Gruppi: assenti.
+  pallino e testo da BLF SIP + presenza Yeastar; pannello reparti solo se il PBX
+  li fornisce, sola lettura), Integrazione PBX, Impostazioni (account). Gruppi: assenti.
 - **Push / Yeastar / Update** — non implementati (F4 / F6 / F7).
 
 ## 4. Flussi
