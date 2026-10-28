@@ -13,6 +13,56 @@ import '../security/api_credential_store.dart';
 import '../sip/sip_engine.dart' show BlfStatus;
 import 'yeastar_api.dart';
 
+/// Chiamata in corso sul PBX (Live Calls).
+class LiveCall {
+  LiveCall(this.id, this.members) : seen = DateTime.now();
+  final String id;
+  List<LiveMember> members;
+
+  /// Prima volta vista (inizio approssimato) e prima risposta.
+  final DateTime seen;
+  DateTime? answered;
+
+  bool get ringing =>
+      members.any((m) => m.status == 'RING' || m.status == 'ALERT');
+  bool get onHold => members.any((m) => m.status == 'HOLD');
+  bool get talking =>
+      members.any((m) => m.status == 'ANSWER' || m.status == 'ANSWERED');
+
+  /// Chiamata verso l'esterno (Linkus: "Outbound Calls").
+  bool get outbound => members.any((m) => m.kind == 'outbound');
+
+  LiveMember? _of(String kind) =>
+      members.where((m) => m.kind == kind).firstOrNull;
+
+  /// Chiamante: da inbound/outbound/internal, altrimenti il primo interno.
+  String get caller {
+    for (final k in ['inbound', 'outbound', 'internal']) {
+      final m = _of(k);
+      if (m != null && m.from.isNotEmpty) return m.from;
+    }
+    return members.where((m) => m.kind == 'extension').firstOrNull?.number ??
+        '';
+  }
+
+  /// Chiamato: interni coinvolti diversi dal chiamante, o il numero esterno.
+  String get callee {
+    final out = _of('outbound');
+    if (out != null && out.to.isNotEmpty) return out.to;
+    final exts = [
+      for (final m in members)
+        if (m.kind == 'extension' && m.number != caller) m.number,
+    ];
+    if (exts.isNotEmpty) return exts.join(', ');
+    return (_of('inbound') ?? _of('internal'))?.to ?? '';
+  }
+
+  String get trunk =>
+      members.map((m) => m.trunk).where((t) => t.isNotEmpty).firstOrNull ?? '';
+  String get path =>
+      members.map((m) => m.path).where((t) => t.isNotEmpty).firstOrNull ?? '';
+}
+
 class PbxConnection {
   PbxConnection({
     required this.id,
@@ -43,6 +93,9 @@ class PbxConnection {
   /// Stato di chiamata per interno dall'evento 30008 (BLF senza SIP).
   final callStatus = <String, BlfStatus>{};
 
+  /// Chiamate in corso sul PBX (evento 30011 + fotografia call/query).
+  final liveCalls = <String, LiveCall>{};
+
   /// Stato leggibile del canale eventi; vuoto se spento.
   String eventsStatus = '';
   bool get eventsConnected => _ws != null;
@@ -55,7 +108,10 @@ class PbxConnection {
 
   /// Eventi sottoscritti: registrazione (30007), stato chiamata (30008),
   /// presenza (30009), anagrafica interno cambiata (30022).
-  static const eventTopics = [30007, 30008, 30009, 30022];
+  static const eventTopics = [30007, 30008, 30009, 30011, 30022];
+
+  /// Tipi di call/query per la fotografia iniziale (DA VALIDARE sul PBX).
+  static const _callTypes = ['inbound', 'outbound', 'internal'];
 
   /// Interno di cui leggere la casella vocale (l'account SIP); null = nessuno.
   String? voicemailOf;
@@ -211,6 +267,7 @@ class PbxConnection {
       _closeEvents();
       eventsStatus = '';
       callStatus.clear();
+      liveCalls.clear();
       onUpdate(this, false);
     }
   }
@@ -275,6 +332,44 @@ class PbxConnection {
     _ws = null;
   }
 
+  /// Fotografia delle chiamate in corso: gli eventi 30011 arrivano solo sui cambi.
+  Future<void> _snapshotCalls() async {
+    final api = _api;
+    if (api == null) return;
+    for (final type in _callTypes) {
+      try {
+        final calls = await api.queryCalls(type);
+        for (final e in calls.entries) {
+          liveCalls.putIfAbsent(e.key, () => LiveCall(e.key, e.value)).members =
+              e.value;
+        }
+      } catch (e) {
+        debugPrint('[drinphone] call/query $type: ${_short(e)}');
+      }
+    }
+    liveCalls.removeWhere((_, c) => c.members.isEmpty);
+    onUpdate(this, false);
+  }
+
+  /// Evento 30011: aggiorna i membri per canale; i BYE escono, la chiamata
+  /// sparisce quando non resta nessuno.
+  void _applyCall(Map<String, dynamic> msg) {
+    final id = '${msg['call_id'] ?? ''}';
+    if (id.isEmpty) return;
+    final incoming = LiveMember.parse(msg['members'] as List? ?? const []);
+    final call = liveCalls.putIfAbsent(id, () => LiveCall(id, const []));
+    final byChannel = {for (final m in call.members) m.channel: m};
+    for (final m in incoming) {
+      byChannel[m.channel] = m;
+    }
+    call.members = [
+      for (final m in byChannel.values)
+        if (m.status != 'BYE') m,
+    ];
+    if (call.talking) call.answered ??= DateTime.now();
+    if (call.members.isEmpty) liveCalls.remove(id);
+  }
+
   static BlfStatus? _callState(String s) => switch (s.toLowerCase()) {
     'idle' => BlfStatus.idle,
     'ringing' => BlfStatus.ringing,
@@ -296,7 +391,10 @@ class PbxConnection {
       eventsStatus = code == 0
           ? tr('Eventi in tempo reale attivi')
           : tr('Eventi rifiutati dal PBX (errcode {c})', {'c': code});
-      if (code == 0) _wsFailures = 0;
+      if (code == 0) {
+        _wsFailures = 0;
+        _snapshotCalls();
+      }
       onUpdate(this, false);
       return;
     }
@@ -336,6 +434,9 @@ class PbxConnection {
           ];
           onUpdate(this, false);
         }
+      case 30011:
+        _applyCall(msg);
+        onUpdate(this, false);
       case 30022:
         // Anagrafica cambiata: rilettura a breve (più eventi ravvicinati = una).
         _resyncSoon?.cancel();

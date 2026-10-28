@@ -22,7 +22,10 @@ lib/core/sip/linphone_ffi_engine.dart  unico adattatore liblinphone (FFI, API C)
 lib/core/security/settings_store.dart  impostazioni JSON + password in storage sicuro
 lib/features/shell/home_screen.dart barra sezioni, barra composizione, griglia interni
 lib/features/call/                  pannello chiamata, tastierino (anche DTMF)
-lib/features/account/               dialogo account SIP
+lib/features/account/               editor account SIP, pannello connessioni PBX
+lib/features/preferences/           Preferenze a schede (utente, audio, PBX, lingua…)
+lib/features/live/                  Live Calls: chiamate in corso del PBX + colonna BLF
+lib/features/contacts|history|voicemail/  rubrica, registro chiamate, casella vocale
 test/                               controller e UI con FakeSipEngine
 windows/                            runner Flutter; CMake installa l'SDK accanto all'exe
 tool/fetch_linphone_sdk.ps1         scarica SDK in third_party/ (non versionato)
@@ -57,10 +60,21 @@ spikes/f0a/                         spike F0-A (non prodotto)
 - **Account SIP multipli** (`IMPLEMENTATO`, verificato solo l'account principale) —
   `SipEngine.setAccounts`, eventi di registrazione per account, `dial(numero,
   accountId)`; `Settings.accounts` (password per account nello storage sicuro,
-  `main` = chiave storica), account ↔ connessione PBX in Impostazioni.
+  `main` = chiave storica), account ↔ connessione PBX in Preferenze > Utente.
 - **Eventi PBX in tempo reale** (`IMPLEMENTATO`, `DA VALIDARE` sul pilota) —
   `PbxConnection.setRealtime`: WebSocket `wss://…/openapi/v1.0/subscribe`, topic
-  30007/30008/30009/30022, heartbeat, riconnessione; interruttore in Integrazione PBX.
+  30007/30008/30009/30011/30022, heartbeat, riconnessione; interruttore in
+  Preferenze > Integrazione PBX. Presenza via 30009 `VERIFICATA` sul pilota.
+- **Live Calls** (`IMPLEMENTATO`, `DA VALIDARE` con chiamate reali) —
+  `PbxConnection.liveCalls`: evento 30011 (membri per `channel_id`, i `BYE` escono,
+  chiamata rimossa quando vuota) + fotografia `call/query?type=inbound|outbound|internal`
+  dopo la sottoscrizione (tipi accettati dal PBX pilota, contenuto da verificare).
+  Inizio = prima volta vista, durata da prima risposta. Vista `features/live/`:
+  tabelle "Entranti e interne" / "Uscenti", scelta del PBX, colonna BLF a gruppi
+  (Preferiti + reparti, attivi/totale); solo lettura, nessun controllo di chiamata.
+- **Dispositivi audio** (`IMPLEMENTATO`, `DA VALIDARE`) — `linphone_core_get_sound_devices`
+  + set capture/playback/ringer; scelta in Preferenze > Audio, salvata in
+  `settings.json` e riapplicata all'avvio.
 - **Connessioni PBX** (`IMPLEMENTATO`) — `PbxConnection` (`lib/core/pbx/pbx_connection.dart`),
   una per PBX, elenco id/etichetta in `settings.json`, credenziali in
   `yeastar-api[-<id>].dpapi` (`default` = file della versione singola, migrato).
@@ -75,7 +89,7 @@ spikes/f0a/                         spike F0-A (non prodotto)
   `ApiCredentialStore` (DPAPI, sola scrittura dalla UI, DECISIONS 2026-10-28 bis).
 - **Rubrica aziendale** (`IMPLEMENTATO`, verificato sul pilota) — `company_contact/list`
   (pagine da 500) letta con i reparti ogni 10 min, **solo in memoria**; vista
-  `features/contacts/` con filtro per phonebook e un pulsante Chiama per numero
+  `features/contacts/` con menu delle phonebook e un pulsante Chiama per numero
   (fax esclusi). `nameFor(numero)` dà il nome del chiamante da interni e rubrica
   (cifre finali se ≥ 7 cifre). Errori di reparti/rubrica non bloccano gli interni.
 - **Casella vocale** (`IMPLEMENTATO`, verificata sul pilota via API) — `vm/get` del
@@ -87,7 +101,9 @@ spikes/f0a/                         spike F0-A (non prodotto)
 - **Preferiti** — stella sulle schede (al passaggio del mouse o se attiva), salvati
   in `settings.json` come `<connessione>:<numero>`; vista "Preferiti" nel pannello
   reparti o, senza pannello, filtro a stella nell'intestazione.
-- **Lingua** — `tr('testo italiano')` + `l10n_en.dart`; scelta in Impostazioni,
+- **Reparti: solo membri diretti** — casella nell'intestazione di un reparto:
+  `extIds` meno quelli dei sotto-reparti diretti (non salvata).
+- **Lingua** — `tr('testo italiano')` + `l10n_en.dart`; scelta in Preferenze,
   immediata (rebuild di MaterialApp) e salvata in `settings.json`; un test
   verifica che ogni chiave abbia la traduzione.
 - **UI** — Segoe UI Variable + Cascadia Mono; schede compatte a simboli
@@ -95,7 +111,8 @@ spikes/f0a/                         spike F0-A (non prodotto)
   50 contatti/registro); ricerca con popup sotto il campo (frecce/Invio/Esc).
 - **Registro chiamate** (`IMPLEMENTATO`) — `CallHistoryStore` (`lib/core/call_history.dart`):
   `history.json` locale, ultime 200 chiamate, salvataggi in coda; persa = entrante
-  non risposta. Vista `features/history/`.
+  non risposta. Vista `features/history/` con filtri tipo (tutte/in arrivo/perse/
+  in uscita), periodo (oggi/7/30 giorni/tutto) e nome/numero.
 - **Ricerca** — il campo in alto filtra la griglia per nome/numero; Invio chiama
   il numero o l'unico interno trovato.
 - **Attenzione chiamata entrante** (Windows) — `WindowAttention` (user32 via FFI):
@@ -105,19 +122,23 @@ spikes/f0a/                         spike F0-A (non prodotto)
   debug) + password in `flutter_secure_storage`.
 - **UI** — `ChangeNotifier` senza librerie di stato. Sezioni: Interni (lista locale,
   pallino e testo da BLF SIP + presenza Yeastar; pannello reparti solo se il PBX
-  li fornisce, sola lettura), Integrazione PBX, Impostazioni (account). Gruppi: assenti.
+  li fornisce, sola lettura), Live Calls, Rubrica, Registro chiamate, Casella
+  vocale; in fondo Preferenze (schede Utente, Presenza, Casella vocale, Audio,
+  Funzionalità — solo segnaposto —, Integrazione PBX, Lingua, Diagnostica).
 - **Push / Yeastar / Update** — non implementati (F4 / F6 / F7).
 
 ## 4. Flussi
 - **Avvio**: `AppPaths` -> `SettingsStore.load()` -> `engine.start(dataDir, logDir,
   debug)` -> se c'è un account `engine.register()`.
-- **Registrazione**: dialogo account -> `saveAccount` (password nello storage
+- **Registrazione**: Preferenze > Utente -> `saveAccount` (password nello storage
   sicuro) -> `clear_accounts` + `auth_info` + `account_params` (server =
   `sip:<dominio>`, trasporto UDP/TCP/TLS) -> evento registrazione -> chip in alto.
 - **Uscente**: campo/scheda -> `dial(numero)` -> `linphone_core_invite` (numero
   completato col dominio dell'account) -> eventi -> `CallPanel`.
 - **Entrante**: callback `IncomingReceived` -> `CallPanel` con Rispondi/Rifiuta.
-- **API PBX**: Integrazione PBX -> `ApiCredentialStore.save` -> `get_token` ->
+- **Live Calls**: sottoscrizione WebSocket OK -> `call/query` (3 tipi) -> eventi
+  30011 -> `liveCalls` -> `LiveCallsView` (timer 1 s per le durate).
+- **API PBX**: Preferenze > Integrazione PBX -> `ApiCredentialStore.save` -> `get_token` ->
   `extension/list` -> griglia Interni + `watchDialogs`. Uscita dall'app
   (`AppLifecycleListener.onExitRequested`) -> `del_token` + `engine.stop()` (un-REGISTER).
 - **Log di debug**: flag nelle impostazioni, attivo al prossimo avvio:

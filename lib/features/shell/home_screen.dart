@@ -7,11 +7,11 @@ import '../../app/phone_controller.dart';
 import '../../app/theme.dart';
 import '../../core/security/settings_store.dart';
 import '../../core/sip/sip_engine.dart';
-import '../account/account_dialog.dart';
-import '../account/api_dialog.dart';
 import '../call/call_panel.dart';
 import '../contacts/contacts_view.dart';
 import '../history/history_view.dart';
+import '../live/live_calls_view.dart';
+import '../preferences/preferences_view.dart';
 import '../voicemail/voicemail_view.dart';
 import 'search_box.dart';
 import 'widgets.dart';
@@ -26,10 +26,13 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-enum _Section { extensions, contacts, history, voicemail }
+enum _Section { extensions, live, contacts, history, voicemail, preferences }
 
 class _HomeScreenState extends State<HomeScreen> {
   _Section _section = _Section.extensions;
+
+  /// Scheda iniziale delle Preferenze (5 = Integrazione PBX).
+  int _prefsTab = 0;
   late final AppLifecycleListener _lifecycle;
 
   PhoneController get p => widget.phone;
@@ -67,15 +70,10 @@ class _HomeScreenState extends State<HomeScreen> {
 
   void _call(String number) => p.dial(number);
 
-  void _openSettings() => showDialog<void>(
-    context: context,
-    builder: (_) => AccountDialog(phone: p),
-  );
-
-  void _openApi() => showDialog<void>(
-    context: context,
-    builder: (_) => ApiDialog(phone: p),
-  );
+  void _openPreferences([int tab = 0]) => setState(() {
+    _prefsTab = tab;
+    _section = _Section.preferences;
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -90,8 +88,6 @@ class _HomeScreenState extends State<HomeScreen> {
             missed: p.history.where((r) => r.missed).length,
             voicemailNew: p.voicemailNew,
             onSection: (s) => setState(() => _section = s),
-            onSettings: _openSettings,
-            onApi: p.apiAvailable ? _openApi : null,
           ),
           Expanded(
             child: Stack(
@@ -111,7 +107,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       _banner(
                         c,
                         tr('Nessun account SIP configurato.'),
-                        action: (tr('Configura'), _openSettings),
+                        action: (tr('Configura'), _openPreferences),
                       ),
                     Expanded(
                       child: switch (_section) {
@@ -130,6 +126,15 @@ class _HomeScreenState extends State<HomeScreen> {
                         _Section.voicemail => VoicemailView(
                           phone: p,
                           onCall: _call,
+                        ),
+                        _Section.live => LiveCallsView(
+                          phone: p,
+                          onOpenPreferences: () => _openPreferences(5),
+                        ),
+                        _Section.preferences => PreferencesView(
+                          key: ValueKey(_prefsTab),
+                          phone: p,
+                          initialTab: _prefsTab,
                         ),
                       },
                     ),
@@ -232,7 +237,7 @@ class _HomeScreenState extends State<HomeScreen> {
           SearchBox(phone: p, onCall: _call),
           const SizedBox(width: 12),
           InkWell(
-            onTap: _openSettings,
+            onTap: _openPreferences,
             borderRadius: BorderRadius.circular(10),
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
@@ -284,15 +289,11 @@ class _Sidebar extends StatelessWidget {
     required this.missed,
     required this.voicemailNew,
     required this.onSection,
-    required this.onSettings,
-    required this.onApi,
   });
   final _Section section;
   final int missed;
   final int voicemailNew;
   final ValueChanged<_Section> onSection;
-  final VoidCallback onSettings;
-  final VoidCallback? onApi;
 
   @override
   Widget build(BuildContext context) {
@@ -398,6 +399,12 @@ class _Sidebar extends StatelessWidget {
             () => onSection(_Section.extensions),
           ),
           item(
+            Icons.monitor_heart_outlined,
+            tr('Live Calls'),
+            section == _Section.live,
+            () => onSection(_Section.live),
+          ),
+          item(
             Icons.contacts_outlined,
             tr('Rubrica'),
             section == _Section.contacts,
@@ -418,9 +425,12 @@ class _Sidebar extends StatelessWidget {
             trailing: CountBadge(voicemailNew, alert: true),
           ),
           const Spacer(),
-          if (onApi != null)
-            item(Icons.hub_outlined, tr('Integrazione PBX'), false, onApi),
-          item(Icons.tune_rounded, tr('Impostazioni'), false, onSettings),
+          item(
+            Icons.tune_rounded,
+            tr('Preferenze'),
+            section == _Section.preferences,
+            () => onSection(_Section.preferences),
+          ),
         ],
       ),
     );
@@ -506,6 +516,9 @@ class _ExtensionsViewState extends State<_ExtensionsView> {
         conn.label;
   }
 
+  /// Reparto selezionato (`<pbx>:<org>`), non un PBX intero o i Preferiti.
+  static bool _isOrg(String? g) => g != null && g.split(':').length > 1;
+
   @override
   Widget build(BuildContext context) {
     final c = context.drin;
@@ -551,6 +564,23 @@ class _ExtensionsViewState extends State<_ExtensionsView> {
                   ],
                 ),
               ),
+              if (_isOrg(phone.selectedGroup))
+                Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: Row(
+                    children: [
+                      Checkbox(
+                        value: phone.directMembersOnly,
+                        onChanged: (v) =>
+                            phone.setDirectMembersOnly(v ?? false),
+                      ),
+                      Text(
+                        tr('Solo membri diretti'),
+                        style: TextStyle(fontSize: 13, color: c.muted),
+                      ),
+                    ],
+                  ),
+                ),
               // Senza pannello reparti, il filtro Preferiti sta nell'intestazione.
               if (!_hasGroups(phone))
                 IconButton(

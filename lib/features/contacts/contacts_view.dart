@@ -52,28 +52,6 @@ class _ContactsViewState extends State<ContactsView> {
     final slice = Pager.slice(list, _page, pageSize);
     final multi = p.connections.length > 1;
 
-    Widget chip(String label, String? value) {
-      final on = _book == value;
-      return Material(
-        color: on ? c.keyBtn : Colors.transparent,
-        shape: StadiumBorder(side: BorderSide(color: on ? c.accent : c.border)),
-        child: InkWell(
-          customBorder: const StadiumBorder(),
-          onTap: () => setState(() {
-            _book = value;
-            _page = 0;
-          }),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
-            child: Text(
-              label,
-              style: TextStyle(fontSize: 12, color: on ? c.accent : c.text),
-            ),
-          ),
-        ),
-      );
-    }
-
     return Container(
       margin: const EdgeInsets.all(16),
       padding: const EdgeInsets.all(16),
@@ -98,6 +76,28 @@ class _ContactsViewState extends State<ContactsView> {
               ),
               const SizedBox(width: 12),
               CountBadge(list.length),
+              // Rubriche del PBX come menu a tendina (stile Linkus).
+              if (books.length > 1) ...[
+                const SizedBox(width: 16),
+                Icon(Icons.menu_book_outlined, size: 18, color: c.muted),
+                const SizedBox(width: 6),
+                DropdownButton<String?>(
+                  value: books.contains(_book) ? _book : null,
+                  underline: const SizedBox.shrink(),
+                  items: [
+                    DropdownMenuItem(
+                      value: null,
+                      child: Text(tr('Tutte le rubriche')),
+                    ),
+                    for (final b in books)
+                      DropdownMenuItem(value: b, child: Text(b)),
+                  ],
+                  onChanged: (v) => setState(() {
+                    _book = v;
+                    _page = 0;
+                  }),
+                ),
+              ],
               const Spacer(),
               SizedBox(
                 width: 280,
@@ -118,17 +118,6 @@ class _ContactsViewState extends State<ContactsView> {
               ),
             ],
           ),
-          if (books.length > 1) ...[
-            const SizedBox(height: 12),
-            Wrap(
-              spacing: 6,
-              runSpacing: 6,
-              children: [
-                chip(tr('Tutte'), null),
-                for (final b in books) chip(b, b),
-              ],
-            ),
-          ],
           const SizedBox(height: 10),
           Expanded(
             child: list.isEmpty

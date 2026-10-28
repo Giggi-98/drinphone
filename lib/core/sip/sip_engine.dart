@@ -83,6 +83,17 @@ class BlfEvent {
   final String reason;
 }
 
+/// Dispositivo audio del sistema (id del core, es. `WASAPI: Microfono (…)`).
+class SoundDevice {
+  const SoundDevice(this.id, {required this.capture, required this.playback});
+  final String id;
+  final bool capture;
+  final bool playback;
+
+  /// Nome leggibile: senza il prefisso del driver.
+  String get name => id.replaceFirst(RegExp(r'^[A-Za-z]+:\s*'), '');
+}
+
 /// Casella vocale (SIP MWI, message-summary): messaggi nuovi e già ascoltati.
 class VoicemailEvent {
   const VoicemailEvent(this.newMessages, this.oldMessages);
@@ -118,6 +129,19 @@ abstract class SipEngine {
   Future<void> hangup(int id);
   Future<void> setMicMuted(bool muted);
   Future<void> sendDtmf(int id, String digit);
+
+  /// Dispositivi audio disponibili (rilegge il sistema).
+  List<SoundDevice> soundDevices();
+
+  /// Dispositivi in uso: (microfono, altoparlante, suoneria).
+  (String, String, String) audioDevices();
+
+  /// Imposta i dispositivi; null = lascia com'è.
+  Future<void> setAudioDevices({
+    String? capture,
+    String? playback,
+    String? ringer,
+  });
 
   /// Attesa / ripresa (re-INVITE sendonly/sendrecv).
   Future<void> hold(int id);

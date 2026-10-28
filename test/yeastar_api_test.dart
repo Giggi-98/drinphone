@@ -319,6 +319,15 @@ void main() {
 
       phone.selectGroup('a:2');
       expect(phone.visibleExtensions.map((e) => e.number), ['301']);
+      // Econnet include Commerciale (301): coi soli diretti il 301 sparisce.
+      phone.selectGroup('a:1');
+      expect(phone.visibleExtensions.map((e) => e.number), contains('301'));
+      phone.setDirectMembersOnly(true);
+      expect(
+        phone.visibleExtensions.map((e) => e.number),
+        isNot(contains('301')),
+      );
+      phone.setDirectMembersOnly(false);
       phone.selectGroup(null);
       expect(phone.visibleExtensions.length, 3);
 
@@ -426,49 +435,90 @@ void main() {
     await phone.shutdown();
   }, skip: !Platform.isWindows);
 
-  test(
-    'eventi WebSocket: sottoscrizione, stato chiamata 30008, presenza 30009',
-    () async {
-      final phone = await controllerWith(FakeSipEngine(), {'a': pbx.baseUrl});
-      final conn = phone.connections.single;
-      await phone.setRealtime(conn, true);
-      for (var i = 0; i < 50 && pbx.eventMessages.isEmpty; i++) {
-        await Future<void>.delayed(const Duration(milliseconds: 20));
-      }
-      expect(jsonDecode(pbx.eventMessages.first)['topic_list'], [
-        30007,
-        30008,
-        30009,
-        30022,
-      ]);
-      pbx.events!.add(
-        jsonEncode({
-          'type': 30008,
-          'sn': 'X',
-          'msg': jsonEncode({'extension': '301', 'status': 'Ringing'}),
-        }),
-      );
-      pbx.events!.add(
-        jsonEncode({
-          'type': 30009,
-          'msg': {'extension': '350', 'presence_status': 'do_not_disturb'},
-        }),
-      );
-      for (var i = 0; i < 50 && conn.callStatus.isEmpty; i++) {
-        await Future<void>.delayed(const Duration(milliseconds: 20));
-      }
-      await Future<void>.delayed(const Duration(milliseconds: 50));
-      expect(conn.eventsConnected, isTrue);
-      expect(conn.eventsStatus, 'Eventi in tempo reale attivi');
-      expect(conn.callStatus['301'], BlfStatus.ringing);
-      final jack = phone.allExtensions.firstWhere((e) => e.number == '350');
-      expect(phone.presenceOf(jack), 'do_not_disturb');
-      // Il token resta solo nell'URL del WebSocket, mai nello stato mostrato.
-      expect(conn.eventsStatus, isNot(contains('AT1')));
-      await phone.setRealtime(conn, false);
-      expect(conn.eventsConnected, isFalse);
-      await phone.shutdown();
-    },
-    skip: !Platform.isWindows,
-  );
+  test('eventi WebSocket: sottoscrizione, 30008, presenza 30009, live calls 30011', () async {
+    final phone = await controllerWith(FakeSipEngine(), {'a': pbx.baseUrl});
+    final conn = phone.connections.single;
+    await phone.setRealtime(conn, true);
+    for (var i = 0; i < 50 && pbx.eventMessages.isEmpty; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+    }
+    expect(jsonDecode(pbx.eventMessages.first)['topic_list'], [
+      30007,
+      30008,
+      30009,
+      30011,
+      30022,
+    ]);
+    pbx.events!.add(
+      jsonEncode({
+        'type': 30008,
+        'sn': 'X',
+        'msg': jsonEncode({'extension': '301', 'status': 'Ringing'}),
+      }),
+    );
+    pbx.events!.add(
+      jsonEncode({
+        'type': 30009,
+        'msg': {'extension': '350', 'presence_status': 'do_not_disturb'},
+      }),
+    );
+    // Live Calls: entrante da trunk che squilla sul 301, poi risposta, poi BYE.
+    Map<String, dynamic> call(String status) => {
+      'type': 30011,
+      'msg': jsonEncode({
+        'call_id': 'C1',
+        'members': [
+          {
+            'inbound': {
+              'from': '0612345',
+              'to': '301',
+              'trunk_name': 'Trunk1',
+              'channel_id': 'ch-in',
+              'member_status': status == 'RING' ? 'ALERT' : status,
+            },
+          },
+          {
+            'extension': {
+              'number': '301',
+              'channel_id': 'ch-301',
+              'member_status': status,
+            },
+          },
+        ],
+      }),
+    };
+    pbx.events!.add(jsonEncode(call('RING')));
+    for (var i = 0; i < 50 && conn.liveCalls.isEmpty; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+    }
+    final live = conn.liveCalls['C1']!;
+    expect(live.ringing, isTrue);
+    expect(live.caller, '0612345');
+    expect(live.callee, '301');
+    expect(live.trunk, 'Trunk1');
+    pbx.events!.add(jsonEncode(call('ANSWERED')));
+    for (var i = 0; i < 50 && live.answered == null; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+    }
+    expect(live.talking, isTrue);
+    pbx.events!.add(jsonEncode(call('BYE')));
+    for (var i = 0; i < 50 && conn.liveCalls.isNotEmpty; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+    }
+    expect(conn.liveCalls, isEmpty);
+    for (var i = 0; i < 50 && conn.callStatus.isEmpty; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+    expect(conn.eventsConnected, isTrue);
+    expect(conn.eventsStatus, 'Eventi in tempo reale attivi');
+    expect(conn.callStatus['301'], BlfStatus.ringing);
+    final jack = phone.allExtensions.firstWhere((e) => e.number == '350');
+    expect(phone.presenceOf(jack), 'do_not_disturb');
+    // Il token resta solo nell'URL del WebSocket, mai nello stato mostrato.
+    expect(conn.eventsStatus, isNot(contains('AT1')));
+    await phone.setRealtime(conn, false);
+    expect(conn.eventsConnected, isFalse);
+    await phone.shutdown();
+  }, skip: !Platform.isWindows);
 }

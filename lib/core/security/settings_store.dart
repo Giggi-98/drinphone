@@ -39,6 +39,7 @@ class Settings {
     this.lang = 'it',
     this.voicemailCode = '*2',
     this.favorites = const [],
+    this.audio = const ('', '', ''),
   });
 
   /// Account SIP; il primo è il principale (predefinito per le chiamate).
@@ -59,6 +60,9 @@ class Settings {
   /// dell'account SIP e per gli interni inseriti a mano.
   final List<String> favorites;
 
+  /// Dispositivi audio scelti (microfono, altoparlante, suoneria); '' = predefinito.
+  final (String, String, String) audio;
+
   Settings copyWith({
     List<SipAccount>? accounts,
     bool? debugLog,
@@ -67,6 +71,7 @@ class Settings {
     String? lang,
     String? voicemailCode,
     List<String>? favorites,
+    (String, String, String)? audio,
   }) => Settings(
     accounts: accounts ?? this.accounts,
     debugLog: debugLog ?? this.debugLog,
@@ -75,6 +80,7 @@ class Settings {
     lang: lang ?? this.lang,
     voicemailCode: voicemailCode ?? this.voicemailCode,
     favorites: favorites ?? this.favorites,
+    audio: audio ?? this.audio,
   );
 }
 
@@ -130,6 +136,11 @@ class SettingsStore {
       lang: j['lang'] as String? ?? 'it',
       voicemailCode: j['voicemailCode'] as String? ?? '*2',
       favorites: [for (final f in (j['favorites'] as List? ?? const [])) '$f'],
+      audio: (
+        j['audioCapture'] as String? ?? '',
+        j['audioPlayback'] as String? ?? '',
+        j['audioRinger'] as String? ?? '',
+      ),
       pbx: [
         for (final c in (j['pbx'] as List? ?? const []))
           PbxConnectionInfo(
@@ -175,6 +186,9 @@ class SettingsStore {
         'lang': s.lang,
         'voicemailCode': s.voicemailCode,
         'favorites': s.favorites,
+        'audioCapture': s.audio.$1,
+        'audioPlayback': s.audio.$2,
+        'audioRinger': s.audio.$3,
         'pbx': [
           for (final c in s.pbx)
             {'id': c.id, 'label': c.label, 'realtime': c.realtime},

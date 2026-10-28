@@ -25,6 +25,29 @@ class FakeSipEngine implements SipEngine {
   Stream<VoicemailEvent> get voicemail => voicemailCtl.stream;
   @override
   Stream<bool> get transfers => transfersCtl.stream;
+  var devices = const [
+    SoundDevice('WASAPI: Microfono', capture: true, playback: false),
+    SoundDevice('WASAPI: Altoparlanti', capture: false, playback: true),
+  ];
+  (String, String, String) current = ('', '', '');
+  @override
+  List<SoundDevice> soundDevices() => devices;
+  @override
+  (String, String, String) audioDevices() => current;
+  @override
+  Future<void> setAudioDevices({
+    String? capture,
+    String? playback,
+    String? ringer,
+  }) async {
+    current = (
+      capture ?? current.$1,
+      playback ?? current.$2,
+      ringer ?? current.$3,
+    );
+    log.add('audio ${current.$1}|${current.$2}|${current.$3}');
+  }
+
   @override
   Future<void> hold(int id) async => log.add('hold $id');
   @override

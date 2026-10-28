@@ -7,6 +7,10 @@ import '../../core/call_history.dart';
 import '../../core/sip/sip_engine.dart';
 import '../shell/widgets.dart';
 
+enum _Kind { all, incoming, missed, outgoing }
+
+enum _Period { today, week, month, all }
+
 /// Registro chiamate locale (CallHistoryStore), a pagine.
 class HistoryView extends StatefulWidget {
   const HistoryView({super.key, required this.phone, required this.onCall});
@@ -18,7 +22,38 @@ class HistoryView extends StatefulWidget {
 }
 
 class _HistoryViewState extends State<HistoryView> {
-  bool _onlyMissed = false;
+  /// Filtri come in Linkus: tipo, periodo, nome/numero.
+  _Kind _kind = _Kind.all;
+  _Period _period = _Period.week;
+  final _filter = TextEditingController();
+
+  @override
+  void dispose() {
+    _filter.dispose();
+    super.dispose();
+  }
+
+  bool _matches(CallRecord r) {
+    final kindOk = switch (_kind) {
+      _Kind.all => true,
+      _Kind.incoming => r.direction == CallDirection.incoming && !r.missed,
+      _Kind.missed => r.missed,
+      _Kind.outgoing => r.direction == CallDirection.outgoing,
+    };
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final from = switch (_period) {
+      _Period.today => today,
+      _Period.week => today.subtract(const Duration(days: 6)),
+      _Period.month => today.subtract(const Duration(days: 29)),
+      _Period.all => DateTime(2000),
+    };
+    final q = _filter.text.trim().toLowerCase();
+    return kindOk &&
+        !r.start.isBefore(from) &&
+        (q.isEmpty || r.number.contains(q) || r.name.toLowerCase().contains(q));
+  }
+
   int _page = 0;
   static const pageSize = 50;
 
@@ -43,21 +78,17 @@ class _HistoryViewState extends State<HistoryView> {
         : tr('{s} s', {'s': r.seconds});
   }
 
-  Widget _chip(DrinColors c, String label, bool on, VoidCallback onTap) =>
-      Material(
-        color: on ? c.keyBtn : Colors.transparent,
-        shape: StadiumBorder(side: BorderSide(color: on ? c.accent : c.border)),
-        child: InkWell(
-          customBorder: const StadiumBorder(),
-          onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
-            child: Text(
-              label,
-              style: TextStyle(fontSize: 12, color: on ? c.accent : c.text),
-            ),
-          ),
-        ),
+  Widget _menu<T>(T value, Map<T, String> items, ValueChanged<T> onPick) =>
+      DropdownButton<T>(
+        value: value,
+        underline: const SizedBox.shrink(),
+        items: [
+          for (final e in items.entries)
+            DropdownMenuItem(value: e.key, child: Text(e.value)),
+        ],
+        onChanged: (v) {
+          if (v != null) onPick(v);
+        },
       );
 
   @override
@@ -66,7 +97,7 @@ class _HistoryViewState extends State<HistoryView> {
     final p = widget.phone;
     final list = [
       for (final r in p.history)
-        if (!_onlyMissed || r.missed) r,
+        if (_matches(r)) r,
     ];
     final pages = (list.length + pageSize - 1) ~/ pageSize;
     if (_page >= pages && pages > 0) _page = pages - 1;
@@ -94,20 +125,47 @@ class _HistoryViewState extends State<HistoryView> {
                 ),
               ),
               const SizedBox(width: 16),
-              _chip(c, tr('Tutte'), !_onlyMissed, () {
-                setState(() {
-                  _onlyMissed = false;
+              _menu(
+                _kind,
+                {
+                  _Kind.all: tr('Tutte'),
+                  _Kind.incoming: tr('In arrivo'),
+                  _Kind.missed: tr('Perse'),
+                  _Kind.outgoing: tr('In uscita'),
+                },
+                (v) => setState(() {
+                  _kind = v;
                   _page = 0;
-                });
-              }),
-              const SizedBox(width: 6),
-              _chip(c, tr('Perse'), _onlyMissed, () {
-                setState(() {
-                  _onlyMissed = true;
+                }),
+              ),
+              const SizedBox(width: 12),
+              _menu(
+                _period,
+                {
+                  _Period.today: tr('Oggi'),
+                  _Period.week: tr('Ultimi 7 giorni'),
+                  _Period.month: tr('Ultimi 30 giorni'),
+                  _Period.all: tr('Tutto'),
+                },
+                (v) => setState(() {
+                  _period = v;
                   _page = 0;
-                });
-              }),
+                }),
+              ),
               const Spacer(),
+              SizedBox(
+                width: 240,
+                child: TextField(
+                  controller: _filter,
+                  onChanged: (_) => setState(() => _page = 0),
+                  decoration: InputDecoration(
+                    prefixIcon: const Icon(Icons.search_rounded, size: 18),
+                    hintText: tr('Nome o numero'),
+                    hintStyle: TextStyle(fontSize: 13, color: c.muted),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 6),
               if (p.history.isNotEmpty)
                 IconButton(
                   tooltip: tr('Svuota registro'),
@@ -121,7 +179,7 @@ class _HistoryViewState extends State<HistoryView> {
             child: list.isEmpty
                 ? Center(
                     child: Text(
-                      _onlyMissed
+                      _kind == _Kind.missed
                           ? tr('Nessuna chiamata persa.')
                           : tr('Nessuna chiamata.'),
                       style: TextStyle(color: c.muted),

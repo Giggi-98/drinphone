@@ -6,9 +6,10 @@ import '../../app/theme.dart';
 import '../../core/pbx/pbx_connection.dart';
 import '../../core/security/api_credential_store.dart';
 
-/// Elenco delle connessioni API ai PBX (una per PBX, indipendenti).
-class ApiDialog extends StatelessWidget {
-  const ApiDialog({super.key, required this.phone});
+/// Elenco delle connessioni API ai PBX (una per PBX, indipendenti), usato in
+/// Preferenze > Integrazione PBX.
+class PbxConnectionsPanel extends StatelessWidget {
+  const PbxConnectionsPanel({super.key, required this.phone});
   final PhoneController phone;
 
   String _ago(DateTime? t) {
@@ -22,54 +23,37 @@ class ApiDialog extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = context.drin;
-    return ListenableBuilder(
-      listenable: phone,
-      builder: (context, _) => AlertDialog(
-        backgroundColor: c.surface,
-        title: Text(tr('Integrazione PBX Yeastar (API)')),
-        content: SizedBox(
-          width: 560,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              if (phone.connections.isEmpty)
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                  child: Text(
-                    tr('Nessun PBX collegato.'),
-                    style: TextStyle(color: c.muted),
-                  ),
-                ),
-              for (final conn in phone.connections)
-                _ConnectionTile(
-                  phone: phone,
-                  conn: conn,
-                  lastSync: _ago(conn.lastSync),
-                  primary: conn.id == phone.primaryConnection?.id,
-                ),
-              const SizedBox(height: 8),
-              Align(
-                alignment: Alignment.centerLeft,
-                child: OutlinedButton.icon(
-                  onPressed: () => showDialog<void>(
-                    context: context,
-                    builder: (_) => _CredentialsDialog(phone: phone),
-                  ),
-                  icon: const Icon(Icons.add, size: 16),
-                  label: Text(tr('Aggiungi PBX')),
-                ),
-              ),
-            ],
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (phone.connections.isEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            child: Text(
+              tr('Nessun PBX collegato.'),
+              style: TextStyle(color: c.muted),
+            ),
+          ),
+        for (final conn in phone.connections)
+          _ConnectionTile(
+            phone: phone,
+            conn: conn,
+            lastSync: _ago(conn.lastSync),
+            primary: conn.id == phone.primaryConnection?.id,
+          ),
+        const SizedBox(height: 8),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: OutlinedButton.icon(
+            onPressed: () => showDialog<void>(
+              context: context,
+              builder: (_) => _CredentialsDialog(phone: phone),
+            ),
+            icon: const Icon(Icons.add, size: 16),
+            label: Text(tr('Aggiungi PBX')),
           ),
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: Text(tr('Chiudi')),
-          ),
-        ],
-      ),
+      ],
     );
   }
 }

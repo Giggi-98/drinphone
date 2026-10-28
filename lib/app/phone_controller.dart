@@ -158,6 +158,9 @@ class PhoneController extends ChangeNotifier {
       if (settings.accounts.isNotEmpty) {
         await _engine.setAccounts(settings.accounts);
       }
+      // Dispositivi audio scelti in Preferenze > Audio ('' = predefinito).
+      final (cap, play, ring) = settings.audio;
+      await _engine.setAudioDevices(capture: cap, playback: play, ringer: ring);
     } catch (e) {
       engineError = '$e';
       debugPrint('[drinphone] avvio motore fallito: $e');
@@ -357,6 +360,14 @@ class PhoneController extends ChangeNotifier {
     });
   }
 
+  /// Solo i membri diretti del reparto, senza i sotto-reparti (stile Linkus).
+  bool directMembersOnly = false;
+
+  void setDirectMembersOnly(bool v) {
+    directMembersOnly = v;
+    notifyListeners();
+  }
+
   void selectGroup(String? key) {
     selectedGroup = key;
     notifyListeners();
@@ -466,9 +477,16 @@ class PhoneController extends ChangeNotifier {
     final org = parts.length > 1
         ? c.orgs.where((o) => '${o.id}' == parts[1]).firstOrNull
         : null;
+    // extIds di un reparto include i sotto-reparti: per i diretti si tolgono.
+    final ids = {...?org?.extIds};
+    if (org != null && directMembersOnly) {
+      for (final o in c.orgs) {
+        if (o.parentId == org.id) ids.removeAll(o.extIds);
+      }
+    }
     final numbers = {
       for (final x in c.directory)
-        if (org == null || org.extIds.contains(x.id)) x.number,
+        if (org == null || ids.contains(x.id)) x.number,
     };
     final primary = c.id == primaryConnection?.id;
     return [
@@ -561,6 +579,32 @@ class PhoneController extends ChangeNotifier {
 
   Future<void> removeAccount(String id) =>
       _applyAccounts(settings.accounts.where((a) => a.id != id).toList());
+
+  /// Dispositivi audio del sistema (rilettura a ogni apertura di Preferenze > Audio).
+  List<SoundDevice> soundDevices() =>
+      engineError == null ? _engine.soundDevices() : const [];
+
+  /// Dispositivi in uso nel motore: (microfono, altoparlante, suoneria).
+  (String, String, String) get audioDevices =>
+      engineError == null ? _engine.audioDevices() : ('', '', '');
+
+  Future<void> setAudio({
+    String? capture,
+    String? playback,
+    String? ringer,
+  }) async {
+    final (c, p, r) = settings.audio;
+    settings = settings.copyWith(
+      audio: (capture ?? c, playback ?? p, ringer ?? r),
+    );
+    await _store.save(settings);
+    await _engine.setAudioDevices(
+      capture: capture,
+      playback: playback,
+      ringer: ringer,
+    );
+    notifyListeners();
+  }
 
   Future<void> setDebugLog(bool on) async {
     settings = settings.copyWith(debugLog: on);

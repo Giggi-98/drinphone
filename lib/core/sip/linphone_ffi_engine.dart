@@ -158,6 +158,97 @@ class LinphoneFfiEngine implements SipEngine {
     return _accountHosts.values.firstOrNull ?? '';
   }
 
+  late final _soundDevices = _lib
+      .lookupFunction<
+        Pointer<Pointer<Utf8>> Function(Pointer<Void>),
+        Pointer<Pointer<Utf8>> Function(Pointer<Void>)
+      >('linphone_core_get_sound_devices');
+  late final _canCapture = _lib
+      .lookupFunction<
+        Uint8 Function(Pointer<Void>, Pointer<Utf8>),
+        int Function(Pointer<Void>, Pointer<Utf8>)
+      >('linphone_core_sound_device_can_capture');
+  late final _canPlayback = _lib
+      .lookupFunction<
+        Uint8 Function(Pointer<Void>, Pointer<Utf8>),
+        int Function(Pointer<Void>, Pointer<Utf8>)
+      >('linphone_core_sound_device_can_playback');
+  late final _reloadSound = _lib.lookupFunction<_VoidP, _VoidPDart>(
+    'linphone_core_reload_sound_devices',
+  );
+  late final _getCapture = _lib.lookupFunction<_PS, _PS>(
+    'linphone_core_get_capture_device',
+  );
+  late final _getPlayback = _lib.lookupFunction<_PS, _PS>(
+    'linphone_core_get_playback_device',
+  );
+  late final _getRinger = _lib.lookupFunction<_PS, _PS>(
+    'linphone_core_get_ringer_device',
+  );
+  late final _setCapture = _lib
+      .lookupFunction<
+        Int32 Function(Pointer<Void>, Pointer<Utf8>),
+        int Function(Pointer<Void>, Pointer<Utf8>)
+      >('linphone_core_set_capture_device');
+  late final _setPlayback = _lib
+      .lookupFunction<
+        Int32 Function(Pointer<Void>, Pointer<Utf8>),
+        int Function(Pointer<Void>, Pointer<Utf8>)
+      >('linphone_core_set_playback_device');
+  late final _setRinger = _lib
+      .lookupFunction<
+        Int32 Function(Pointer<Void>, Pointer<Utf8>),
+        int Function(Pointer<Void>, Pointer<Utf8>)
+      >('linphone_core_set_ringer_device');
+
+  @override
+  List<SoundDevice> soundDevices() {
+    if (_core == nullptr) return const [];
+    _reloadSound(_core);
+    final list = _soundDevices(_core); // array di char* terminato da NULL
+    final out = <SoundDevice>[];
+    for (var i = 0; list != nullptr && list[i] != nullptr; i++) {
+      final id = list[i];
+      out.add(
+        SoundDevice(
+          id.toDartString(),
+          capture: _canCapture(_core, id) != 0,
+          playback: _canPlayback(_core, id) != 0,
+        ),
+      );
+    }
+    return out;
+  }
+
+  @override
+  (String, String, String) audioDevices() => _core == nullptr
+      ? ('', '', '')
+      : (
+          _str(_getCapture(_core)),
+          _str(_getPlayback(_core)),
+          _str(_getRinger(_core)),
+        );
+
+  @override
+  Future<void> setAudioDevices({
+    String? capture,
+    String? playback,
+    String? ringer,
+  }) async {
+    if (_core == nullptr) return;
+    using((a) {
+      if (capture != null && capture.isNotEmpty) {
+        _setCapture(_core, capture.toNativeUtf8(allocator: a));
+      }
+      if (playback != null && playback.isNotEmpty) {
+        _setPlayback(_core, playback.toNativeUtf8(allocator: a));
+      }
+      if (ringer != null && ringer.isNotEmpty) {
+        _setRinger(_core, ringer.toNativeUtf8(allocator: a));
+      }
+    });
+  }
+
   @override
   Future<void> hold(int id) async {
     if (_ptr(id) != nullptr) _pause(_ptr(id));

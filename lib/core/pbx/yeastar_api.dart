@@ -59,6 +59,50 @@ class PbxContact {
   final List<String> phonebooks;
 }
 
+/// Partecipante di una chiamata in corso (call/query, evento 30011).
+class LiveMember {
+  const LiveMember({
+    required this.kind,
+    required this.channel,
+    required this.status,
+    this.number = '',
+    this.from = '',
+    this.to = '',
+    this.trunk = '',
+    this.path = '',
+  });
+
+  /// `extension`, `internal`, `inbound`, `outbound`.
+  final String kind;
+  final String channel;
+
+  /// ALERT, RING, EARLYMEDIA, ANSWERED, ANSWER, HOLD, BYE.
+  final String status;
+  final String number;
+  final String from;
+  final String to;
+  final String trunk;
+
+  /// IVR, Queue, Ring Group… se la chiamata ci è passata.
+  final String path;
+
+  static List<LiveMember> parse(List<dynamic> members) => [
+    for (final m in members.whereType<Map<String, dynamic>>())
+      for (final e in m.entries)
+        if (e.value is Map<String, dynamic>)
+          LiveMember(
+            kind: e.key,
+            channel: '${e.value['channel_id'] ?? ''}',
+            status: '${e.value['member_status'] ?? ''}',
+            number: '${e.value['number'] ?? ''}',
+            from: '${e.value['from'] ?? ''}',
+            to: '${e.value['to'] ?? ''}',
+            trunk: '${e.value['trunk_name'] ?? ''}',
+            path: '${e.value['call_path'] ?? ''}',
+          ),
+  ];
+}
+
 /// Messaggio in casella vocale (vm/get).
 class PbxVoicemail {
   const PbxVoicemail({
@@ -320,6 +364,21 @@ class YeastarApi {
       final total = j['total_number'] as int? ?? out.length;
       if (data.isEmpty || out.length >= total) return out;
     }
+  }
+
+  /// Chiamate in corso di un tipo (`inbound`, `outbound`, `internal`):
+  /// call_id -> membri. Fotografia iniziale; poi aggiornano gli eventi 30011.
+  Future<Map<String, List<LiveMember>>> queryCalls(String type) async {
+    final j = await _call(
+      'call/query',
+      'GET',
+      _uri('call/query', {'type': type}),
+    );
+    return {
+      for (final c
+          in (j['data'] as List? ?? const []).whereType<Map<String, dynamic>>())
+        '${c['call_id']}': LiveMember.parse(c['members'] as List? ?? const []),
+    };
   }
 
   /// Messaggi della casella vocale di un interno (più recenti per primi).
