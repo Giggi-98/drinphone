@@ -825,10 +825,13 @@ class LinphoneFfiEngine implements SipEngine {
         account.displayName.toNativeUtf8(allocator: a),
       );
     }
-    // Registrar: dominio, o server indicato a parte.
+    // Destinazione del REGISTER: in liblinphone va sempre al server
+    // dell'account (le route valgono solo per le chiamate). Quindi: registrar
+    // esplicito, altrimenti il proxy in uscita, altrimenti il dominio.
+    // L'identità resta utente@dominio (serve ai PBX multi-tenant).
     final server = _createAddress(
       _factory,
-      'sip:${account.registrar.isNotEmpty ? account.registrar : account.domain}'
+      'sip:${account.registrar.isNotEmpty ? account.registrar : (account.proxy.isNotEmpty ? account.proxy : account.domain)}'
           .toNativeUtf8(allocator: a),
     );
     if (server == nullptr) {

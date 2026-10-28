@@ -147,8 +147,11 @@ spikes/f0a/                         spike F0-A (non prodotto)
   mai durante una chiamata; elimina = credenziali DPAPI delle sue connessioni,
   registro, contatti. Menu in alto a destra.
 - **Account avanzato** (`IMPLEMENTATO`, `DA VALIDARE` campo per campo su PBX/trunk) —
-  finestra account, sezione "Avanzate": proxy in uscita (route `sip:<proxy>;lr`,
-  lista via `bctbx_list_new` di `bctoolbox.dll`), registrar, utente di
+  finestra account, sezione "Avanzate": proxy in uscita (destinazione del REGISTER
+  — in liblinphone il REGISTER va solo al server dell'account, le route no — e
+  route `sip:<proxy>;lr` per le chiamate, lista via `bctbx_list_new` di
+  `bctoolbox.dll`; `VERIFICATO` in registrazione su Yeastar Cloud multi-tenant:
+  identità `interno@tenant`, proxy SBC in TLS), registrar, utente di
   autenticazione e realm (auth info), intervallo di registrazione, registrazione
   attiva sì/no, `Privacy: id`, codice casella per account, NAT policy per account
   (STUN, ICE, TURN con credenziali in auth info). Password TURN nello storage
