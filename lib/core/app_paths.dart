@@ -23,6 +23,9 @@ class AppPaths {
       ? '$root${_s}history.json'
       : '$root${_s}history-$profileId.json';
 
+  /// Cache cifrata (DPAPI) dei dati letti da una connessione PBX.
+  String pbxCacheFileFor(String id) => '$root${_s}pbx-cache-$id.dpapi';
+
   /// Contatti personali del profilo; `default` come per il registro.
   String contactsFileFor(String profileId) => profileId == 'default'
       ? '$root${_s}contacts.json'

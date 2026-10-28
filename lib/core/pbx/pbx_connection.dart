@@ -11,6 +11,7 @@ import 'package:flutter/foundation.dart' show debugPrint;
 import '../../app/l10n.dart';
 import '../security/api_credential_store.dart';
 import '../sip/sip_engine.dart' show BlfStatus;
+import 'pbx_cache.dart';
 import 'yeastar_api.dart';
 
 /// Chiamata in corso sul PBX (Live Calls).
@@ -83,9 +84,13 @@ class PbxConnection {
     required this.store,
     required this.apiFactory,
     required this.onUpdate,
+    this.cache,
   });
 
   final String id;
+
+  /// Ultimi dati letti, cifrati su disco: mostrati subito all'avvio.
+  final PbxCache? cache;
   String label;
   final ApiCredentialStore store;
   final YeastarApi Function(ApiCredentials) apiFactory;
@@ -216,6 +221,15 @@ class PbxConnection {
       if (_ws != null) _ws!.close();
     };
     _api = api;
+    // Dati della volta scorsa subito a schermo; la sync li aggiorna.
+    final cached = directory.isEmpty ? await cache?.load() : null;
+    if (cached != null && !_stopped) {
+      directory = cached.$1;
+      orgs = cached.$2;
+      contacts = cached.$3;
+      status = tr('Dati salvati · aggiornamento in corso');
+      onUpdate(this, true);
+    }
     await sync(force: true);
   }
 
@@ -297,6 +311,8 @@ class PbxConnection {
       directory = ext;
       orgs = newOrgs;
       contacts = newContacts;
+      // Cache aggiornata solo se i dati sono cambiati (non a ogni giro).
+      if (changed) unawaited(cache?.save(ext, newOrgs, newContacts));
       voicemail = newVm;
       lastSync = DateTime.now();
       _failures = 0;
@@ -606,6 +622,7 @@ class PbxConnection {
   Future<void> forget() async {
     await stop();
     await store.clear();
+    await cache?.clear();
     directory = const [];
     orgs = const [];
     contacts = const [];

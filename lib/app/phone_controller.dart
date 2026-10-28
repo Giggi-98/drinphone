@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import '../core/call_history.dart';
 import '../core/contacts/personal_contacts.dart';
 import 'l10n.dart';
+import '../core/pbx/pbx_cache.dart';
 import '../core/pbx/pbx_connection.dart';
 import '../core/pbx/yeastar_api.dart';
 import '../core/security/api_credential_store.dart';
@@ -23,6 +24,7 @@ class PhoneController extends ChangeNotifier {
     this.apiStoreFor,
     this.historyStoreFor,
     this.personalStoreFor,
+    this.cacheFor,
     this.onIncomingCall,
     YeastarApi Function(ApiCredentials)? apiFactory,
   }) : _apiFactory = apiFactory ?? YeastarApi.new;
@@ -31,6 +33,9 @@ class PhoneController extends ChangeNotifier {
   final CallHistoryStore Function(String profileId)? historyStoreFor;
   CallHistoryStore? get historyStore =>
       historyStoreFor?.call(settings.profileId);
+
+  /// Cache cifrata dei dati di ogni connessione PBX (DECISIONS "Cache dati PBX").
+  final PbxCache Function(String connectionId)? cacheFor;
 
   /// Contatti personali per profilo (DECISIONS "Profili").
   final PersonalContactsStore Function(String profileId)? personalStoreFor;
@@ -135,6 +140,20 @@ class PhoneController extends ChangeNotifier {
   /// Stato BLF per numero interno; assente = sconosciuto.
   final blf = <String, BlfEvent>{};
 
+  /// Ultimi stati BLF di ogni profilo (in memoria): dopo il cambio profilo si
+  /// mostrano attenuati, "da confermare", finché il PBX non risponde.
+  final _blfByProfile = <String, Map<String, BlfStatus>>{};
+  Map<String, BlfStatus> _staleBlf = const {};
+
+  /// Ridisegno raggruppato per gli aggiornamenti a raffica (BLF, eventi PBX).
+  Timer? _notifyTimer;
+  void _notifySoon() {
+    _notifyTimer ??= Timer(const Duration(milliseconds: 100), () {
+      _notifyTimer = null;
+      notifyListeners();
+    });
+  }
+
   Future<void> init() async {
     settings = await _store.load();
     appLang.value = AppLang.fromCode(settings.lang);
@@ -214,6 +233,7 @@ class PhoneController extends ChangeNotifier {
     store: apiStoreFor!(id),
     apiFactory: _apiFactory,
     onUpdate: _onConnectionUpdate,
+    cache: cacheFor?.call(id),
   );
 
   /// Solo il PBX dell'account SIP legge la casella, quella del proprio interno.
@@ -242,8 +262,11 @@ class PhoneController extends ChangeNotifier {
       final g = selectedGroup;
       if (g != null && !_groupExists(g)) selectedGroup = null;
       _syncDialogs();
+      notifyListeners();
+    } else {
+      // Eventi in tempo reale a raffica (stato chiamata, presenza): raggruppati.
+      _notifySoon();
     }
-    notifyListeners();
   }
 
   bool _groupExists(String g) {
@@ -359,14 +382,27 @@ class PhoneController extends ChangeNotifier {
   }
 
   /// Stato linea: BLF SIP, altrimenti stato chiamata dagli eventi API (30008).
-  BlfStatus? blfOf(Extension e) {
+  BlfStatus? blfOf(Extension e) => _blfFresh(e) ?? _staleOf(e);
+
+  /// Stato non ancora confermato dal PBX dopo il cambio profilo.
+  bool blfStale(Extension e) => _blfFresh(e) == null && _staleOf(e) != null;
+
+  BlfStatus? _staleOf(Extension e) {
+    final k = _blfKey(e);
+    return k == null ? null : _staleBlf[k];
+  }
+
+  BlfStatus? _blfFresh(Extension e) {
     final k = _blfKey(e);
     final sip = k == null ? null : blf[k]?.status;
     if (sip != null && sip != BlfStatus.unknown) return sip;
     final c = e.source.isEmpty
         ? primaryConnection
         : connections.where((x) => x.id == e.source).firstOrNull;
-    return c?.callStatus[e.number] ?? sip;
+    final api = c?.callStatus[e.number];
+    if (api != null) return api;
+    // "Sconosciuto" esplicito resta tale se non c'è uno stato precedente.
+    return sip == BlfStatus.unknown && _staleOf(e) == null ? sip : null;
   }
 
   String get apiSummary {
@@ -520,7 +556,9 @@ class PhoneController extends ChangeNotifier {
     if (p == null) return;
     for (final c in p.pbx) {
       await apiStoreFor?.call(c.id).clear();
+      await cacheFor?.call(c.id).clear();
     }
+    _blfByProfile.remove(id);
     await historyStoreFor?.call(id).clear();
     await personalStoreFor?.call(id).clear();
     settings = settings.copyWith(
@@ -542,6 +580,12 @@ class PhoneController extends ChangeNotifier {
     connections.clear();
     selectedGroup = null;
     registrations.clear();
+    _blfByProfile[settings.profileId] = {
+      ..._staleBlf,
+      for (final e in blf.entries)
+        if (e.value.status != BlfStatus.unknown) e.key: e.value.status,
+    };
+    _staleBlf = _blfByProfile[next.profileId] ?? const {};
     blf.clear();
     _mwiNew = 0;
     _mwiOld = 0;
@@ -1007,7 +1051,7 @@ class PhoneController extends ChangeNotifier {
   void _onDialog(BlfEvent e) {
     debugPrint('[drinphone] blf ${e.number} ${e.status.name} ${e.reason}');
     blf[e.number] = e;
-    notifyListeners();
+    _notifySoon();
   }
 
   void _onCall(CallEvent e) {
@@ -1112,6 +1156,7 @@ class PhoneController extends ChangeNotifier {
 
   @override
   void dispose() {
+    _notifyTimer?.cancel();
     for (final c in connections) {
       c.stop();
     }

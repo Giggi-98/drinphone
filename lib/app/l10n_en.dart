@@ -381,4 +381,6 @@ const en = <String, String>{
   'Toni DTMF': 'DTMF tones',
   'RFC 2833 (nel flusso audio)': 'RFC 2833 (in the audio stream)',
   'SIP INFO': 'SIP INFO',
+  'Dati salvati · aggiornamento in corso': 'Saved data · updating',
+  'da confermare': 'to be confirmed',
 };

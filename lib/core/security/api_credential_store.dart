@@ -78,8 +78,11 @@ typedef _UnprotectDart = int Function(
   Pointer<_Blob>,
 );
 
-class ApiCredentialStore {
-  ApiCredentialStore(this.path);
+/// Testo cifrato con DPAPI (utente Windows + PC) in un file JSON
+/// `{format, salt, blob}`; entropia = segreto applicativo + sale casuale.
+/// Usato per le credenziali API e per la cache dei dati del PBX.
+class DpapiBox {
+  DpapiBox(this.path);
 
   final String path;
   static const _magic = 'DPAPI1';
@@ -101,23 +104,18 @@ class ApiCredentialStore {
         Pointer<Void> Function(Pointer<Void>)
       >('LocalFree');
 
-  bool get isSet => File(path).existsSync();
+  bool get exists => File(path).existsSync();
 
-  Future<void> save(ApiCredentials c) async {
+  Future<void> write(String plain) async {
     final salt = Uint8List.fromList(
       List.generate(32, (_) => Random.secure().nextInt(256)),
     );
-    final plain = utf8.encode(
-      jsonEncode({
-        'baseUrl': c.baseUrl,
-        'clientId': c.clientId,
-        'clientSecret': c.clientSecret,
-      }),
-    );
-    final sealed = _dpapi(plain, salt, protect: true);
+    final sealed = _dpapi(utf8.encode(plain), salt, protect: true);
     final file = File(path);
     await file.parent.create(recursive: true);
-    await file.writeAsString(
+    // Scrittura su file temporaneo e rinomina: mai un file a metà.
+    final tmp = File('$path.tmp');
+    await tmp.writeAsString(
       jsonEncode({
         'format': _magic,
         'salt': base64Encode(salt),
@@ -125,26 +123,22 @@ class ApiCredentialStore {
       }),
       flush: true,
     );
+    await tmp.rename(path);
   }
 
-  /// Unico punto di lettura: il client API all'avvio. Null se assenti o se il
-  /// file non è decifrabile da questo utente/PC/app.
-  Future<ApiCredentials?> load() async {
+  /// Null se assente o non decifrabile da questo utente/PC/app.
+  Future<String?> read() async {
     final file = File(path);
     if (!await file.exists()) return null;
     try {
       final j = jsonDecode(await file.readAsString()) as Map<String, dynamic>;
       if (j['format'] != _magic) return null;
-      final plain = _dpapi(
-        base64Decode(j['blob'] as String),
-        base64Decode(j['salt'] as String),
-        protect: false,
-      );
-      final m = jsonDecode(utf8.decode(plain)) as Map<String, dynamic>;
-      return ApiCredentials(
-        baseUrl: m['baseUrl'] as String,
-        clientId: m['clientId'] as String,
-        clientSecret: m['clientSecret'] as String,
+      return utf8.decode(
+        _dpapi(
+          base64Decode(j['blob'] as String),
+          base64Decode(j['salt'] as String),
+          protect: false,
+        ),
       );
     } catch (_) {
       return null;
@@ -202,4 +196,40 @@ class ApiCredentialStore {
       return result;
     });
   }
+}
+
+class ApiCredentialStore {
+  ApiCredentialStore(this.path) : _box = DpapiBox(path);
+
+  final String path;
+  final DpapiBox _box;
+
+  bool get isSet => _box.exists;
+
+  Future<void> save(ApiCredentials c) => _box.write(
+    jsonEncode({
+      'baseUrl': c.baseUrl,
+      'clientId': c.clientId,
+      'clientSecret': c.clientSecret,
+    }),
+  );
+
+  /// Unico punto di lettura: il client API all'avvio. Null se assenti o se il
+  /// file non è decifrabile da questo utente/PC/app.
+  Future<ApiCredentials?> load() async {
+    final plain = await _box.read();
+    if (plain == null) return null;
+    try {
+      final m = jsonDecode(plain) as Map<String, dynamic>;
+      return ApiCredentials(
+        baseUrl: m['baseUrl'] as String,
+        clientId: m['clientId'] as String,
+        clientSecret: m['clientSecret'] as String,
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> clear() => _box.clear();
 }

@@ -6,6 +6,24 @@ aggiungi una voce nuova in cima che cita la vecchia. Il campo chiave è
 
 ---
 
+## 2026-10-28 · Cache dati PBX e BLF al cambio profilo (di Luigi; aggiorna "Rubrica solo in memoria" di ARCHITECTURE)
+**Scelta:** interni, reparti e rubrica aziendale di ogni connessione PBX si
+salvano su disco **cifrati DPAPI** (`pbx-cache-<id>.dpapi`, stesso schema delle
+credenziali) e si mostrano subito all'avvio e al cambio profilo; la sync li
+aggiorna in sottofondo e riscrive la cache solo se i dati cambiano. Gli stati BLF
+**non** si salvano: al ritorno su un profilo si mostra l'ultimo stato della
+sessione **attenuato, "da confermare"**, finché il PBX non risponde. SUBSCRIBE
+BLF a gruppi (10 ogni 200 ms) e ridisegno raggruppato (100 ms) per gli eventi a
+raffica.
+**Scartato:** cache solo in memoria (all'avvio liste vuote); cache in chiaro
+(4000+ contatti aziendali leggibili); BLF da cache come stato vero (mostrerebbe
+"libero" chi è in chiamata).
+**Da rivedere se:** la cache diventa troppo grande o lenta da cifrare (rubriche
+da decine di migliaia di contatti), o servono più postazioni con gli stessi dati
+(allora gateway).
+
+---
+
 ## 2026-10-28 · Profili: "Yeastar integrato" e "SIP generico" (di Luigi)
 **Scelta:** l'app gestisce **profili** (utenze) scelti in alto a destra, **uno attivo
 alla volta**: cambiare profilo de-registra gli account del precedente e registra

@@ -104,7 +104,8 @@ spikes/f0a/                         spike F0-A (non prodotto)
   (senza il proprio, max 100 in BLF). Solo Windows. Credenziali in
   `ApiCredentialStore` (DPAPI, sola scrittura dalla UI, DECISIONS 2026-10-28 bis).
 - **Rubrica aziendale** (`IMPLEMENTATO`, verificato sul pilota) — `company_contact/list`
-  (pagine da 500) letta con i reparti ogni 10 min, **solo in memoria**; vista
+  (pagine da 500) letta con i reparti ogni 10 min, in memoria e nella cache
+  cifrata (sotto); vista
   `features/contacts/` con menu delle phonebook e un pulsante Chiama per numero
   (fax esclusi). `nameFor(numero)` dà il nome del chiamante da interni e rubrica
   (cifre finali se ≥ 7 cifre). Errori di reparti/rubrica non bloccano gli interni.
@@ -159,6 +160,16 @@ spikes/f0a/                         spike F0-A (non prodotto)
 - **Opzioni globali chiamate** (Preferenze > Avanzate) — cifratura media
   (`linphone_core_set_media_encryption[_mandatory]`: in 5.5 non esiste per
   account), keep-alive, DTMF RFC 2833 / SIP INFO; applicate all'avvio.
+- **Cache dati PBX** (`IMPLEMENTATO`, verificato sul pilota: dati a schermo in
+  ~1 s dall'avvio) — `PbxCache` (`core/pbx/pbx_cache.dart`) su `DpapiBox`
+  (`core/security/api_credential_store.dart`, condiviso con le credenziali):
+  `pbx-cache-<connessione>.dpapi` con interni, reparti, rubrica; letta a
+  `PbxConnection.start`, riscritta (file temporaneo + rinomina) solo se la sync
+  trova dati cambiati; cancellata con la connessione o il profilo.
+- **BLF al cambio profilo** — ultimi stati della sessione per profilo, in memoria:
+  `blfOf` li usa come ripiego e `blfStale` li segnala (anello/pallino attenuato,
+  "da confermare"). SUBSCRIBE a gruppi di 10 ogni 200 ms (`watchDialogs`), ridisegno
+  raggruppato a 100 ms per BLF ed eventi PBX.
 - **Procedura guidata** (`IMPLEMENTATO`, `features/setup/`) — al primo avvio
   (nessun account in nessun profilo) e da "Nuovo profilo…": lingua → tipo e nome →
   account (con stato di registrazione) → API (solo Yeastar, facoltative) → audio.

@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:drinphone/app/phone_controller.dart';
+import 'package:drinphone/core/pbx/pbx_cache.dart';
 import 'package:drinphone/core/pbx/pbx_connection.dart';
 import 'package:drinphone/core/pbx/yeastar_api.dart';
 import 'package:drinphone/core/security/api_credential_store.dart';
@@ -291,8 +292,9 @@ void main() {
 
   Future<PhoneController> controllerWith(
     FakeSipEngine engine,
-    Map<String, String> pbxUrls,
-  ) async {
+    Map<String, String> pbxUrls, {
+    PbxCache Function(String id)? cacheFor,
+  }) async {
     FlutterSecureStorage.setMockInitialValues({});
     final sep = Platform.pathSeparator;
     ApiCredentialStore storeFor(String id) =>
@@ -321,10 +323,39 @@ void main() {
       engineDataDir: tmp.path,
       logDir: tmp.path,
       apiStoreFor: storeFor,
+      cacheFor: cacheFor,
     );
     await phone.init();
     return phone;
   }
+
+  test('cache dati PBX: cifrata su disco, mostrata subito anche a PBX irraggiungibile', () async {
+    final sep = Platform.pathSeparator;
+    final path = '${tmp.path}${sep}cache-a.dpapi';
+    PbxCache cacheFor(String id) => PbxCache(path);
+    var phone = await controllerWith(FakeSipEngine(), {
+      'a': pbx.baseUrl,
+    }, cacheFor: cacheFor);
+    for (var i = 0; i < 50 && !File(path).existsSync(); i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+    }
+    await phone.shutdown();
+    // Nomi di interni e contatti mai in chiaro.
+    final raw = await File(path).readAsString();
+    expect(raw, isNot(contains('Paolo Guerra')));
+    expect(raw, isNot(contains('Mario')));
+
+    // Secondo avvio con il PBX giù: dati della volta scorsa a schermo.
+    phone = await controllerWith(FakeSipEngine(), {
+      'a': 'http://127.0.0.1:1',
+    }, cacheFor: cacheFor);
+    final conn = phone.connections.single;
+    expect(conn.ok, isFalse);
+    expect(conn.directory.map((e) => e.number), contains('301'));
+    expect(conn.orgs.length, 2);
+    expect(conn.contacts.single.numbers, [('Ufficio', '02 5550 1234')]);
+    await phone.shutdown();
+  }, skip: !Platform.isWindows);
 
   test(
     'controller: interni dal PBX uniti ai manuali, senza il proprio, in BLF',

@@ -859,6 +859,7 @@ class _ExtensionsViewState extends State<_ExtensionsView> {
                         callable: phone.isCallable(e),
                         canDial: phone.canDial,
                         blf: phone.blfOf(e),
+                        blfStale: phone.blfStale(e),
                         presence: phone.presenceOf(e),
                         favorite: phone.isFavorite(e),
                         onFavorite: () => phone.toggleFavorite(e),
@@ -910,6 +911,7 @@ class _ExtensionTile extends StatefulWidget {
     required this.callable,
     required this.canDial,
     required this.blf,
+    this.blfStale = false,
     required this.presence,
     required this.favorite,
     required this.onFavorite,
@@ -920,6 +922,7 @@ class _ExtensionTile extends StatefulWidget {
   final bool callable;
   final bool canDial;
   final BlfStatus? blf;
+  final bool blfStale;
   final String presence;
   final bool favorite;
   final VoidCallback onFavorite;
@@ -971,7 +974,12 @@ class _ExtensionTileState extends State<_ExtensionTile> {
             padding: const EdgeInsets.symmetric(horizontal: 12),
             child: Row(
               children: [
-                StatusAvatar(name: ext.name, blf: blf, presence: w.presence),
+                StatusAvatar(
+                  name: ext.name,
+                  blf: blf,
+                  stale: w.blfStale,
+                  presence: w.presence,
+                ),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(

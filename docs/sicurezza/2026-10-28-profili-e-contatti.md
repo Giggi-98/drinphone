@@ -20,6 +20,9 @@ avvio sul pilota con il file della versione precedente (registrazione e API OK).
 | Import da file | OK | Parser senza esecuzione di contenuti: CSV e vCard letti come testo, nessuna espansione o URL seguito; righe senza numero e fax scartati; file scelto dall'utente |
 | Cambio profilo durante una chiamata | OK | Rifiutato (`switchProfile`/`createProfile` restituiscono false con chiamate attive) |
 
+| Cache dati PBX su disco | OK | Cifrata DPAPI (`DpapiBox`, entropia segreto + sale per file); test: nomi di interni e contatti assenti dal file; cancellata con la connessione o il profilo; scrittura atomica (temporaneo + rinomina) |
+| Stati BLF dopo il cambio profilo | OK | Solo in memoria, mostrati come "da confermare"; mai su disco |
+
 ## Riscontri
 - **confirmed**: nessuno.
 

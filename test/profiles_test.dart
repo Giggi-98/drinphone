@@ -148,6 +148,8 @@ void main() {
     await phone.init();
     expect(phone.needsSetup, isFalse);
     expect(engine.accounts.single.username, '305');
+    await phone.addExtension(const Extension('Sala', '300'));
+    engine.dialogsCtl.add(const BlfEvent('300@a.test', BlfStatus.busy));
 
     expect(await phone.createProfile('Trunk', ProfileKind.sip), isTrue);
     final trunk = phone.settings.profileId;
@@ -169,6 +171,13 @@ void main() {
 
     expect(await phone.switchProfile('default'), isTrue);
     expect(engine.accounts.single.username, '305');
+    // BLF: tornando al profilo, l'ultimo stato resta "da confermare".
+    const sala = Extension('Sala', '300');
+    expect(phone.blfStale(sala), isTrue);
+    expect(phone.blfOf(sala), BlfStatus.busy);
+    engine.dialogsCtl.add(const BlfEvent('300@a.test', BlfStatus.idle));
+    expect(phone.blfStale(sala), isFalse);
+    expect(phone.blfOf(sala), BlfStatus.idle);
     expect(phone.personal, isEmpty);
     expect(phone.settings.others.single.name, 'Trunk');
 

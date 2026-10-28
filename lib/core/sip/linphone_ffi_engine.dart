@@ -967,43 +967,71 @@ class LinphoneFfiEngine implements SipEngine {
     }
   }
 
+  /// SUBSCRIBE a gruppi: decine insieme (più account) possono far scattare
+  /// i limiti del PBX e bloccano l'interfaccia di eventi.
+  static const _subBatch = 10;
+  static const _subGap = Duration(milliseconds: 200);
+  final _subQueue = <String>[];
+  Timer? _subTimer;
+
   @override
   Future<void> watchDialogs(Set<String> targets) async {
     for (final n in _subs.keys.where((n) => !targets.contains(n)).toList()) {
       _dropSubscription(n);
     }
-    for (final n in targets.where((n) => !_subs.containsKey(n))) {
-      final ev = using((a) {
-        final addr = _createAddress(
-          _factory,
-          'sip:$n'.toNativeUtf8(allocator: a),
-        );
-        if (addr == nullptr) return nullptr;
-        // 600 s richiesti; il PBX può accorciarli, il core rinnova da solo.
-        final ev = _createSubscribe(
-          _core,
-          addr,
-          'dialog'.toNativeUtf8(allocator: a),
-          600,
-        );
-        _addressUnref(addr);
-        if (ev == nullptr) return nullptr;
-        _eventAddHeader(
-          ev,
-          'Accept'.toNativeUtf8(allocator: a),
-          'application/dialog-info+xml'.toNativeUtf8(allocator: a),
-        );
-        return ev;
-      });
-      if (ev == nullptr) {
-        _dialogs.add(BlfEvent(n, BlfStatus.unknown, 'indirizzo non valido'));
-        continue;
-      }
-      _subs[n] = ev;
-      _subTrackers[n] = DialogInfoTracker();
-      _eventSendSubscribe(ev, nullptr);
-      _dialogs.add(BlfEvent(n, BlfStatus.unknown));
+    _subQueue.removeWhere((n) => !targets.contains(n));
+    for (final n in targets) {
+      if (!_subs.containsKey(n) && !_subQueue.contains(n)) _subQueue.add(n);
     }
+    if (_subTimer == null && _subQueue.isNotEmpty) {
+      _subscribeBatch();
+      if (_subQueue.isNotEmpty) {
+        _subTimer = Timer.periodic(_subGap, (_) => _subscribeBatch());
+      }
+    }
+  }
+
+  void _subscribeBatch() {
+    for (var i = 0; i < _subBatch && _subQueue.isNotEmpty; i++) {
+      _subscribe(_subQueue.removeAt(0));
+    }
+    if (_subQueue.isEmpty) {
+      _subTimer?.cancel();
+      _subTimer = null;
+    }
+  }
+
+  void _subscribe(String n) {
+    final ev = using((a) {
+      final addr = _createAddress(
+        _factory,
+        'sip:$n'.toNativeUtf8(allocator: a),
+      );
+      if (addr == nullptr) return nullptr;
+      // 600 s richiesti; il PBX può accorciarli, il core rinnova da solo.
+      final ev = _createSubscribe(
+        _core,
+        addr,
+        'dialog'.toNativeUtf8(allocator: a),
+        600,
+      );
+      _addressUnref(addr);
+      if (ev == nullptr) return nullptr;
+      _eventAddHeader(
+        ev,
+        'Accept'.toNativeUtf8(allocator: a),
+        'application/dialog-info+xml'.toNativeUtf8(allocator: a),
+      );
+      return ev;
+    });
+    if (ev == nullptr) {
+      _dialogs.add(BlfEvent(n, BlfStatus.unknown, 'indirizzo non valido'));
+      return;
+    }
+    _subs[n] = ev;
+    _subTrackers[n] = DialogInfoTracker();
+    _eventSendSubscribe(ev, nullptr);
+    _dialogs.add(BlfEvent(n, BlfStatus.unknown));
   }
 
   void _dropSubscription(String n) {
@@ -1016,6 +1044,9 @@ class LinphoneFfiEngine implements SipEngine {
   }
 
   void _dropSubscriptions() {
+    _subQueue.clear();
+    _subTimer?.cancel();
+    _subTimer = null;
     for (final n in _subs.keys.toList()) {
       _dropSubscription(n);
     }

@@ -557,16 +557,21 @@ class _BlfRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = context.drin;
     final s = phone.blfOf(ext);
+    final stale = phone.blfStale(ext);
     final dot = switch (s) {
       BlfStatus.idle => c.ok,
       BlfStatus.busy => c.busy,
       BlfStatus.ringing => c.ringing,
       _ => c.border,
-    };
+    }.withValues(alpha: stale ? 0.35 : 1);
     final pr = presenceOf(c, phone.presenceOf(ext));
     final callable = phone.isCallable(ext) && phone.canDial;
     return Tooltip(
-      message: [blfLabel(s), if (pr != null) pr.$3].join(' · '),
+      message: [
+        blfLabel(s),
+        if (stale) tr('da confermare'),
+        if (pr != null) pr.$3,
+      ].join(' · '),
       waitDuration: const Duration(milliseconds: 600),
       child: InkWell(
         borderRadius: BorderRadius.circular(6),

@@ -46,9 +46,13 @@ class StatusAvatar extends StatelessWidget {
     this.blf,
     this.presence = '',
     this.size = 40,
+    this.stale = false,
   });
   final String name;
   final BlfStatus? blf;
+
+  /// Ultimo stato noto, non ancora confermato dal PBX: anello attenuato.
+  final bool stale;
   final String presence;
   final double size;
 
@@ -60,10 +64,14 @@ class StatusAvatar extends StatelessWidget {
       BlfStatus.busy => c.busy,
       BlfStatus.ringing => c.ringing,
       _ => null,
-    };
+    }?.withValues(alpha: stale ? 0.35 : 1);
     final offline = blf == BlfStatus.offline;
     final p = presenceOf(c, presence);
-    final label = [blfLabel(blf), if (p != null) p.$3].join(' · ');
+    final label = [
+      blfLabel(blf),
+      if (stale) tr('da confermare'),
+      if (p != null) p.$3,
+    ].join(' · ');
     return Tooltip(
       message: label,
       child: Semantics(
