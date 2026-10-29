@@ -1,105 +1,102 @@
 # Piano d'azione — DrinPhone
 
-Suite completa **a fasi**. Ogni fase: **obiettivo → passi → verifica**. Non
-passare alla successiva finché la verifica non è vera. Le fasi F3→F8 sono
-l'incremento della suite.
+Suite **a fasi**: obiettivo → passi → verifica. Piattaforma pilota **Windows**
+(DECISIONS 2026-10-28), PBX di prova **Yeastar P-Series** reale (RAS + Cloud).
+Qui restano **solo le cose aperte**; il completato è riassunto in fondo con la
+prova. Stato aggiornato al **2026-10-29**.
 
-## F0 — Fondamenta
-**Obiettivo:** progetto che parte su Android e desktop Linux, repo con i 4 file base.
-1. Toolchain (vedi `docs/ambiente-di-sviluppo.md`): Flutter, Android Studio + emulatore, build desktop Linux abilitata.
-2. Repo GitHub privato; `flutter create`; nome/bundle id; incolla qui CLAUDE.md, ARCHITECTURE.md, DECISIONS.md.
-3. Integra `linphone-sdk` (plugin Flutter); l'app vuota carica il core liblinphone senza crash.
-**Verifica:** `flutter doctor` verde · app vuota su emulatore Android e su Linux · core liblinphone inizializzato.
+Regole: nessuna voce si chiude per deduzione — "fatto" = provato contro un PBX
+vero (audio nei due versi per le chiamate, CLAUDE.md §5) e, per la UI, reso e
+guardato (§8). Ogni chiusura aggiorna questo file nello stesso commit.
 
-## F1 — Banco PBX (l'altro capo della chiamata)
-**Obiettivo:** un PBX vero su cui provare tutto.
-1. Docker con Asterisk/FreePBX in locale, due interni di test.
-2. Registra un softphone di riferimento (Linphone/Zoiper) e verifica una chiamata tra due interni.
-**Verifica:** dal softphone di riferimento chiami l'altro interno e **senti l'audio nei due versi**.
+## In attesa di una decisione di Luigi
+- **Cambio presenza e inoltri dall'app** (pulsanti stile Linkus): serve l'API in
+  scrittura `extension/update`, oggi esclusa (DECISIONS 2026-10-28 bis).
+  Strade: scrittura limitata alla sola presenza del proprio interno (nuova voce in
+  DECISIONS) oppure gateway Econnet lato server.
+- Da questa dipendono anche **Agent Status** (code) e **scelta del numero in uscita** (DOD).
 
-## F2 — Core SIP (piattaforma pilota: Android)
-**Obiettivo:** DrinPhone fa e riceve una chiamata vera.
-1. Servizio SIP: REGISTER verso il PBX di F1.
-2. Chiamata in uscita, in entrata, risposta, hangup; macchina a stati della chiamata.
-3. Audio bidirezionale (STUN; Opus + PCMA).
-**Verifica:** DrinPhone ↔ softphone di riferimento, audio nei due versi; registrazione che si ristabilisce dopo caduta rete.
+## Da validare (implementato, manca la prova vera)
+Chiamate (F3):
+- Attesa/riprendi, muto, DTMF, avviso di chiamata, **trasferimento cieco e
+  assistito** via RAS.
+- Registrazione che si ristabilisce dopo una caduta di rete; 20 chiamate ripetute;
+  rete cattiva (perdita pacchetti, cambio rete).
 
-## F3 — MVP chiamate
-**Obiettivo:** le funzioni base di un softphone, provate sul banco.
-1. Hold/resume, mute, DTMF, trasferimento cieco e assistito.
-2. Cronologia chiamate, multi-account, UI degli stati (screenshot, §8 di CLAUDE.md).
-3. Rete cattiva: perdita pacchetti, cambio Wi-Fi↔dati.
-**Verifica:** ogni funzione provata end-to-end sul banco, nei due temi.
+Live Calls (F6):
+- Dopo la correzione del 2026-10-28: chiamata che **sparisce al riaggancio**,
+  uscenti nella tabella giusta, **una riga** per le esterne verso un interno.
 
-## F4 — Mobile vero: chiamate ad app chiusa (lo scoglio)
-**Obiettivo:** ricevere una chiamata con l'app TERMINATA su un telefono fisico.
-1. **Decisione push** (vedi DECISIONS): verifica se Yeastar P-Series supporta il
-   push SIP RFC 8599; altrimenti predisponi un **gateway push** (Flexisip o
-   equivalente) + APNs/FCM.
-2. CallKit (iOS) / ConnectionService (Android): schermata chiamata di sistema.
-3. Background, permessi, batteria, riconnessione.
-**Verifica:** telefono reale, app chiusa → la chiamata entrante squilla e si
-risponde. *(iOS richiede un Mac — vedi §10.)*
+Multi-account e profili:
+- BLF degli interni del **secondo PBX** instradato sul suo account; stato
+  **Squilla** mai osservato.
+- **Procedura guidata** su un PC nuovo; creazione di un profilo "SIP generico".
+- Account **avanzato**: chiamate in uscita tramite **proxy** (route; la
+  registrazione è verificata), registrar separato, utente di autenticazione/realm,
+  nascondi ID chiamante, intervallo di registrazione, **STUN/ICE/TURN**.
+- Opzioni globali: **cifratura SRTP/ZRTP/DTLS** (con TLS), DTMF SIP INFO, keep-alive.
+- Profilo TEST (Yeastar Cloud via SBC): chiamata entrante e uscente con audio.
 
-## F5 — Desktop
-**Obiettivo:** DrinPhone usabile da PC.
-1. Build Linux (e Windows/macOS secondo i target); selezione microfono/altoparlante; ring sul device giusto.
-2. Tray, avvio automatico, finestra chiamata.
-**Verifica:** chiamata completa da desktop con scelta delle periferiche audio.
+Desktop (F5) e UI (§8):
+- Scelta **microfono / cuffia / suoneria** con chiamata vera.
+- **Importazione contatti** CSV e vCard con file reali (Outlook, Google, telefono).
+- Screenshot degli **stati** (riposo, in chiamata, entrante, attesa, trasferimento,
+  errore, rete assente) nei **due temi** — il tema chiaro non è mai stato guardato —
+  e a finestra stretta.
 
-## F6 — Strato Yeastar P-Series + sicurezza
-**Obiettivo:** funzioni UC verso Yeastar, dietro un'interfaccia separata dal nucleo SIP.
-1. Integrazione API P-Series ufficiale (login/token, rubrica, presence, CDR) —
-   vedi `docs/yeastar-interop.md`.
-2. TLS + SRTP obbligatori verso PBX pubblici; storage credenziali sicuro; **audit di sicurezza** e report datato.
-**Verifica:** presence/rubrica reali da un P-Series di test; audit §9 passato.
+## Da fare
 
-## F7 — Aggiornamenti & distribuzione
-**Obiettivo:** i client sanno quando sono vecchi e sanno come aggiornarsi.
-1. **Manifest di aggiornamento** unico (versione, note, URL artefatti firmati per
-   piattaforma, versione minima supportata) letto all'avvio.
-2. **Desktop:** scarica e si auto-aggiorna. **Mobile:** mostra "aggiornamento
-   disponibile → store" (o via MDM). Astrai il *canale* così il modello mobile si
-   sceglie dopo. Vedi `docs/aggiornamenti-e-distribuzione.md`.
-**Verifica:** un client vecchio rileva la nuova versione dal manifest e agisce
-secondo la piattaforma.
+### F1 — Banco PBX ripetibile
+- Asterisk/FreePBX in Docker (con consenso, senza toccare container esistenti),
+  interni 201/202, softphone di riferimento: serve per provare il profilo
+  **SIP generico** e le voci avanzate senza dipendere dal Yeastar di produzione.
 
-## F8 — Rilascio
-**Obiettivo:** primo rilascio pubblico.
-1. **Play Store Android** (primo bersaglio): keystore, build firmata, scheda store, review.
-2. A seguire le altre piattaforme: code signing Windows, notarization macOS, App Store (serve Mac).
-3. Provisioning account clienti (QR/URL), beta interna Econnet.
-**Verifica:** build firmate installabili; un cliente pilota registrato e operativo.
+### F3/F5 — Softphone desktop completo
+- **Codec**: scelta e ordine Opus / G.711 PCMA-PCMU (e G.722) per account o globale.
+- Tray, **avvio con Windows**, notifica di sistema sulla chiamata entrante.
+- Funzionalità lato app in Preferenze > Funzionalità: risposta automatica
+  (interfono/citofoni), inoltro (se si sceglie la scrittura API).
 
-## Revisione operativa delle fasi (2026-10-28)
-**F0-A — Spike SDK/licensing (PRIMA di F0):** verificare package Flutter, API e binari nativi Android e Linux, licenze, registrazione di prova se possibile; documento `docs/spikes/F0-A.md` con `PASS/FAIL/BLOCKED`. Se manca binding, decidere plugin interno FFI/Platform Channels. Solo dopo questo gate procedere a F0-B `flutter create`.
+### F6 — Strato Yeastar
+- **CDR** dal PBX (registro chiamate dell'interno, non solo locale).
+- **Capability discovery** e matrice edition/firmware (Appliance, Software,
+  Cloud): endpoint e eventi disponibili, errori come 70120 ORGANIZATION DISABLED.
+- Test **multi-tenant** Yeastar Cloud con API (il tenant di prova oggi è solo SIP).
+- Valutare il **pinning TLS** verso i PBX pubblici.
 
-**F0-B — Shell minima:** naming tecnico `drinphone`, bundle ID riservato a Econnet, design tokens provvisori DRIN da approvare, secure storage su Android, logging redatto, DI e interfaccia SipEngine, test fake engine.
+### F4 — Mobile e chiamate ad app chiusa
+- Spike push: RFC 8599 su Yeastar o gateway (Flexisip/equivalente) + APNs/FCM;
+  CallKit / ConnectionService; costo e affidabilità. Da avviare prima del porting.
+- **Android**: runtime liblinphone (F0-A: build PASS, runtime BLOCKED senza
+  dispositivo), poi vertical slice su telefono fisico.
+- **iOS / macOS**: richiedono un Mac (CLAUDE.md §10).
 
-**F1 — PBX isolation:** Asterisk Docker senza conflitti con container già esistenti. 201/202; scenario SIP valido contro softphone esterno. Verifica audio.
+### F5 — Altre piattaforme desktop
+- **Linux**: build e audio (F0-A: eventi PASS), dispositivi reali.
 
-**F2 — Vertical slice:** singolo account su Android (nessun multi-account), REGISTER + inbound/outbound + answer/reject/hangup + audio; logging di transizione e cleanup. 20 chiamate ripetute.
+### F7 — Aggiornamenti e distribuzione
+- Manifest firmato (versione, minima supportata, artefatti), auto-update desktop,
+  rimando allo store su mobile, rollback; installer Windows e QA di upgrade.
 
-**F3 — Usabilità + BLF base:** DTMF/hold/transfer, rubrica locale, SIP BLF con subscription lifecycle; se PBX non supporta BLF mostrare sconosciuto. Multi-account solo dopo stabilità.
+### F8 — Rilascio
+- **Licenze**: liblinphone è GPLv3 / commerciale — risolvere la licenza
+  commerciale e le transitive **prima** di distribuire (docs/licenze-e-compliance.md;
+  F0-A: "License reviewed: NO").
+- Code signing Windows, notarization macOS, store; provisioning account (QR/URL);
+  beta interna Econnet, poi clienti pilota.
 
-**F4 — Spike push architetturale:** avviare la fattibilità già in parallelo a F2, non attendere la fine del core per scoprire una incompatibilità. iOS PushKit/CallKit, Android Telecom, PBX compatibilità RFC 8599, gateway, costo hosting e affidabilità: non pubblicare mobile always-on senza gate reale.
-
-**F5 — Linux desktop:** audio devices, focus/notification/tray, session persistence e suite dispositivi reali; Windows/macOS solo dopo binding e CI.
-
-**F6 — DRIN/Yeastar:** capability discovery, edition/firmware matrix, API client con endpoint **verificati**, eventi eventuali, rubrica. AMI solo backend Asterisk e solo su richiesta approvata. Multi-tenant test.
-
-**F7 — Delivery:** manifest con firma, rollback, code signing e install/upgrade QA. L'implementazione auto-update differisce per sistema e tipo installer.
-
-**F8 — Pilot-to-market:** prima beta interna, poi beta clienti solo dopo licenze e privacy, checklist security, push, SLA/supporto, branding, commercial terms e store policy.
-
-### Ogni fase deve produrre
-- codice, test, documentazione modificata nello stesso commit;
-- report con `pass/fail/blocked` e dispositivi/PBX/versioni;
-- issue aperte per blocchi; nessuna fase marcata completa per deduzione.
-
-### Ordine raccomandato primo sprint
-1. F0-A SDK bindings/licensing feasibility;
-2. F0-B Flutter shell con engine fake;
-3. F1 banco Asterisk isolato;
-4. F2 demo su Android fisico;
-5. F3 BLF SIP con Yeastar reale come secondo PBX.
+## Completato (verificato)
+| Cosa | Prova |
+|---|---|
+| F0-A spike: liblinphone 5.5.39 via `dart:ffi` su Windows (e eventi su Linux) | `docs/spikes/F0-A.md` |
+| Shell Flutter Windows: `SipEngine` + motore finto nei test, password nello storage sicuro, log senza segreti | test automatici (47), `docs/sicurezza/` |
+| REGISTER, chiamata uscente ed entrante, **audio nei due versi** | `docs/test/2026-10-28-windows-yeastar-ras.md` |
+| BLF SIP (Libero, Occupato, Non registrato) su ~50 interni | idem |
+| OpenAPI Yeastar: token, interni, reparti, rubrica aziendale (4468), casella vocale | idem; credenziali DPAPI a sola scrittura |
+| Presenza in tempo reale via WebSocket | confermata da Luigi il 2026-10-28 |
+| Dettaglio presenze del proprio interno (6 presenze, inoltri, squillo) in sola lettura | visto sul pilota |
+| Due account SIP su due PBX registrati insieme | log del pilota |
+| Profili Yeastar / SIP generico, migrazione dei dati, un-REGISTER e chiusura BLF al cambio | log 2026-10-28 17:45 |
+| Registrazione via **proxy in uscita** (Yeastar Cloud multi-tenant, TLS) | 200 OK, log 2026-10-28 |
+| Cache cifrata dei dati PBX: interni e rubrica a schermo in ~1 s all'avvio | misura sul pilota |
+| Audit di sicurezza per ogni funzione che tocca un confine | `docs/sicurezza/2026-10-28-*.md` |
