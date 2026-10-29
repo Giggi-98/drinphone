@@ -63,6 +63,16 @@ typedef _PPPP = Pointer<Void> Function(
   Pointer<Void>,
 );
 
+/// mediastreamer2/msogl.h: contesto per il filtro di visualizzazione MSOGL.
+final class _OglContextInfo extends Struct {
+  external Pointer<Void> window;
+  @Uint32()
+  external int width;
+  @Uint32()
+  external int height;
+  external Pointer<Void> getProcAddress;
+}
+
 class LinphoneFfiEngine implements SipEngine {
   final _registrations = StreamController<RegistrationEvent>.broadcast();
   final _calls = StreamController<CallEvent>.broadcast();
@@ -1202,8 +1212,28 @@ class LinphoneFfiEngine implements SipEngine {
     required int remote,
     required int preview,
   }) async {
-    _setNativeVideoWindow(_core, Pointer.fromAddress(remote));
-    _setNativePreviewWindow(_core, Pointer.fromAddress(preview));
+    _setNativeVideoWindow(_core, _oglContext(remote));
+    _setNativePreviewWindow(_core, _oglContext(preview));
+  }
+
+  /// Il filtro MSOGL (Windows) vuole un `MSOglContextInfo*`, non l'HWND:
+  /// `{ void* window; unsigned width; unsigned height; getProcAddress }`
+  /// (mediastreamer2/msogl.h). La memoria resta valida finché il core la può
+  /// usare: si libera solo in [stop]. 0 = nessuna finestra.
+  final _oglContexts = <int, Pointer<_OglContextInfo>>{};
+
+  Pointer<Void> _oglContext(int hwnd) {
+    if (hwnd == 0) return nullptr;
+    return _oglContexts.putIfAbsent(hwnd, () {
+      final info = calloc<_OglContextInfo>();
+      info.ref
+        ..window = Pointer.fromAddress(hwnd)
+        // Dimensioni di ripiego: MSOGL le legge dalla superficie EGL.
+        ..width = 1280
+        ..height = 720
+        ..getProcAddress = nullptr;
+      return info;
+    }).cast();
   }
 
   @override
@@ -1369,6 +1399,11 @@ class LinphoneFfiEngine implements SipEngine {
       _coreUnref(_core);
       _core = nullptr;
     }
+    // Contesti video: liberi solo a core distrutto.
+    for (final info in _oglContexts.values) {
+      calloc.free(info);
+    }
+    _oglContexts.clear();
     _regCb?.close();
     _callCb?.close();
     _notifyCb?.close();
