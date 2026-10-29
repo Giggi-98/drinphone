@@ -268,4 +268,71 @@ void main() {
       expect(engine.log.last, 'dial 301');
     },
   );
+
+  test('finestra di chiamata: registra (codice/locale/no), note nel registro, conferenza', () async {
+    CallEvent ev2(
+      int id,
+      CallPhase ph, {
+      String name = '',
+      bool video = false,
+    }) => CallEvent(
+      id: id,
+      phase: ph,
+      direction: CallDirection.outgoing,
+      remoteNumber: '301',
+      remoteName: name,
+      video: video,
+      accountId: 'main',
+    );
+    await phone.saveAccount(
+      const SipAccount(
+        username: '305',
+        password: 'p',
+        domain: 'pbx.test',
+        recording: RecordingMode.pbxCode,
+        recordCode: '*1',
+      ),
+    );
+    engine.callsCtl.add(ev2(1, CallPhase.active, name: 'Paolo', video: true));
+    // Evento successivo senza nome: il video non si perde.
+    engine.callsCtl.add(ev2(1, CallPhase.active, video: true));
+    expect(phone.call!.video, isTrue);
+    expect(phone.call!.remoteName, 'Paolo');
+
+    expect(phone.canRecord(phone.call!), isTrue);
+    await phone.toggleRecording();
+    expect(engine.log.where((l) => l.startsWith('dtmf')), isNotEmpty);
+    expect(phone.isRecording(1), isTrue);
+
+    phone.setNote(1, '  Richiamare per il preventivo  ');
+    engine.callsCtl.add(ev2(1, CallPhase.ended));
+    expect(phone.history.first.note, 'Richiamare per il preventivo');
+
+    // Locale: avvio e stop del file; disattivata: niente pulsante.
+    await phone.saveAccount(
+      const SipAccount(
+        username: '305',
+        password: 'p',
+        domain: 'pbx.test',
+        recording: RecordingMode.local,
+      ),
+    );
+    engine.callsCtl.add(ev2(2, CallPhase.active));
+    expect(phone.canRecord(phone.call!), phone.recordingsDir.isNotEmpty);
+    await phone.saveAccount(
+      const SipAccount(
+        username: '305',
+        password: 'p',
+        domain: 'pbx.test',
+        recording: RecordingMode.off,
+      ),
+    );
+    expect(phone.canRecord(phone.call!), isFalse);
+
+    // Conferenza: due chiamate stabilite si uniscono.
+    engine.callsCtl.add(ev2(3, CallPhase.paused));
+    expect(phone.canMergeConference, isTrue);
+    await phone.mergeConference();
+    expect(engine.log.last, 'conference');
+  });
 }

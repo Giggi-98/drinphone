@@ -548,6 +548,11 @@ class _AccountEditorState extends State<AccountEditor> {
   late bool _hideId = widget.account?.hideCallerId ?? false;
   late bool _ice = widget.account?.ice ?? false;
   late bool _turn = widget.account?.turn ?? false;
+  late RecordingMode _recording =
+      widget.account?.recording ?? RecordingMode.auto;
+  late final _recordCode = TextEditingController(
+    text: widget.account?.recordCode,
+  );
 
   @override
   void dispose() {
@@ -565,6 +570,7 @@ class _AccountEditorState extends State<AccountEditor> {
       _stun,
       _turnUser,
       _turnPassword,
+      _recordCode,
     ]) {
       c.dispose();
     }
@@ -687,6 +693,47 @@ class _AccountEditorState extends State<AccountEditor> {
         tr('Codice casella vocale'),
         tr('vuoto = quello del profilo'),
       ),
+      // Pulsante Registra della finestra di chiamata.
+      Padding(
+        padding: const EdgeInsets.only(bottom: 10),
+        child: DropdownButtonFormField<RecordingMode>(
+          initialValue: _recording,
+          decoration: InputDecoration(labelText: tr('Registrazione chiamate')),
+          items: [
+            DropdownMenuItem(
+              value: RecordingMode.auto,
+              child: Text(tr('Automatica · codice letto dalle API del PBX')),
+            ),
+            DropdownMenuItem(
+              value: RecordingMode.pbxCode,
+              child: Text(tr('Codice funzione del PBX')),
+            ),
+            DropdownMenuItem(
+              value: RecordingMode.local,
+              child: Text(tr('Locale sul PC (Documenti › DrinPhone)')),
+            ),
+            DropdownMenuItem(
+              value: RecordingMode.off,
+              child: Text(tr('Disattivata')),
+            ),
+          ],
+          onChanged: (v) =>
+              setState(() => _recording = v ?? RecordingMode.auto),
+        ),
+      ),
+      if (_recording == RecordingMode.pbxCode)
+        _field(_recordCode, tr('Codice di registrazione'), '*1'),
+      if (_recording == RecordingMode.local)
+        Padding(
+          padding: const EdgeInsets.only(bottom: 10),
+          child: Text(
+            tr(
+              'Registrare una conversazione richiede di norma il consenso '
+              'dell’interlocutore.',
+            ),
+            style: TextStyle(fontSize: 12, color: c.muted),
+          ),
+        ),
       _group(c, tr('RETE / NAT')),
       _field(_stun, tr('Server STUN/TURN'), tr('stun.esempio.it:3478')),
       _switch(
@@ -739,6 +786,10 @@ class _AccountEditorState extends State<AccountEditor> {
         turn: _turn,
         turnUser: _turn ? _turnUser.text.trim() : '',
         turnPassword: _turn ? _turnPassword.text : '',
+        recording: _recording,
+        recordCode: _recording == RecordingMode.pbxCode
+            ? _recordCode.text.trim()
+            : '',
       ),
     );
     if (mounted) Navigator.of(context).pop();

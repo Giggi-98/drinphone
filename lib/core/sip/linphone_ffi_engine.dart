@@ -681,6 +681,28 @@ class LinphoneFfiEngine implements SipEngine {
         void Function(Pointer<Void>, int)
       >('linphone_core_set_upload_bandwidth');
 
+  // --- registrazione, qualità, conferenza.
+  late final _paramsSetRecordFile = _lib.lookupFunction<_VoidPS, _VoidPSDart>(
+    'linphone_call_params_set_record_file',
+  );
+  late final _startRecording = _lib.lookupFunction<_VoidP, _VoidPDart>(
+    'linphone_call_start_recording',
+  );
+  late final _stopRecording = _lib.lookupFunction<_VoidP, _VoidPDart>(
+    'linphone_call_stop_recording',
+  );
+  late final _currentQuality = _lib
+      .lookupFunction<
+        Float Function(Pointer<Void>),
+        double Function(Pointer<Void>)
+      >('linphone_call_get_current_quality');
+  late final _callConference = _lib.lookupFunction<_PP, _PP>(
+    'linphone_call_get_conference',
+  );
+  late final _addAllToConference = _lib.lookupFunction<_IntP, _IntPDart>(
+    'linphone_core_add_all_to_conference',
+  );
+
   // --- opzioni globali delle chiamate.
   late final _setMediaEncryption = _lib
       .lookupFunction<
@@ -731,11 +753,6 @@ class LinphoneFfiEngine implements SipEngine {
     'linphone_core_clear_accounts',
   );
 
-  late final _invite = _lib
-      .lookupFunction<
-        Pointer<Void> Function(Pointer<Void>, Pointer<Utf8>),
-        Pointer<Void> Function(Pointer<Void>, Pointer<Utf8>)
-      >('linphone_core_invite');
   late final _accept = _lib.lookupFunction<_IntP, _IntPDart>(
     'linphone_call_accept',
   );
@@ -1012,16 +1029,14 @@ class LinphoneFfiEngine implements SipEngine {
     bool video = false,
   }) async {
     final acc = accountId == null ? null : _accounts[accountId];
-    final call = acc == null && !video
-        // Numero nudo: il core lo completa con il dominio dell'account predefinito.
-        ? using((a) => _invite(_core, number.toNativeUtf8(allocator: a)))
-        : acc == null
+    final call = acc == null
         ? using((a) {
-            // Videochiamata sull'account predefinito.
+            // Account predefinito: il core completa il numero con il suo dominio.
             final to = _interpretUrl(_core, number.toNativeUtf8(allocator: a));
             if (to == nullptr) return nullptr;
             final params = _createCallParams(_core, nullptr);
-            _paramsEnableVideo(params, 1);
+            _paramsEnableVideo(params, video ? 1 : 0);
+            _setRecordFile(params, number, a);
             final c = _inviteWithParams(_core, to, params);
             _callParamsUnref(params);
             _addressUnref(to);
@@ -1038,6 +1053,7 @@ class LinphoneFfiEngine implements SipEngine {
             final params = _createCallParams(_core, nullptr);
             _callParamsSetAccount(params, acc);
             _paramsEnableVideo(params, video ? 1 : 0);
+            _setRecordFile(params, number, a);
             final c = _inviteWithParams(_core, to, params);
             _callParamsUnref(params);
             _addressUnref(to);
@@ -1071,9 +1087,56 @@ class LinphoneFfiEngine implements SipEngine {
       return;
     }
     _paramsEnableVideo(params, video ? 1 : 0);
+    using((a) {
+      final remote = _remoteAddress(call);
+      _setRecordFile(
+        params,
+        remote == nullptr ? 'sconosciuto' : _str(_addressUsername(remote)),
+        a,
+      );
+    });
     _acceptWithParams(call, params);
     _callParamsUnref(params);
   }
+
+  String _recordingDir = '';
+
+  @override
+  void setRecordingDir(String dir) => _recordingDir = dir;
+
+  /// File della registrazione locale (scritto solo se la si avvia): mkv per
+  /// audio e video, `AAAAMMGG-hhmmss-numero.mkv`.
+  void _setRecordFile(Pointer<Void> params, String number, Allocator a) {
+    if (_recordingDir.isEmpty) return;
+    Directory(_recordingDir).createSync(recursive: true);
+    final t = DateTime.now();
+    String two(int n) => n.toString().padLeft(2, '0');
+    final safe = number.replaceAll(RegExp(r'[^0-9A-Za-z+_-]'), '_');
+    final name =
+        '${t.year}${two(t.month)}${two(t.day)}-'
+        '${two(t.hour)}${two(t.minute)}${two(t.second)}-$safe.mkv';
+    _paramsSetRecordFile(
+      params,
+      '$_recordingDir${Platform.pathSeparator}$name'.toNativeUtf8(allocator: a),
+    );
+  }
+
+  @override
+  Future<void> startRecording(int id) async {
+    if (_ptr(id) != nullptr) _startRecording(_ptr(id));
+  }
+
+  @override
+  Future<void> stopRecording(int id) async {
+    if (_ptr(id) != nullptr) _stopRecording(_ptr(id));
+  }
+
+  @override
+  double callQuality(int id) =>
+      _ptr(id) == nullptr ? -1 : _currentQuality(_ptr(id));
+
+  @override
+  Future<void> conferenceAll() async => _addAllToConference(_core);
 
   @override
   Future<void> setCallVideo(int id, bool on) async {
@@ -1382,8 +1445,19 @@ class LinphoneFfiEngine implements SipEngine {
         message: _str(msg),
         video: _videoOf(_callCurrentParams(call)),
         remoteVideo: _videoOf(_callRemoteParams(call)),
+        accountId: _accountIdOf(call),
+        inConference: _callConference(call) != nullptr,
       ),
     );
+  }
+
+  String _accountIdOf(Pointer<Void> call) {
+    final params = _callGetParams(call);
+    final acc = params == nullptr ? nullptr : _callParamsGetAccount(params);
+    for (final e in _accounts.entries) {
+      if (e.value == acc) return e.key;
+    }
+    return '';
   }
 
   bool _videoOf(Pointer<Void> params) =>

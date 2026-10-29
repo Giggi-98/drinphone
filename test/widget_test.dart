@@ -170,6 +170,34 @@ void main() {
     expect(find.text('Chiamata in arrivo'), findsOneWidget);
     await tester.tap(find.text('Rispondi'));
     expect(engine.log, contains('answer 0'));
+
+    // In conversazione: finestra grande con la barra dei comandi.
+    engine.callsCtl.add(
+      const CallEvent(
+        phase: CallPhase.active,
+        direction: CallDirection.incoming,
+        remoteNumber: '205',
+        remoteName: 'Magazzino',
+      ),
+    );
+    await tester.pump();
+    for (final label in [
+      'Muto',
+      'Attesa',
+      'Tastiera',
+      'Trasferisci',
+      'Termina',
+    ]) {
+      expect(find.text(label), findsOneWidget, reason: label);
+    }
+    // Riduci: resta una barra con riaggancia ed espandi.
+    await tester.tap(find.byTooltip('Riduci'));
+    await tester.pump();
+    expect(find.text('Termina'), findsNothing);
+    expect(find.byTooltip('Espandi'), findsOneWidget);
+    await tester.tap(find.byTooltip('Espandi'));
+    await tester.pump();
+    expect(find.text('Termina'), findsOneWidget);
   });
 
   test(

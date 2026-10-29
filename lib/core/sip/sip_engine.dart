@@ -3,6 +3,11 @@
 
 enum SipTransport { udp, tcp, tls }
 
+/// Pulsante Registra: `auto` = codice del PBX letto dalle API (Yeastar
+/// `feature_code/get`), `pbxCode` = codice impostato a mano, `local` = file sul
+/// PC (liblinphone), `off` = nessuna registrazione.
+enum RecordingMode { auto, pbxCode, local, off }
+
 class SipAccount {
   const SipAccount({
     this.id = 'main',
@@ -25,7 +30,14 @@ class SipAccount {
     this.turn = false,
     this.turnUser = '',
     this.turnPassword = '',
+    this.recording = RecordingMode.auto,
+    this.recordCode = '',
   });
+
+  final RecordingMode recording;
+
+  /// Codice funzione di registrazione per `pbxCode` (es. `*1`).
+  final String recordCode;
 
   /// Identificativo locale dell'account (il primo è `main`).
   final String id;
@@ -97,6 +109,8 @@ class SipAccount {
         turn: turn,
         turnUser: turnUser,
         turnPassword: turnPassword ?? this.turnPassword,
+        recording: recording,
+        recordCode: recordCode,
       );
 
   // Mai includere la password: questa stringa finisce nei log.
@@ -180,7 +194,15 @@ class CallEvent {
     this.message = '',
     this.video = false,
     this.remoteVideo = false,
+    this.accountId = '',
+    this.inConference = false,
   });
+
+  /// Account SIP della chiamata ('' = non determinato).
+  final String accountId;
+
+  /// Fa parte della conferenza locale.
+  final bool inConference;
 
   /// Video attivo nella chiamata (parametri correnti).
   final bool video;
@@ -264,6 +286,19 @@ abstract class SipEngine {
 
   /// Accende o spegne il video in una chiamata in corso (re-INVITE).
   Future<void> setCallVideo(int id, bool on);
+
+  /// Cartella dei file di registrazione locale ('' = nessuna).
+  void setRecordingDir(String dir);
+
+  /// Registrazione locale della chiamata (file nella cartella sopra).
+  Future<void> startRecording(int id);
+  Future<void> stopRecording(int id);
+
+  /// Qualità corrente da 0 (pessima) a 5 (ottima); -1 se non disponibile.
+  double callQuality(int id);
+
+  /// Unisce tutte le chiamate in una conferenza locale (mixer di DrinPhone).
+  Future<void> conferenceAll();
 
   /// Registra esattamente questi account (gli altri vengono rimossi). Il primo
   /// è quello predefinito.

@@ -32,6 +32,7 @@ Future<void> main() async {
         ? (id) => ApiCredentialStore(paths.apiCredentialsFileFor(id))
         : null,
     openH264: Platform.isWindows ? OpenH264(paths.codecs) : null,
+    recordingsDir: paths.recordings,
     cacheFor: Platform.isWindows
         ? (id) => PbxCache(paths.pbxCacheFileFor(id))
         : null,

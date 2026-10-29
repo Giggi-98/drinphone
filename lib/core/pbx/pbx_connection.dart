@@ -169,6 +169,9 @@ class PbxConnection {
   /// Messaggi in casella; null = non letti dall'API (non disponibile o errore).
   List<PbxVoicemail>? voicemail;
 
+  /// Codice di registrazione del PBX (`feature_code/get`), se abilitato.
+  String? recordCode;
+
   /// Dettaglio del proprio interno ([voicemailOf]): presenze e inoltri.
   PbxExtensionDetail? ownDetail;
   bool _detailStale = true;
@@ -278,6 +281,12 @@ class PbxConnection {
         }
         _orgsAt = DateTime.now();
         _detailStale = true;
+        // Codici funzione: cadenza lenta come i reparti.
+        try {
+          recordCode = await api.recordFeatureCode();
+        } catch (e) {
+          optionalErrors.add('codici funzione: ${_short(e)}');
+        }
       }
       // Casella vocale a ogni giro: è ciò che l'utente si aspetta di vedere subito.
       final vmOf = voicemailOf;

@@ -513,6 +513,20 @@ class YeastarApi {
     };
   }
 
+  /// Codice funzione di registrazione (`auto_record`, pausa/ripresa e
+  /// registrazione a richiesta) se abilitato; null se disattivato.
+  Future<String?> recordFeatureCode() async {
+    final j = await _call(
+      'feature_code/get',
+      'GET',
+      _uri('feature_code/get', const {}),
+    );
+    final f = j['feature_code'];
+    if (f is! Map<String, dynamic>) return null;
+    final code = '${f['auto_record'] ?? ''}';
+    return '${f['enb_auto_record']}' == '1' && code.isNotEmpty ? code : null;
+  }
+
   /// Dettaglio di un interno (presenze, inoltri, squillo, casella vocale).
   Future<PbxExtensionDetail> getExtension(int id) async {
     final j = await _call(

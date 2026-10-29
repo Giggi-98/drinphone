@@ -27,6 +27,7 @@ class PhoneController extends ChangeNotifier {
     this.personalStoreFor,
     this.cacheFor,
     this.openH264,
+    this.recordingsDir = '',
     this.onIncomingCall,
     YeastarApi Function(ApiCredentials)? apiFactory,
   }) : _apiFactory = apiFactory ?? YeastarApi.new;
@@ -38,6 +39,9 @@ class PhoneController extends ChangeNotifier {
 
   /// Codec H264 di Cisco, scaricato a richiesta (DECISIONS "Videochiamate").
   final OpenH264? openH264;
+
+  /// Cartella delle registrazioni locali ('' = registrazione locale non disponibile).
+  final String recordingsDir;
 
   /// OpenH264 installato e con impronta verificata all'avvio.
   bool h264Installed = false;
@@ -205,6 +209,7 @@ class PhoneController extends ChangeNotifier {
       }
       await _engine.setCallOptions(settings.callOptions);
       await _engine.setVideo(settings.video);
+      _engine.setRecordingDir(recordingsDir);
       // Dispositivi audio scelti in Preferenze > Audio ('' = predefinito).
       final (cap, play, ring) = settings.audio;
       await _engine.setAudioDevices(capture: cap, playback: play, ringer: ring);
@@ -655,6 +660,92 @@ class PhoneController extends ChangeNotifier {
       // Anteprima solo se scelta in Preferenze > Video.
       preview: settings.video.preview ? _previewWindow : 0,
     );
+  }
+
+  // ------------------------------------------- finestra di chiamata
+
+  final _notes = <int, String>{};
+  final _recording = <int>{};
+
+  String noteOf(int id) => _notes[id] ?? '';
+
+  /// Nota della chiamata: finisce nel registro alla chiusura.
+  void setNote(int id, String text) {
+    text.trim().isEmpty ? _notes.remove(id) : _notes[id] = text.trim();
+    notifyListeners();
+  }
+
+  SipAccount? _accountOfCall(CallEvent c) =>
+      settings.accounts.where((a) => a.id == c.accountId).firstOrNull ??
+      settings.account;
+
+  /// Codice di registrazione del PBX per la chiamata: dalle API (Yeastar) in
+  /// automatico o impostato nell'account; null = nessun codice.
+  String? recordCodeFor(CallEvent c) {
+    final a = _accountOfCall(c);
+    if (a == null) return null;
+    return switch (a.recording) {
+      RecordingMode.auto => connectionOf(a)?.recordCode,
+      RecordingMode.pbxCode => a.recordCode.isEmpty ? null : a.recordCode,
+      _ => null,
+    };
+  }
+
+  bool _recordsLocally(CallEvent c) =>
+      _accountOfCall(c)?.recording == RecordingMode.local &&
+      recordingsDir.isNotEmpty;
+
+  /// Pulsante Registra disponibile per la chiamata.
+  bool canRecord(CallEvent c) =>
+      engineError == null && (_recordsLocally(c) || recordCodeFor(c) != null);
+
+  /// Registrazione chiesta (locale o con codice PBX). Col codice il PBX non
+  /// conferma lo stato: è quello chiesto da DrinPhone.
+  bool isRecording(int id) => _recording.contains(id);
+
+  /// Registra / ferma: file locale o codice funzione inviato in DTMF.
+  Future<void> toggleRecording() async {
+    final c = call;
+    if (c == null || c.phase != CallPhase.active || !canRecord(c)) return;
+    final on = !_recording.contains(c.id);
+    if (_recordsLocally(c)) {
+      on
+          ? await _engine.startRecording(c.id)
+          : await _engine.stopRecording(c.id);
+    } else {
+      for (final d in recordCodeFor(c)!.split('')) {
+        await _engine.sendDtmf(c.id, d);
+      }
+    }
+    on ? _recording.add(c.id) : _recording.remove(c.id);
+    notifyListeners();
+  }
+
+  /// Qualità della chiamata da 0 a 5 (-1 = non nota), per le tacche del segnale.
+  double callQuality(int id) =>
+      engineError == null ? _engine.callQuality(id) : -1;
+
+  /// Nuova chiamata durante una conversazione: quella attuale va in attesa.
+  Future<void> newCall(String number) => consult(number);
+
+  /// Conferenza: due o più chiamate stabilite da unire.
+  bool get canMergeConference =>
+      calls.values
+          .where(
+            (c) =>
+                (c.phase == CallPhase.active || c.phase == CallPhase.paused) &&
+                !c.inConference,
+          )
+          .length >=
+      2;
+
+  /// Unisce tutte le chiamate in una conferenza locale (mixata da DrinPhone).
+  Future<void> mergeConference() async {
+    if (!canMergeConference || engineError != null) return;
+    _consultFrom = null;
+    _consultTo = null;
+    await _engine.conferenceAll();
+    notifyListeners();
   }
 
   /// "Prova webcam" in Preferenze: anteprima nella finestra [handle] (0 = fine).
@@ -1204,6 +1295,7 @@ class PhoneController extends ChangeNotifier {
       }
       calls.remove(e.id);
       _meta.remove(e.id);
+      _recording.remove(e.id);
       if (e.id == _consultFrom || e.id == _consultTo) {
         _consultFrom = null;
         _consultTo = null;
@@ -1231,6 +1323,10 @@ class PhoneController extends ChangeNotifier {
                   : prev.remoteNumber,
               remoteName: prev.remoteName,
               message: e.message,
+              video: e.video,
+              remoteVideo: e.remoteVideo,
+              accountId: e.accountId,
+              inConference: e.inConference,
             )
           : e;
     }
@@ -1259,6 +1355,7 @@ class PhoneController extends ChangeNotifier {
             ? 0
             : DateTime.now().difference(connected).inSeconds,
         answered: m.answered,
+        note: _notes.remove(e.id) ?? '',
       ),
       ...history,
     ].take(CallHistoryStore.maxRecords).toList();

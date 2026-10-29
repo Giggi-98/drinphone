@@ -129,3 +129,13 @@ install(FILES
     "${LINPHONE_SDK_DIR}/lib/mediastreamer/plugins/libmswebrtc.dll"
     "${LINPHONE_SDK_DIR}/lib/mediastreamer/plugins/libmsopenh264.dll"
   DESTINATION "${CMAKE_INSTALL_PREFIX}/linphone/plugins" COMPONENT Runtime)
+
+# ANGLE (libEGL/libGLESv2) accanto all'exe: senza, il video non si vede (MSOGL).
+# Scaricato e verificato da tool/fetch_angle.ps1; se manca, solo avviso.
+set(ANGLE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../third_party/angle")
+if(EXISTS "${ANGLE_DIR}/libEGL.dll" AND EXISTS "${ANGLE_DIR}/libGLESv2.dll")
+  install(FILES "${ANGLE_DIR}/libEGL.dll" "${ANGLE_DIR}/libGLESv2.dll"
+    DESTINATION "${INSTALL_BUNDLE_LIB_DIR}" COMPONENT Runtime)
+else()
+  message(WARNING "ANGLE mancante: video non visualizzato. Esegui powershell -File tool/fetch_angle.ps1")
+endif()

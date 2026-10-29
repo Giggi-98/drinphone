@@ -6,6 +6,27 @@ aggiungi una voce nuova in cima che cita la vecchia. Il campo chiave è
 
 ---
 
+## 2026-10-29 · ANGLE per il video e finestra di chiamata (di Luigi)
+**Scelta — ANGLE:** il solo filtro di visualizzazione dell'SDK è `MSOGL` (OpenGL ES
+via EGL): senza `libEGL.dll`/`libGLESv2.dll` il video arriva e si decodifica ma
+non si vede. Si usano le DLL **ANGLE di Qt 5.15.2** contenute nell'installatore
+ufficiale **Linphone 5.3.4** (firmato Belledonne; DLL firmate The Qt Company),
+estratte da `tool/fetch_angle.ps1` con **impronte SHA-256 fissate** e incluse
+nel pacchetto (BSD-3). **Finestra di chiamata** stile Linkus: scheda in arrivo,
+finestra grande riducibile a barra o a schermo intero, pannelli in linea (non
+dialoghi, coperti dal video nativo). **Registra:** codice del PBX letto dalle
+API Yeastar (`feature_code/get`, `auto_record`) o impostato nell'account, oppure
+file locale (liblinphone) o disattivata, per account. **Conferenza** locale a 3
+mixata da DrinPhone. **Note** della chiamata nel registro.
+**Scartato:** ANGLE compilato da noi (toolchain di molti GB, ore); disegno del
+video in Flutter con plugin C++ (più lavoro; da rivedere per togliere il limite
+del video sopra i menu); Linphone 6 come fonte (usa un filtro Qt, niente ANGLE).
+**Da rivedere se:** si fa il plugin texture Flutter o Media Foundation, la
+versione di Qt/ANGLE crea problemi con driver o GPU, o serve la registrazione
+centralizzata sul PBX con stato confermato (API di registrazione).
+
+---
+
 ## 2026-10-29 · Videochiamate (di Luigi; ribalta "Esclusi: … video" della voce "UI desktop: proposta D")
 **Scelta:** videochiamate 1:1 con dispositivi SIP (videocitofoni, telefoni, softphone).
 Codec **VP8** (libvpx nell'SDK, senza brevetti) e **H264** tramite **OpenH264 di

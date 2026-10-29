@@ -172,6 +172,24 @@ spikes/f0a/                         spike F0-A (non prodotto)
   dei dati app e verifica SHA-256 di archivio e DLL; all'avvio, se verificata,
   `SetDllDirectoryW` fa trovare `openh264.dll` al plugin `libmsopenh264` (installato
   dal CMake). Preferenze > Video; pulsante videochiamata sulle schede interni.
+- **Finestra di chiamata** (`IMPLEMENTATO`, `DA VALIDARE` dal vivo) —
+  `features/call/call_window.dart` al posto del vecchio pannello: scheda in arrivo
+  (Rifiuta / Rispondi in video / Rispondi); in conversazione finestra grande con
+  intestazione (nome, numero, durata, tacche da `linphone_call_get_current_quality`,
+  Conferenza, REC, Note, riduci, schermo intero), video o avatar, pannelli in linea
+  (tastiera, trasferisci, nuova chiamata, aggiungi partecipante, note) e barra
+  comandi; ridotta = barra in basso a destra.
+- **Registrazione chiamate** — `SipAccount.recording`: `auto` usa il codice del PBX
+  letto da `feature_code/get` (`PbxConnection.recordCode`, cadenza dei reparti),
+  `pbxCode` il codice dell'account, inviato in DTMF; `local` registra con
+  liblinphone (file impostato nei parametri di ogni chiamata, `.mkv` in
+  `Documenti\DrinPhone\Registrazioni`); `off` nasconde il pulsante.
+- **Conferenza** — `linphone_core_add_all_to_conference` (API deprecata ma presente
+  in 5.5): "Aggiungi partecipante" = nuova chiamata con la prima in attesa, poi
+  "Unisci in conferenza"; `CallEvent.inConference`. `DA VALIDARE`.
+- **Note** — testo per chiamata nel controller, salvato in `CallRecord.note`.
+- **ANGLE** — `libEGL.dll`/`libGLESv2.dll` accanto all'exe (da
+  `third_party/angle`, `tool/fetch_angle.ps1`): servono al filtro video `MSOGL`.
 - **Badge "già visti"** — per profilo: ora dell'ultima visita al registro
   (`seenMissedAt`) e messaggi vocali visti (`seenVoicemail`, `mwi:<n>` per il solo
   MWI); entrando o restando nella sezione il badge si spegne.
@@ -223,7 +241,8 @@ spikes/f0a/                         spike F0-A (non prodotto)
 
 ## 5. Dipendenze
 Flutter 3.47.8 / Dart 3.13.7; `ffi` ^2.2.0; `archive` ^4.5 (bzip2 di OpenH264) e
-`crypto` ^3.0 (SHA-256); `file_selector` ^1.1.0 (scelta del
+`crypto` ^3.0 (SHA-256); ANGLE di Qt 5.15.2 (libEGL/libGLESv2, BSD-3, per il
+video; `tool/fetch_angle.ps1`); `file_selector` ^1.1.0 (scelta del
 file da importare, plugin flutter.dev); `flutter_secure_storage` ^11.2.0
 (Windows: richiede componente VS "C++ ATL"); linphone-sdk-win64 5.5.39 (GPLv3 /
 commerciale, `docs/licenze-e-compliance.md`). Toolchain: VS 2022 Build Tools 17.14

@@ -236,33 +236,36 @@ class SettingsStore {
   static const _idsKey = 'sip_password_ids';
   static String _turnKey(String id) => 'turn_password_$id';
 
-  Future<SipAccount> _accountFrom(Map<String, dynamic> a, String id) async =>
-      SipAccount(
-        id: id,
-        pbxId: a['pbxId'] as String? ?? '',
-        username: a['username'] as String,
-        password: await _secure.read(key: _passwordKey(id)) ?? '',
-        domain: a['domain'] as String,
-        transport: SipTransport.values.byName(
-          a['transport'] as String? ?? 'udp',
-        ),
-        displayName: a['displayName'] as String? ?? '',
-        proxy: a['proxy'] as String? ?? '',
-        registrar: a['registrar'] as String? ?? '',
-        authUser: a['authUser'] as String? ?? '',
-        realm: a['realm'] as String? ?? '',
-        expires: a['expires'] as int? ?? 0,
-        registerEnabled: a['registerEnabled'] as bool? ?? true,
-        hideCallerId: a['hideCallerId'] as bool? ?? false,
-        voicemailCode: a['voicemailCode'] as String? ?? '',
-        stunServer: a['stunServer'] as String? ?? '',
-        ice: a['ice'] as bool? ?? false,
-        turn: a['turn'] as bool? ?? false,
-        turnUser: a['turnUser'] as String? ?? '',
-        turnPassword: a['turn'] == true
-            ? await _secure.read(key: _turnKey(id)) ?? ''
-            : '',
-      );
+  Future<SipAccount> _accountFrom(
+    Map<String, dynamic> a,
+    String id,
+  ) async => SipAccount(
+    id: id,
+    pbxId: a['pbxId'] as String? ?? '',
+    username: a['username'] as String,
+    password: await _secure.read(key: _passwordKey(id)) ?? '',
+    domain: a['domain'] as String,
+    transport: SipTransport.values.byName(a['transport'] as String? ?? 'udp'),
+    displayName: a['displayName'] as String? ?? '',
+    proxy: a['proxy'] as String? ?? '',
+    registrar: a['registrar'] as String? ?? '',
+    authUser: a['authUser'] as String? ?? '',
+    realm: a['realm'] as String? ?? '',
+    expires: a['expires'] as int? ?? 0,
+    registerEnabled: a['registerEnabled'] as bool? ?? true,
+    hideCallerId: a['hideCallerId'] as bool? ?? false,
+    voicemailCode: a['voicemailCode'] as String? ?? '',
+    stunServer: a['stunServer'] as String? ?? '',
+    ice: a['ice'] as bool? ?? false,
+    turn: a['turn'] as bool? ?? false,
+    turnUser: a['turnUser'] as String? ?? '',
+    recording:
+        RecordingMode.values.asNameMap()[a['recording']] ?? RecordingMode.auto,
+    recordCode: a['recordCode'] as String? ?? '',
+    turnPassword: a['turn'] == true
+        ? await _secure.read(key: _turnKey(id)) ?? ''
+        : '',
+  );
 
   Future<Profile> _profileFrom(Map<String, dynamic> j, String id) async {
     final accounts = <SipAccount>[
@@ -398,6 +401,8 @@ class SettingsStore {
           'ice': a.ice,
           'turn': a.turn,
           'turnUser': a.turnUser,
+          'recording': a.recording.name,
+          'recordCode': a.recordCode,
         },
     ],
     'extensions': [for (final e in p.extensions) e.toJson()],

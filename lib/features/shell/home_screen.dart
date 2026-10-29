@@ -7,7 +7,7 @@ import '../../app/phone_controller.dart';
 import '../../app/theme.dart';
 import '../../core/security/settings_store.dart';
 import '../../core/sip/sip_engine.dart';
-import '../call/call_panel.dart';
+import '../call/call_window.dart';
 import '../contacts/contacts_view.dart';
 import '../history/history_view.dart';
 import '../live/live_calls_view.dart';
@@ -157,7 +157,6 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     final c = context.drin;
-    final call = p.call;
     if (p.needsSetup && !_setupLater && p.engineError == null) {
       return SetupWizard(
         phone: p,
@@ -243,32 +242,8 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   ],
                 ),
-                Positioned(
-                  right: 24,
-                  bottom: 24,
-                  child: AnimatedSwitcher(
-                    duration: const Duration(milliseconds: 220),
-                    switchInCurve: Curves.easeOutCubic,
-                    switchOutCurve: Curves.easeInCubic,
-                    transitionBuilder: (child, anim) => FadeTransition(
-                      opacity: anim,
-                      child: SlideTransition(
-                        position: Tween<Offset>(
-                          begin: const Offset(0, 0.08),
-                          end: Offset.zero,
-                        ).animate(anim),
-                        child: child,
-                      ),
-                    ),
-                    child: call == null
-                        ? const SizedBox.shrink()
-                        : CallPanel(
-                            key: ValueKey('call_${call.id}'),
-                            phone: p,
-                            call: call,
-                          ),
-                  ),
-                ),
+                // Finestra di chiamata: in arrivo, in conversazione, ridotta.
+                CallWindow(phone: p),
               ],
             ),
           ),

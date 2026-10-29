@@ -100,6 +100,17 @@ class FakeSipEngine implements SipEngine {
   }) async => windows = (remote, preview);
   @override
   Future<void> setCallVideo(int id, bool on) async => log.add('video $id $on');
+  String recordingDir = '';
+  @override
+  void setRecordingDir(String dir) => recordingDir = dir;
+  @override
+  Future<void> startRecording(int id) async => log.add('record $id on');
+  @override
+  Future<void> stopRecording(int id) async => log.add('record $id off');
+  @override
+  double callQuality(int id) => 4.5;
+  @override
+  Future<void> conferenceAll() async => log.add('conference');
   bool cameraPreview = false;
   @override
   Future<void> setCameraPreview(bool on) async => cameraPreview = on;

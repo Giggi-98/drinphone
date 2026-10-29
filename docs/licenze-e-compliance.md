@@ -20,6 +20,7 @@ Liblinphone/linphone-sdk sono disponibili con condizioni open source copyleft (s
 | Flutter native bridge | TBD | TBD | FFI/platform channels | TBD |
 | OpenH264 (Cisco, binario) | 2.2.0, SHA-256 DLL `9b392bf0…d2d0` | BSD-2 (codice); brevetti H264 coperti da Cisco **solo** se il binario è scaricato da Cisco sul PC dell'utente | codec H264 | DECISIONS 2026-10-29 "Videochiamate"; non ridistribuire |
 | `libmsopenh264` (plugin SDK) | msopenh264 1.2.1 | come linphone-sdk | ponte verso OpenH264 | incluso nel pacchetto |
+| ANGLE (build Qt 5.15.2) | libEGL `32092de0…96fa`, libGLESv2 `50fad560…58d8` | BSD-3 (ANGLE); binari firmati The Qt Company | visualizzazione video (MSOGL) | dall'installatore Linphone 5.3.4; includere la nota di licenza BSD nel pacchetto |
 | Push provider | TBD | ToS/DPA da verificare | notifiche | TBD |
 | Altre dipendenze e asset | TBD | TBD | varie | TBD |
 

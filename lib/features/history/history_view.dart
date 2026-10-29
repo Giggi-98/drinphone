@@ -205,7 +205,8 @@ class _HistoryViewState extends State<HistoryView> {
                               tr('In uscita'),
                             );
                       return SizedBox(
-                        height: 56,
+                        // Una riga in più se c'è la nota.
+                        height: r.note.isEmpty ? 56 : 72,
                         child: Row(
                           children: [
                             const SizedBox(width: 4),
@@ -231,6 +232,29 @@ class _HistoryViewState extends State<HistoryView> {
                                     Text(
                                       r.number,
                                       style: mono(c.muted, size: 12),
+                                    ),
+                                  // Nota scritta durante la chiamata.
+                                  if (r.note.isNotEmpty)
+                                    Row(
+                                      children: [
+                                        Icon(
+                                          Icons.sticky_note_2_outlined,
+                                          size: 13,
+                                          color: c.accent,
+                                        ),
+                                        const SizedBox(width: 4),
+                                        Expanded(
+                                          child: Text(
+                                            r.note,
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              color: c.muted,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
                                     ),
                                 ],
                               ),

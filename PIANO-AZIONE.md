@@ -43,6 +43,15 @@ Video (DECISIONS "Videochiamate"):
   chiamata, "Rispondi in video", ingrandisci; finestra video che segue il pannello
   quando si ridimensiona la finestra.
 
+Finestra di chiamata (DECISIONS "ANGLE per il video e finestra di chiamata"):
+- **Video in arrivo e anteprima visibili** con ANGLE ("Prova webcam" e chiamata
+  vera); il crash spegnendo e riaccendendo il video non deve ripetersi.
+- Riduci / schermo intero / pannelli in linea durante una chiamata vera.
+- **Registra**: codice dalle API sul Yeastar (il PBX registra?), codice a mano,
+  file locale riproducibile.
+- **Conferenza a 3** (Aggiungi partecipante → Unisci): audio di tutti e tre.
+- Note salvate nel registro.
+
 Desktop (F5) e UI (§8):
 - Scelta **microfono / cuffia / suoneria** con chiamata vera.
 - **Importazione contatti** CSV e vCard con file reali (Outlook, Google, telefono).

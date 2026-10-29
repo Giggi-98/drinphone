@@ -23,6 +23,15 @@ class AppPaths {
       ? '$root${_s}history.json'
       : '$root${_s}history-$profileId.json';
 
+  /// Registrazioni locali delle chiamate: Documenti\DrinPhone\Registrazioni.
+  String get recordings {
+    final home =
+        Platform.environment['USERPROFILE'] ??
+        Platform.environment['HOME'] ??
+        root;
+    return '$home${_s}Documents${_s}DrinPhone${_s}Registrazioni';
+  }
+
   /// Codec scaricati (OpenH264 di Cisco).
   String get codecs => '$root${_s}codecs';
 

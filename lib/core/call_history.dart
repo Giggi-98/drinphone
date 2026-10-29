@@ -11,7 +11,11 @@ class CallRecord {
     required this.start,
     required this.seconds,
     required this.answered,
+    this.note = '',
   });
+
+  /// Nota scritta durante la chiamata (finestra di chiamata > Note).
+  final String note;
 
   final String number;
   final String name;
@@ -31,6 +35,7 @@ class CallRecord {
     'start': start.toIso8601String(),
     'seconds': seconds,
     'answered': answered,
+    if (note.isNotEmpty) 'note': note,
   };
 
   static CallRecord fromJson(Map<String, dynamic> j) => CallRecord(
@@ -40,6 +45,7 @@ class CallRecord {
     start: DateTime.parse(j['start'] as String),
     seconds: j['seconds'] as int? ?? 0,
     answered: j['answered'] as bool? ?? false,
+    note: j['note'] as String? ?? '',
   );
 }
 
