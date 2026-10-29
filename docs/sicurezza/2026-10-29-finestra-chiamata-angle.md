@@ -19,7 +19,6 @@ Verifica: test automatici (51); avvio sul pilota (registrazione e sync OK,
 | Registrazione col codice PBX | NOTA | Il codice va in DTMF: il PBX non conferma lo stato, l'indicatore mostra quello chiesto da DrinPhone |
 | Note della chiamata | OK | Nel registro chiamate del profilo (JSON locale come il registro), mai nei log |
 | Conferenza locale | OK | Mixer in DrinPhone (liblinphone): nessun servizio esterno |
-
 | Contesto video passato al core | CORRETTO | MSOGL vuole un `MSOglContextInfo*` (msogl.h), non l'HWND: passare l'HWND faceva leggere memoria non valida (crash alla risposta in video e alla riaccensione del video). Ora struttura nativa per finestra, liberata solo a core distrutto. Prova: anteprima webcam disegnata (118/118 fotogrammi in 4 s), nessun crash |
 
 ## Riscontri
