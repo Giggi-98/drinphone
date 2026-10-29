@@ -411,11 +411,12 @@ class PhoneController extends ChangeNotifier {
     await _store.save(settings);
   }
 
-  /// Forza la rilettura (tasto "Sincronizza ora"); senza [force] le connessioni
-  /// saltano se hanno letto da meno di 10 s (rientro nella finestra, re-REGISTER).
+  /// Forza la rilettura, rubrica compresa (tasto "Sincronizza ora"); senza
+  /// [force] le connessioni saltano se hanno letto da meno di 10 s (rientro
+  /// nella finestra, re-REGISTER) e la rubrica segue la sua cadenza.
   Future<void> resync({PbxConnection? only, bool force = true}) async {
     for (final c in [if (only != null) only else ...connections]) {
-      await c.sync(force: force);
+      await c.sync(force: force, full: force);
     }
   }
 

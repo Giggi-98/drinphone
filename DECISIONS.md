@@ -6,6 +6,20 @@ aggiungi una voce nuova in cima che cita la vecchia. Il campo chiave è
 
 ---
 
+## 2026-10-29 · Rubrica aziendale ogni 6 ore (di Luigi; aggiorna "Multi-PBX e sincronizzazione dati API")
+**Scelta:** la rubrica aziendale (`company_contact/list`, sul pilota 4469 contatti
+in 9 pagine) non si rilegge più con i reparti ogni 10 min e a ogni accesso, ma
+ogni **6 ore** (data salvata nella cache cifrata, vale anche fra un accesso e
+l'altro) o con **"Sincronizza ora"**. All'accesso con cache fresca si leggono solo
+interni, reparti, casella e dettaglio. Cache letta e scritta in un isolate.
+**Scartato:** lettura incrementale (l'API non ha un filtro "modificati da");
+rubrica solo a mano (resterebbe vecchia per giorni); WebSocket (nessun evento per
+la rubrica).
+**Da rivedere se:** gli utenti trovano contatti nuovi mancanti per ore, o l'API
+aggiunge un filtro per data di modifica.
+
+---
+
 ## 2026-10-29 · Un account vivo alla volta (di Luigi; ribalta "Profili" e "Multi-account SIP ed eventi WebSocket" del 2026-10-28)
 **Scelta:** un **account** = una registrazione SIP + al più una connessione API
 Yeastar; ne è viva **una alla volta**. Con un solo account si entra sempre lì;

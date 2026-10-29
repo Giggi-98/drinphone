@@ -195,13 +195,17 @@ class PbxConnection {
   Timer? _timer;
   int _failures = 0;
   DateTime? _orgsAt;
+  DateTime? _contactsAt;
   String _fingerprint = '';
   bool _stopped = false;
 
-  /// Presenza ogni minuto; reparti più di rado (cambiano poco); errori con
-  /// attesa crescente fino a 15 minuti (limite 8 token e blocco IP).
+  /// Presenza ogni minuto; reparti più di rado (cambiano poco); rubrica
+  /// aziendale (migliaia di contatti, una pagina ogni 500) ogni 6 ore, anche fra
+  /// un accesso e l'altro, o con "Sincronizza ora"; errori con attesa crescente
+  /// fino a 15 minuti (limite 8 token e blocco IP).
   static const presenceEvery = Duration(seconds: 60);
   static const orgsEvery = Duration(minutes: 10);
+  static const contactsEvery = Duration(hours: 6);
   static const maxBackoff = Duration(minutes: 15);
   static const minGap = Duration(seconds: 10);
 
@@ -226,7 +230,9 @@ class PbxConnection {
     _api = api;
     // Dati della volta scorsa subito a schermo; la sync li aggiorna.
     final cached = directory.isEmpty ? await cache?.load() : null;
+    _contactsAt = null;
     if (cached != null && !_stopped) {
+      _contactsAt = cached.contactsAt;
       directory = cached.directory;
       orgs = cached.orgs;
       contacts = cached.contacts;
@@ -242,8 +248,9 @@ class PbxConnection {
     await sync(force: true);
   }
 
-  /// Rilettura dal PBX. Senza [force] viene saltata se l'ultima è troppo recente.
-  Future<void> sync({bool force = false}) async {
+  /// Rilettura dal PBX. Senza [force] viene saltata se l'ultima è troppo
+  /// recente; [full] rilegge anche la rubrica aziendale ("Sincronizza ora").
+  Future<void> sync({bool force = false, bool full = false}) async {
     final api = _api;
     if (api == null || syncing || _stopped) return;
     final last = lastSync;
@@ -278,13 +285,6 @@ class PbxConnection {
           // Reparti facoltativi: si tengono gli ultimi letti; non bloccano gli interni.
           optionalErrors.add('reparti: ${_short(e)}');
         }
-        // Rubrica: stessa cadenza lenta dei reparti, cambia di rado.
-        try {
-          newContacts = await api.listCompanyContacts();
-        } catch (e) {
-          // Rubrica facoltativa (permessi, formato diverso dalla documentazione).
-          optionalErrors.add('rubrica: ${_short(e)}');
-        }
         _orgsAt = DateTime.now();
         _detailStale = true;
         // Codici funzione: cadenza lenta come i reparti.
@@ -292,6 +292,20 @@ class PbxConnection {
           recordCode = await api.recordFeatureCode();
         } catch (e) {
           optionalErrors.add('codici funzione: ${_short(e)}');
+        }
+      }
+      final contactsAt = _contactsAt;
+      final readContacts =
+          full ||
+          contactsAt == null ||
+          DateTime.now().difference(contactsAt) > contactsEvery;
+      if (readContacts) {
+        try {
+          newContacts = await api.listCompanyContacts();
+          _contactsAt = DateTime.now();
+        } catch (e) {
+          // Rubrica facoltativa (permessi, formato diverso dalla documentazione).
+          optionalErrors.add('rubrica: ${_short(e)}');
         }
       }
       // Casella vocale a ogni giro: è ciò che l'utente si aspetta di vedere subito.
@@ -327,8 +341,9 @@ class PbxConnection {
       directory = ext;
       orgs = newOrgs;
       contacts = newContacts;
-      // Cache aggiornata solo se i dati sono cambiati (non a ogni giro).
-      if (changed || detailChanged) {
+      // Cache aggiornata solo se i dati sono cambiati (non a ogni giro) o se la
+      // rubrica è stata riletta (la sua data decide la prossima lettura).
+      if (changed || detailChanged || readContacts) {
         unawaited(
           cache?.save(
             ext,
@@ -337,6 +352,7 @@ class PbxConnection {
             voicemail: newVm,
             detail: newDetail,
             recordCode: recordCode,
+            contactsAt: _contactsAt,
           ),
         );
       }

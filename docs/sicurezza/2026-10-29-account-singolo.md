@@ -37,3 +37,16 @@ REGISTER finché non si sceglie l'account.
 
 ## Da validare sul pilota
 - Logout dal vivo: un-REGISTER visibile nel log e interno non più registrato sul PBX.
+
+## Aggiornamento: accesso leggero (stesso giorno)
+Rubrica aziendale ogni 6 ore (DECISIONS "Rubrica aziendale ogni 6 ore"), cache in
+un isolate (`lib/core/pbx/pbx_cache.dart`, `lib/core/pbx/pbx_connection.dart`).
+
+| Punto | Esito | Evidenza |
+|---|---|---|
+| Cache nell'isolate | OK | Stesso `DpapiBox`, stesso file e formato; all'isolate passano solo il percorso e i dati già in memoria, mai credenziali o token |
+| Data della rubrica in cache | OK | Solo un timestamp, dentro il file cifrato |
+| Scritture parallele | OK (corretto) | Due salvataggi ravvicinati usavano lo stesso `.tmp` (rinomina rifiutata, emerso dal test): ora una scrittura alla volta per file; errore di scrittura ignorato, la cache è facoltativa |
+| Errori | OK | Nessun nuovo log |
+
+Riscontri: **confirmed** nessuno.

@@ -1,4 +1,7 @@
 import 'dart:convert';
+import 'dart:isolate';
+
+import 'package:flutter/foundation.dart' show visibleForTesting;
 
 import '../security/api_credential_store.dart';
 import 'yeastar_api.dart';
@@ -8,6 +11,8 @@ import 'yeastar_api.dart';
 /// con DPAPI: all'avvio e all'accesso l'interfaccia si riempie subito, poi la
 /// sincronizzazione li aggiorna. Rubrica e casella sono dati personali di
 /// terzi: mai in chiaro su disco (DECISIONS "Cache dati PBX").
+/// Codifica, DPAPI e decodifica (migliaia di contatti) in un isolate a parte:
+/// l'interfaccia non si blocca all'accesso.
 typedef PbxCached = ({
   List<PbxExtension> directory,
   List<PbxOrg> orgs,
@@ -15,11 +20,21 @@ typedef PbxCached = ({
   List<PbxVoicemail>? voicemail,
   PbxExtensionDetail? detail,
   String? recordCode,
+  DateTime? contactsAt,
 });
 
 class PbxCache {
   PbxCache(String path) : _box = DpapiBox(path);
   final DpapiBox _box;
+
+  // Un salvataggio alla volta per file (anche fra la connessione lasciata al
+  // logout e quella nuova): due scritture parallele userebbero lo stesso file
+  // temporaneo. Cache facoltativa: un errore di scrittura non ferma la sync.
+  static final _saving = <String, Future<void>>{};
+
+  /// Fine dei salvataggi in corso su questo file.
+  @visibleForTesting
+  Future<void> get saved => _saving[_box.path] ?? Future.value();
 
   Future<void> save(
     List<PbxExtension> directory,
@@ -28,51 +43,83 @@ class PbxCache {
     List<PbxVoicemail>? voicemail,
     PbxExtensionDetail? detail,
     String? recordCode,
-  }) => _box.write(
-    jsonEncode({
-      'v': 2,
-      'voicemail': voicemail == null
-          ? null
-          : [
-              for (final m in voicemail)
-                [m.id, m.callerName, m.callerNumber, m.time, m.seconds, m.read],
-            ],
-      'detail': detail?.toJson(),
-      'recordCode': recordCode,
-      'directory': [
-        for (final e in directory)
-          [e.id, e.number, e.name, e.email, e.mobile, e.presence],
-      ],
-      'orgs': [
-        for (final o in orgs)
-          [o.id, o.parentId, o.name, o.depth, o.extIds.toList()],
-      ],
-      'contacts': [
-        for (final c in contacts)
-          [
-            c.id,
-            c.name,
-            c.company,
-            c.jobTitle,
-            c.email,
-            [
-              for (final (l, n) in c.numbers) [l, n],
-            ],
-            c.phonebooks,
+    DateTime? contactsAt,
+  }) {
+    final path = _box.path;
+    return _saving[path] = (_saving[path] ?? Future.value()).then(
+      (_) => Isolate.run(
+        () => DpapiBox(path).write(
+          _encode(
+            directory,
+            orgs,
+            contacts,
+            voicemail,
+            detail,
+            recordCode,
+            contactsAt,
+          ),
+        ),
+      ).catchError((Object _) {}),
+    );
+  }
+
+  static String _encode(
+    List<PbxExtension> directory,
+    List<PbxOrg> orgs,
+    List<PbxContact> contacts,
+    List<PbxVoicemail>? voicemail,
+    PbxExtensionDetail? detail,
+    String? recordCode,
+    DateTime? contactsAt,
+  ) => jsonEncode({
+    'v': 2,
+    'contactsAt': contactsAt?.millisecondsSinceEpoch,
+    'voicemail': voicemail == null
+        ? null
+        : [
+            for (final m in voicemail)
+              [m.id, m.callerName, m.callerNumber, m.time, m.seconds, m.read],
           ],
-      ],
-    }),
-  );
+    'detail': detail?.toJson(),
+    'recordCode': recordCode,
+    'directory': [
+      for (final e in directory)
+        [e.id, e.number, e.name, e.email, e.mobile, e.presence],
+    ],
+    'orgs': [
+      for (final o in orgs)
+        [o.id, o.parentId, o.name, o.depth, o.extIds.toList()],
+    ],
+    'contacts': [
+      for (final c in contacts)
+        [
+          c.id,
+          c.name,
+          c.company,
+          c.jobTitle,
+          c.email,
+          [
+            for (final (l, n) in c.numbers) [l, n],
+          ],
+          c.phonebooks,
+        ],
+    ],
+  });
 
   /// Null se assente, illeggibile o di un formato diverso.
-  Future<PbxCached?> load() async {
-    final plain = await _box.read();
+  Future<PbxCached?> load() {
+    final path = _box.path;
+    return Isolate.run(() async => _decode(await DpapiBox(path).read()));
+  }
+
+  static PbxCached? _decode(String? plain) {
     if (plain == null) return null;
     try {
       final j = jsonDecode(plain) as Map<String, dynamic>;
       if (j['v'] != 1 && j['v'] != 2) return null;
       final vm = j['voicemail'] as List?;
       final detail = j['detail'] as Map<String, dynamic>?;
+      final contactsAt = j['contactsAt'] as int?;
       return (
         directory: [
           for (final e in j['directory'] as List)
@@ -124,6 +171,9 @@ class PbxCache {
               ],
         detail: detail == null ? null : PbxExtensionDetail.parse(detail),
         recordCode: j['recordCode'] as String?,
+        contactsAt: contactsAt == null
+            ? null
+            : DateTime.fromMillisecondsSinceEpoch(contactsAt),
       );
     } catch (_) {
       return null;

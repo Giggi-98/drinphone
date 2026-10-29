@@ -105,7 +105,8 @@ spikes/f0a/                         spike F0-A (non prodotto)
   (senza il proprio, max 100 in BLF). Solo Windows. Credenziali in
   `ApiCredentialStore` (DPAPI, sola scrittura dalla UI, DECISIONS 2026-10-28 bis).
 - **Rubrica aziendale** (`IMPLEMENTATO`, verificato sul pilota) — `company_contact/list`
-  (pagine da 500) letta con i reparti ogni 10 min, in memoria e nella cache
+  (pagine da 500) letta ogni 6 ore anche fra un accesso e l'altro (data nella
+  cache) o con "Sincronizza ora" (`sync(full: true)`), in memoria e nella cache
   cifrata (sotto); vista
   `features/contacts/` con menu delle phonebook e un pulsante Chiama per numero
   (fax esclusi). `nameFor(numero)` dà il nome del chiamante da interni e rubrica
@@ -210,9 +211,12 @@ spikes/f0a/                         spike F0-A (non prodotto)
   ~1 s dall'avvio) — `PbxCache` (`core/pbx/pbx_cache.dart`) su `DpapiBox`
   (`core/security/api_credential_store.dart`, condiviso con le credenziali):
   `pbx-cache-<connessione>.dpapi` con interni, reparti, rubrica e (formato v2)
-  casella vocale, dettaglio del proprio interno, codice di registrazione; letta a
-  `PbxConnection.start`, riscritta (file temporaneo + rinomina) solo se la sync
-  trova dati cambiati; cancellata con la connessione o il profilo.
+  casella vocale, dettaglio del proprio interno, codice di registrazione, data
+  dell'ultima lettura della rubrica; letta a `PbxConnection.start`, riscritta
+  (file temporaneo + rinomina, una scrittura alla volta per file) solo se la sync
+  trova dati cambiati o ha riletto la rubrica; codifica, DPAPI e decodifica in un
+  isolate (`Isolate.run`), fuori dal thread dell'interfaccia; cancellata con la
+  connessione o il profilo.
 - **BLF al rientro** — ultimi stati della sessione per account, in memoria:
   `blfOf` li usa come ripiego e `blfStale` li segnala (anello/pallino attenuato,
   "da confermare"). SUBSCRIBE a gruppi di 10 ogni 200 ms (`watchDialogs`), ridisegno
