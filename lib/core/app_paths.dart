@@ -23,6 +23,9 @@ class AppPaths {
       ? '$root${_s}history.json'
       : '$root${_s}history-$profileId.json';
 
+  /// Codec scaricati (OpenH264 di Cisco).
+  String get codecs => '$root${_s}codecs';
+
   /// Cache cifrata (DPAPI) dei dati letti da una connessione PBX.
   String pbxCacheFileFor(String id) => '$root${_s}pbx-cache-$id.dpapi';
 

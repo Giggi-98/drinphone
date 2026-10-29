@@ -9,6 +9,7 @@ import 'core/app_paths.dart';
 import 'core/call_history.dart';
 import 'core/contacts/personal_contacts.dart';
 import 'core/pbx/pbx_cache.dart';
+import 'core/video/openh264.dart';
 import 'core/platform/window_attention.dart';
 import 'core/security/api_credential_store.dart';
 import 'core/security/settings_store.dart';
@@ -30,6 +31,7 @@ Future<void> main() async {
     apiStoreFor: Platform.isWindows
         ? (id) => ApiCredentialStore(paths.apiCredentialsFileFor(id))
         : null,
+    openH264: Platform.isWindows ? OpenH264(paths.codecs) : null,
     cacheFor: Platform.isWindows
         ? (id) => PbxCache(paths.pbxCacheFileFor(id))
         : null,

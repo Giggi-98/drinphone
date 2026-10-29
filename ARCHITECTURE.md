@@ -160,6 +160,21 @@ spikes/f0a/                         spike F0-A (non prodotto)
 - **Opzioni globali chiamate** (Preferenze > Avanzate) — cifratura media
   (`linphone_core_set_media_encryption[_mandatory]`: in 5.5 non esiste per
   account), keep-alive, DTMF RFC 2833 / SIP INFO; applicate all'avvio.
+- **Videochiamate** (`IMPLEMENTATO`; codec H264/VP8 e webcam `VERIFICATI` al caricamento
+  sul pilota, chiamata video reale `DA VALIDARE`) — DECISIONS "Videochiamate".
+  `SipEngine`: `dial/answer(video)`, `setCallVideo`, `setVideo` (webcam, cattura e
+  visualizzazione nel core), `videoDevices`, `videoCodecs`, `setVideoWindows`;
+  `CallEvent.video/remoteVideo`. Video remoto e anteprima disegnati da liblinphone
+  in finestre native figlie (`core/platform/video_surface.dart`) che
+  `NativeVideoView` (`features/call/`) tiene sopra il riquadro a ogni frame; limite:
+  stanno sopra a menu e dialoghi Flutter. Anteprima passata al core solo se attiva.
+  H264: `OpenH264` (`core/video/openh264.dart`) scarica nella cartella `codecs`
+  dei dati app e verifica SHA-256 di archivio e DLL; all'avvio, se verificata,
+  `SetDllDirectoryW` fa trovare `openh264.dll` al plugin `libmsopenh264` (installato
+  dal CMake). Preferenze > Video; pulsante videochiamata sulle schede interni.
+- **Badge "già visti"** — per profilo: ora dell'ultima visita al registro
+  (`seenMissedAt`) e messaggi vocali visti (`seenVoicemail`, `mwi:<n>` per il solo
+  MWI); entrando o restando nella sezione il badge si spegne.
 - **Cache dati PBX** (`IMPLEMENTATO`, verificato sul pilota: dati a schermo in
   ~1 s dall'avvio) — `PbxCache` (`core/pbx/pbx_cache.dart`) su `DpapiBox`
   (`core/security/api_credential_store.dart`, condiviso con le credenziali):
@@ -207,7 +222,8 @@ spikes/f0a/                         spike F0-A (non prodotto)
   `linphone_logging_service` a livello Debug su `logs/linphone.log` (rotazione 10 MB).
 
 ## 5. Dipendenze
-Flutter 3.47.8 / Dart 3.13.7; `ffi` ^2.2.0; `file_selector` ^1.1.0 (scelta del
+Flutter 3.47.8 / Dart 3.13.7; `ffi` ^2.2.0; `archive` ^4.5 (bzip2 di OpenH264) e
+`crypto` ^3.0 (SHA-256); `file_selector` ^1.1.0 (scelta del
 file da importare, plugin flutter.dev); `flutter_secure_storage` ^11.2.0
 (Windows: richiede componente VS "C++ ATL"); linphone-sdk-win64 5.5.39 (GPLv3 /
 commerciale, `docs/licenze-e-compliance.md`). Toolchain: VS 2022 Build Tools 17.14

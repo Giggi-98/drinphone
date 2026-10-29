@@ -108,6 +108,24 @@ class SipAccount {
 /// account). Valori nell'ordine di `LinphoneMediaEncryption`.
 enum MediaEncryption { none, srtp, zrtp, dtls }
 
+/// Video (Preferenze > Video): webcam e anteprima sono globali nel core.
+class VideoOptions {
+  const VideoOptions({
+    this.enabled = true,
+    this.camera = '',
+    this.preview = false,
+  });
+
+  /// Videochiamate possibili (webcam e visualizzazione nel core).
+  final bool enabled;
+
+  /// Id della webcam ('' = predefinita).
+  final String camera;
+
+  /// Anteprima della propria webcam durante le videochiamate.
+  final bool preview;
+}
+
 /// Opzioni globali delle chiamate (Preferenze > Avanzate).
 class CallOptions {
   const CallOptions({
@@ -153,7 +171,15 @@ class CallEvent {
     required this.remoteNumber,
     this.remoteName = '',
     this.message = '',
+    this.video = false,
+    this.remoteVideo = false,
   });
+
+  /// Video attivo nella chiamata (parametri correnti).
+  final bool video;
+
+  /// L'altro capo offre il video (entrante: si può rispondere in video).
+  final bool remoteVideo;
 
   /// Identifica la chiamata finché esiste (più chiamate contemporanee).
   final int id;
@@ -210,7 +236,24 @@ abstract class SipEngine {
     required String dataDir,
     required String logDir,
     required bool debug,
+    String? codecDir,
   });
+
+  /// Webcam, visualizzazione e anteprima.
+  Future<void> setVideo(VideoOptions options);
+
+  /// Webcam disponibili (id del core).
+  List<String> videoDevices();
+
+  /// Codec video utilizzabili (es. VP8, H264 se OpenH264 è installato).
+  List<String> videoCodecs();
+
+  /// Finestre native (HWND) dove il core disegna il video remoto e
+  /// l'anteprima; 0 = nessuna.
+  Future<void> setVideoWindows({required int remote, required int preview});
+
+  /// Accende o spegne il video in una chiamata in corso (re-INVITE).
+  Future<void> setCallVideo(int id, bool on);
 
   /// Registra esattamente questi account (gli altri vengono rimossi). Il primo
   /// è quello predefinito.
@@ -218,8 +261,8 @@ abstract class SipEngine {
 
   /// Avvia una chiamata tramite l'account [accountId] (null = predefinito);
   /// restituisce il suo id (null se non partita).
-  Future<int?> dial(String number, {String? accountId});
-  Future<void> answer(int id);
+  Future<int?> dial(String number, {String? accountId, bool video = false});
+  Future<void> answer(int id, {bool video = false});
   Future<void> hangup(int id);
   Future<void> setMicMuted(bool muted);
   Future<void> sendDtmf(int id, String digit);

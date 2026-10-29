@@ -6,6 +6,7 @@ import '../../app/l10n.dart';
 import '../../app/phone_controller.dart';
 import '../../app/theme.dart';
 import '../../core/pbx/yeastar_api.dart';
+import '../../core/video/openh264.dart';
 import '../../core/sip/sip_engine.dart';
 import '../account/api_dialog.dart';
 import '../shell/widgets.dart';
@@ -70,6 +71,7 @@ class _PreferencesViewState extends State<PreferencesView> {
           ],
         ),
       ),
+      (Icons.videocam_rounded, tr('Video'), _VideoTab(phone: phone)),
       (
         Icons.settings_suggest_rounded,
         tr('Diagnostica'),
@@ -110,7 +112,9 @@ class _PreferencesViewState extends State<PreferencesView> {
             curve: Curves.easeOutCubic,
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             decoration: BoxDecoration(
-              color: active ? c.accent.withValues(alpha: 0.14) : Colors.transparent,
+              color: active
+                  ? c.accent.withValues(alpha: 0.14)
+                  : Colors.transparent,
               borderRadius: BorderRadius.circular(10),
               border: Border.all(
                 color: active
@@ -427,7 +431,8 @@ class _AccountTile extends StatelessWidget {
                 color: dot,
                 shape: BoxShape.circle,
                 boxShadow: [
-                  if (phone.registrations[a.id]?.status == RegistrationStatus.ok)
+                  if (phone.registrations[a.id]?.status ==
+                      RegistrationStatus.ok)
                     BoxShadow(color: dot.withValues(alpha: 0.4), blurRadius: 6),
                 ],
               ),
@@ -905,10 +910,7 @@ class _PresenceTabState extends State<_PresenceTab> {
           const SizedBox(width: 8),
           SizedBox(
             width: 150,
-            child: Text(
-              label,
-              style: TextStyle(color: on ? c.text : c.muted),
-            ),
+            child: Text(label, style: TextStyle(color: on ? c.text : c.muted)),
           ),
           if (on)
             Expanded(
@@ -1198,35 +1200,23 @@ class _VoicemailTabState extends State<_VoicemailTab> {
           spacing: 12,
           runSpacing: 10,
           children: [
-            _Field(
-              tr('Notifica nuovi messaggi'),
-              switch (d.vmNotification) {
-                'no' => tr('Nessuna email'),
-                'with_attach' => tr('Email con allegato'),
-                'without_attach' => tr('Email senza allegato'),
-                _ => d.vmNotification,
-              },
-              icon: Icons.mark_email_unread_outlined,
-            ),
-            _Field(
-              tr('Dopo la notifica'),
-              switch (d.vmAfterNotification) {
-                'no' => tr('Lascia da ascoltare'),
-                'mark_read' => tr('Segna come ascoltato'),
-                'delete' => tr('Elimina'),
-                _ => d.vmAfterNotification,
-              },
-              icon: Icons.done_all_rounded,
-            ),
-            _Field(
-              tr('Messaggio di benvenuto'),
-              switch (d.vmGreeting) {
-                'follow_system' => tr('Come il sistema'),
-                'no_greeting' => tr('Nessuno'),
-                _ => d.vmGreeting,
-              },
-              icon: Icons.record_voice_over_outlined,
-            ),
+            _Field(tr('Notifica nuovi messaggi'), switch (d.vmNotification) {
+              'no' => tr('Nessuna email'),
+              'with_attach' => tr('Email con allegato'),
+              'without_attach' => tr('Email senza allegato'),
+              _ => d.vmNotification,
+            }, icon: Icons.mark_email_unread_outlined),
+            _Field(tr('Dopo la notifica'), switch (d.vmAfterNotification) {
+              'no' => tr('Lascia da ascoltare'),
+              'mark_read' => tr('Segna come ascoltato'),
+              'delete' => tr('Elimina'),
+              _ => d.vmAfterNotification,
+            }, icon: Icons.done_all_rounded),
+            _Field(tr('Messaggio di benvenuto'), switch (d.vmGreeting) {
+              'follow_system' => tr('Come il sistema'),
+              'no_greeting' => tr('Nessuno'),
+              _ => d.vmGreeting,
+            }, icon: Icons.record_voice_over_outlined),
           ],
         ),
         const SizedBox(height: 12),
@@ -1440,6 +1430,209 @@ class _FeaturesTab extends StatelessWidget {
 }
 
 // -------------------------------------------------------------------- Lingua
+
+/// Videochiamate: webcam, anteprima, codec (VP8 incluso; H264 da Cisco).
+class _VideoTab extends StatefulWidget {
+  const _VideoTab({required this.phone});
+  final PhoneController phone;
+
+  @override
+  State<_VideoTab> createState() => _VideoTabState();
+}
+
+class _VideoTabState extends State<_VideoTab> {
+  bool _busy = false;
+
+  PhoneController get p => widget.phone;
+
+  void _set({bool? enabled, String? camera, bool? preview}) {
+    final o = p.settings.video;
+    p.setVideoOptions(
+      VideoOptions(
+        enabled: enabled ?? o.enabled,
+        camera: camera ?? o.camera,
+        preview: preview ?? o.preview,
+      ),
+    );
+  }
+
+  /// Consenso esplicito: il file arriva da Cisco, non da Econnet.
+  Future<void> _install() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(tr('Scaricare il codec H264 da Cisco?')),
+        content: SizedBox(
+          width: 460,
+          child: Text(
+            tr(
+              'DrinPhone scarica OpenH264 {v} dal sito ufficiale di Cisco '
+              '(ciscobinary.openh264.org): così la licenza dei brevetti H264 è '
+              'coperta da Cisco. Il file si accetta solo se la sua impronta '
+              'coincide con quella verificata (firma Cisco, nessuna funzione di '
+              'rete). Cisco riceve solo la richiesta di download (indirizzo IP '
+              'e ora). Il codec funziona dopo il riavvio di DrinPhone.',
+              {'v': OpenH264.version},
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(tr('Annulla')),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(tr('Scarica')),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    setState(() => _busy = true);
+    String msg;
+    try {
+      await p.installH264();
+      msg = tr('H264 installato: riavvia DrinPhone per usarlo');
+    } catch (e) {
+      // Errore di rete o impronta diversa: niente viene installato.
+      msg = tr('Download non riuscito: {e}', {'e': e.runtimeType});
+    }
+    if (!mounted) return;
+    setState(() => _busy = false);
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.drin;
+    final o = p.settings.video;
+    final cams = p.videoDevices();
+    final codecs = p.videoCodecs();
+    final h264 = codecs.contains('H264');
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _Card(
+          title: tr('Videochiamate'),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: Text(tr('Videochiamate attive')),
+                subtitle: Text(
+                  tr(
+                    'Pulsante videochiamata sugli interni e "Rispondi in video" '
+                    'per le chiamate che offrono il video',
+                  ),
+                ),
+                value: o.enabled,
+                onChanged: (v) => _set(enabled: v),
+              ),
+              const SizedBox(height: 6),
+              SizedBox(
+                width: 420,
+                child: DropdownButtonFormField<String>(
+                  initialValue: cams.contains(o.camera) ? o.camera : '',
+                  decoration: InputDecoration(labelText: tr('Webcam')),
+                  items: [
+                    DropdownMenuItem(
+                      value: '',
+                      child: Text(tr('Predefinita di sistema')),
+                    ),
+                    for (final cam in cams)
+                      DropdownMenuItem(
+                        value: cam,
+                        child: Text(cam, overflow: TextOverflow.ellipsis),
+                      ),
+                  ],
+                  onChanged: o.enabled ? (v) => _set(camera: v ?? '') : null,
+                ),
+              ),
+              const SizedBox(height: 6),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: Text(tr('Anteprima della webcam')),
+                subtitle: Text(
+                  tr(
+                    'Riquadro con la propria immagine durante la videochiamata',
+                  ),
+                ),
+                value: o.preview,
+                onChanged: o.enabled ? (v) => _set(preview: v) : null,
+              ),
+            ],
+          ),
+        ),
+        _Card(
+          title: tr('Codec video'),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                codecs.isEmpty
+                    ? tr('Nessun codec video disponibile')
+                    : tr('In uso: {c}', {'c': codecs.join(', ')}),
+                style: TextStyle(color: c.text),
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Icon(
+                    h264 ? Icons.check_circle_rounded : Icons.info_outline,
+                    size: 18,
+                    color: h264 ? c.ok : c.muted,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      h264
+                          ? tr(
+                              'H264: OpenH264 {v} di Cisco, impronta verificata',
+                              {'v': OpenH264.version},
+                            )
+                          : p.h264NeedsRestart
+                          ? tr('H264: installato, attivo dal prossimo avvio')
+                          : tr(
+                              'H264 non installato: molti videocitofoni e telefoni '
+                              'SIP lo richiedono',
+                            ),
+                      style: TextStyle(color: c.text),
+                    ),
+                  ),
+                  if (p.openH264 != null && !h264 && !p.h264NeedsRestart)
+                    FilledButton.tonal(
+                      onPressed: _busy ? null : _install,
+                      child: Text(
+                        _busy ? tr('Download…') : tr('Scarica da Cisco…'),
+                      ),
+                    ),
+                  if (p.openH264 != null && (h264 || p.h264NeedsRestart))
+                    TextButton(
+                      onPressed: () async {
+                        await p.removeH264();
+                        if (mounted) setState(() {});
+                      },
+                      child: Text(tr('Rimuovi')),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Text(
+                tr(
+                  'VP8 è incluso e senza brevetti. H264 arriva da Cisco per '
+                  'licenza: non è nel pacchetto di DrinPhone.',
+                ),
+                style: TextStyle(fontSize: 12, color: c.muted),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
 
 /// Opzioni globali delle chiamate: in liblinphone 5.5 valgono per tutta l'app.
 class _AdvancedTab extends StatelessWidget {

@@ -109,8 +109,10 @@ install(FILES "${AOT_LIBRARY}" DESTINATION "${INSTALL_BUNDLE_DATA_DIR}"
 
 # liblinphone (linphone-sdk-win64 ufficiale) accanto all'exe: DLL, dati del core
 # (grammatiche belr, CA root, suonerie) e plugin mediastreamer. WASAPI è un plugin:
-# senza, il core non vede schede audio. webrtc = cancellazione eco. openh264 escluso
-# (video, codec Cisco non redistribuito). Scaricato da tool/fetch_linphone_sdk.ps1.
+# senza, il core non vede schede audio. webrtc = cancellazione eco. libmsopenh264 è
+# il ponte verso H264: importa openh264.dll di Cisco, che NON si ridistribuisce e
+# l'app scarica a richiesta (DECISIONS "Videochiamate"); senza, il plugin non si
+# carica e resta VP8. SDK scaricato da tool/fetch_linphone_sdk.ps1.
 set(LINPHONE_SDK_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../third_party/linphone-sdk/win64")
 if(NOT EXISTS "${LINPHONE_SDK_DIR}/bin/liblinphone.dll")
   message(FATAL_ERROR "linphone-sdk mancante: esegui powershell -File tool/fetch_linphone_sdk.ps1")
@@ -125,4 +127,5 @@ endforeach()
 install(FILES
     "${LINPHONE_SDK_DIR}/lib/mediastreamer/plugins/libmswasapi.dll"
     "${LINPHONE_SDK_DIR}/lib/mediastreamer/plugins/libmswebrtc.dll"
+    "${LINPHONE_SDK_DIR}/lib/mediastreamer/plugins/libmsopenh264.dll"
   DESTINATION "${CMAKE_INSTALL_PREFIX}/linphone/plugins" COMPONENT Runtime)

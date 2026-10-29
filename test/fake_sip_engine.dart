@@ -75,10 +75,31 @@ class FakeSipEngine implements SipEngine {
     required String dataDir,
     required String logDir,
     required bool debug,
+    String? codecDir,
   }) async {
     log.add('start debug=$debug');
+    this.codecDir = codecDir;
     return 'fake';
   }
+
+  String? codecDir;
+  VideoOptions video = const VideoOptions();
+  List<String> codecs = const ['VP8'];
+  (int, int) windows = (0, 0);
+
+  @override
+  Future<void> setVideo(VideoOptions o) async => video = o;
+  @override
+  List<String> videoDevices() => const ['Webcam integrata'];
+  @override
+  List<String> videoCodecs() => codecs;
+  @override
+  Future<void> setVideoWindows({
+    required int remote,
+    required int preview,
+  }) async => windows = (remote, preview);
+  @override
+  Future<void> setCallVideo(int id, bool on) async => log.add('video $id $on');
 
   List<SipAccount> accounts = [];
   @override
@@ -92,13 +113,21 @@ class FakeSipEngine implements SipEngine {
 
   var _nextId = 100;
   @override
-  Future<int?> dial(String number, {String? accountId}) async {
-    log.add(accountId == null ? 'dial $number' : 'dial $number via $accountId');
+  Future<int?> dial(
+    String number, {
+    String? accountId,
+    bool video = false,
+  }) async {
+    log.add(
+      '${accountId == null ? 'dial $number' : 'dial $number via $accountId'}'
+      '${video ? ' video' : ''}',
+    );
     return _nextId++;
   }
 
   @override
-  Future<void> answer(int id) async => log.add('answer $id');
+  Future<void> answer(int id, {bool video = false}) async =>
+      log.add('answer $id${video ? ' video' : ''}');
   @override
   Future<void> hangup(int id) async => log.add('hangup $id');
   @override

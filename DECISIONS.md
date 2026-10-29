@@ -6,6 +6,27 @@ aggiungi una voce nuova in cima che cita la vecchia. Il campo chiave è
 
 ---
 
+## 2026-10-29 · Videochiamate (di Luigi; ribalta "Esclusi: … video" della voce "UI desktop: proposta D")
+**Scelta:** videochiamate 1:1 con dispositivi SIP (videocitofoni, telefoni, softphone).
+Codec **VP8** (libvpx nell'SDK, senza brevetti) e **H264** tramite **OpenH264 di
+Cisco** scaricato sul PC dell'utente, con consenso, da `ciscobinary.openh264.org`:
+così la licenza dei brevetti H264 è coperta da Cisco e il binario **non** sta nel
+nostro pacchetto. Versione fissata **2.2.0** (quella del plugin `libmsopenh264`
+dell'SDK) e **impronta SHA-256 fissata** (archivio e DLL), verificata a ogni avvio
+prima del caricamento. Controllo del 2026-10-29: firma Authenticode "Cisco WebEx
+LLC" valida, importa solo KERNEL32 (nessuna funzione di rete). Video nel pannello
+di chiamata (finestra nativa figlia), anteprima della webcam **spenta di default**,
+"Rispondi" e "Rispondi in video" distinti. Restano esclusi videoconferenza, chat,
+pannello operatore.
+**Scartato:** OpenH264 compilato da noi e incluso (brevetti H264 a carico di
+Econnet); solo VP8 (molti videocitofoni/telefoni vogliono H264); finestra video
+separata.
+**Da rivedere se:** si ottiene la licenza commerciale Belledonne o si scrive un
+plugin **Media Foundation** (codec H264 di Windows, già licenziato, accelerato),
+oppure cambia la versione di OpenH264 richiesta dall'SDK.
+
+---
+
 ## 2026-10-28 · Cache dati PBX e BLF al cambio profilo (di Luigi; aggiorna "Rubrica solo in memoria" di ARCHITECTURE)
 **Scelta:** interni, reparti e rubrica aziendale di ogni connessione PBX si
 salvano su disco **cifrati DPAPI** (`pbx-cache-<id>.dpapi`, stesso schema delle

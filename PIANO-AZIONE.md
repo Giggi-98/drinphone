@@ -37,6 +37,12 @@ Multi-account e profili:
 - Opzioni globali: **cifratura SRTP/ZRTP/DTLS** (con TLS), DTMF SIP INFO, keep-alive.
 - Profilo TEST (Yeastar Cloud via SBC): chiamata entrante e uscente con audio.
 
+Video (DECISIONS "Videochiamate"):
+- **Videochiamata reale** in uscita ed entrante (Linkus con video, videocitofono
+  SIP): immagine nei due versi, H264 e VP8, anteprima, webcam accesa/spenta in
+  chiamata, "Rispondi in video", ingrandisci; finestra video che segue il pannello
+  quando si ridimensiona la finestra.
+
 Desktop (F5) e UI (§8):
 - Scelta **microfono / cuffia / suoneria** con chiamata vera.
 - **Importazione contatti** CSV e vCard con file reali (Outlook, Google, telefono).
@@ -56,6 +62,9 @@ Desktop (F5) e UI (§8):
 - Tray, **avvio con Windows**, notifica di sistema sulla chiamata entrante.
 - Funzionalità lato app in Preferenze > Funzionalità: risposta automatica
   (interfono/citofoni), inoltro (se si sceglie la scrittura API).
+
+- **Plugin Media Foundation** per H264 con i codec di Windows (licenziati,
+  accelerati), al posto del download Cisco; oppure licenza commerciale Belledonne.
 
 ### F6 — Strato Yeastar
 - **CDR** dal PBX (registro chiamate dell'interno, non solo locale).

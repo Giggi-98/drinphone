@@ -555,8 +555,7 @@ class _BlfColumnState extends State<_BlfColumn> {
                           : Column(
                               crossAxisAlignment: CrossAxisAlignment.stretch,
                               children: [
-                                for (final e in list)
-                                  _BlfRow(phone: p, ext: e),
+                                for (final e in list) _BlfRow(phone: p, ext: e),
                               ],
                             ),
                     ),

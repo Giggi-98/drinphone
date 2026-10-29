@@ -7,6 +7,7 @@ import '../core/call_history.dart';
 import '../core/contacts/personal_contacts.dart';
 import 'l10n.dart';
 import '../core/pbx/pbx_cache.dart';
+import '../core/video/openh264.dart';
 import '../core/pbx/pbx_connection.dart';
 import '../core/pbx/yeastar_api.dart';
 import '../core/security/api_credential_store.dart';
@@ -25,6 +26,7 @@ class PhoneController extends ChangeNotifier {
     this.historyStoreFor,
     this.personalStoreFor,
     this.cacheFor,
+    this.openH264,
     this.onIncomingCall,
     YeastarApi Function(ApiCredentials)? apiFactory,
   }) : _apiFactory = apiFactory ?? YeastarApi.new;
@@ -33,6 +35,15 @@ class PhoneController extends ChangeNotifier {
   final CallHistoryStore Function(String profileId)? historyStoreFor;
   CallHistoryStore? get historyStore =>
       historyStoreFor?.call(settings.profileId);
+
+  /// Codec H264 di Cisco, scaricato a richiesta (DECISIONS "Videochiamate").
+  final OpenH264? openH264;
+
+  /// OpenH264 installato e con impronta verificata all'avvio.
+  bool h264Installed = false;
+
+  /// Installato dopo l'avvio: il core lo carica al prossimo avvio dell'app.
+  bool h264NeedsRestart = false;
 
   /// Cache cifrata dei dati di ogni connessione PBX (DECISIONS "Cache dati PBX").
   final PbxCache Function(String connectionId)? cacheFor;
@@ -180,17 +191,20 @@ class PhoneController extends ChangeNotifier {
         notifyListeners();
       }),
     );
+    h264Installed = await openH264?.verified() ?? false;
     try {
       engineVersion = await _engine.start(
         dataDir: engineDataDir,
         logDir: logDir,
         debug: settings.debugLog,
+        codecDir: h264Installed ? openH264!.dir : null,
       );
       debugPrint('[drinphone] motore liblinphone $engineVersion avviato');
       if (settings.accounts.isNotEmpty) {
         await _engine.setAccounts(settings.accounts);
       }
       await _engine.setCallOptions(settings.callOptions);
+      await _engine.setVideo(settings.video);
       // Dispositivi audio scelti in Preferenze > Audio ('' = predefinito).
       final (cap, play, ring) = settings.audio;
       await _engine.setAudioDevices(capture: cap, playback: play, ringer: ring);
@@ -532,6 +546,7 @@ class PhoneController extends ChangeNotifier {
         lang: settings.lang,
         audio: settings.audio,
         callOptions: settings.callOptions,
+        video: settings.video,
       ),
     );
     return true;
@@ -605,6 +620,112 @@ class PhoneController extends ChangeNotifier {
 
   /// Live Calls solo nei profili Yeastar con eventi in tempo reale attivi.
   bool get hasLiveCalls => isYeastar && connections.any((c) => c.realtime);
+
+  // ------------------------------------------------------------------ video
+
+  bool get videoEnabled => settings.video.enabled && engineError == null;
+
+  List<String> videoDevices() =>
+      engineError == null ? _engine.videoDevices() : const [];
+
+  List<String> videoCodecs() =>
+      engineError == null ? _engine.videoCodecs() : const [];
+
+  Future<void> setVideoOptions(VideoOptions o) async {
+    settings = settings.copyWith(video: o);
+    await _store.save(settings);
+    if (engineError == null) await _engine.setVideo(o);
+    await _applyVideoWindows();
+    notifyListeners();
+  }
+
+  /// Finestre native del pannello di chiamata (0 = chiusa).
+  int _remoteWindow = 0, _previewWindow = 0;
+
+  Future<void> setVideoWindow({int? remote, int? preview}) async {
+    _remoteWindow = remote ?? _remoteWindow;
+    _previewWindow = preview ?? _previewWindow;
+    await _applyVideoWindows();
+  }
+
+  Future<void> _applyVideoWindows() async {
+    if (engineError != null) return;
+    await _engine.setVideoWindows(
+      remote: _remoteWindow,
+      // Anteprima solo se scelta in Preferenze > Video.
+      preview: settings.video.preview ? _previewWindow : 0,
+    );
+  }
+
+  /// Webcam accesa/spenta nella chiamata corrente.
+  Future<void> toggleCallVideo() async {
+    final c = call;
+    if (c == null || !videoEnabled) return;
+    await _engine.setCallVideo(c.id, !c.video);
+  }
+
+  /// Download con consenso (la UI lo chiede prima) e verifica dell'impronta.
+  Future<void> installH264() async {
+    final o = openH264;
+    if (o == null) return;
+    await o.install();
+    h264NeedsRestart = !h264Installed;
+    notifyListeners();
+  }
+
+  Future<void> removeH264() async {
+    await openH264?.remove();
+    h264NeedsRestart = h264Installed;
+    notifyListeners();
+  }
+
+  // ------------------------------------------------------------------ badge
+
+  /// Chiamate perse arrivate dopo l'ultima visita al registro.
+  int get missedUnseen {
+    final since = DateTime.tryParse(settings.seenMissedAt);
+    return history
+        .where((r) => r.missed && (since == null || r.start.isAfter(since)))
+        .length;
+  }
+
+  /// Messaggi nuovi non ancora visti nella sezione Casella vocale.
+  int get voicemailUnseen {
+    final seen = settings.seenVoicemail.toSet();
+    final msgs = voicemailMessages;
+    if (msgs != null) {
+      return msgs.where((m) => !m.read && !seen.contains(m.id)).length;
+    }
+    final was =
+        int.tryParse(
+          seen.where((s) => s.startsWith('mwi:')).firstOrNull?.substring(4) ??
+              '',
+        ) ??
+        0;
+    return _mwiNew > was ? _mwiNew - was : 0;
+  }
+
+  Future<void> markHistorySeen() async {
+    if (missedUnseen == 0) return;
+    settings = settings.copyWith(
+      seenMissedAt: DateTime.now().toIso8601String(),
+    );
+    await _store.save(settings);
+    notifyListeners();
+  }
+
+  Future<void> markVoicemailSeen() async {
+    if (voicemailUnseen == 0) return;
+    settings = settings.copyWith(
+      seenVoicemail: [
+        for (final m in voicemailMessages ?? const <PbxVoicemail>[])
+          if (!m.read) m.id,
+        'mwi:$_mwiNew',
+      ],
+    );
+    await _store.save(settings);
+    notifyListeners();
+  }
 
   /// Account per le chiamate a numeri liberi ("Chiama con" in alto).
   SipAccount? get outgoingAccount =>
@@ -930,18 +1051,19 @@ class PhoneController extends ChangeNotifier {
   bool get canDial => _registered && calls.isEmpty;
 
   /// Chiama [number]; con [via] (un interno) usa l'account del suo PBX.
-  Future<void> dial(String number, {Extension? via}) async {
+  Future<void> dial(String number, {Extension? via, bool video = false}) async {
     final n = number.trim();
     if (n.isEmpty || !canDial) return;
     final a = via == null ? outgoingAccount : accountFor(via);
     await _engine.dial(
       n,
       accountId: a == null || a == settings.account ? null : a.id,
+      video: video && videoEnabled,
     );
   }
 
   /// Risponde alla chiamata in arrivo; un'eventuale conversazione va in attesa.
-  Future<void> answer([int? id]) async {
+  Future<void> answer([int? id, bool video = false]) async {
     final target =
         id ??
         calls.values
@@ -950,7 +1072,7 @@ class PhoneController extends ChangeNotifier {
             ?.id;
     if (target == null) return;
     await _holdOthers(target);
-    await _engine.answer(target);
+    await _engine.answer(target, video: video && videoEnabled);
   }
 
   Future<void> hangup([int? id]) async {

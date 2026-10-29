@@ -387,4 +387,38 @@ const en = <String, String>{
   'Sistema': 'System',
   'Scuro': 'Dark',
   'Chiaro': 'Light',
+  'Rispondi in video': 'Answer with video',
+  'Spegni video': 'Stop video',
+  'Video': 'Video',
+  'Video non disponibile su questa piattaforma':
+      'Video not available on this platform',
+  'Riduci': 'Shrink',
+  'Ingrandisci': 'Enlarge',
+  'Scaricare il codec H264 da Cisco?': 'Download the H264 codec from Cisco?',
+  'DrinPhone scarica OpenH264 {v} dal sito ufficiale di Cisco (ciscobinary.openh264.org): così la licenza dei brevetti H264 è coperta da Cisco. Il file si accetta solo se la sua impronta coincide con quella verificata (firma Cisco, nessuna funzione di rete). Cisco riceve solo la richiesta di download (indirizzo IP e ora). Il codec funziona dopo il riavvio di DrinPhone.': 'DrinPhone downloads OpenH264 {v} from Cisco’s official site (ciscobinary.openh264.org): this way the H264 patent licence is covered by Cisco. The file is accepted only if its fingerprint matches the verified one (Cisco signature, no network functions). Cisco only receives the download request (IP address and time). The codec works after restarting DrinPhone.',
+  'Scarica': 'Download',
+  'H264 installato: riavvia DrinPhone per usarlo':
+      'H264 installed: restart DrinPhone to use it',
+  'Download non riuscito: {e}': 'Download failed: {e}',
+  'Videochiamate': 'Video calls',
+  'Videochiamate attive': 'Video calls enabled',
+  'Pulsante videochiamata sugli interni e "Rispondi in video" per le chiamate che offrono il video': 'Video call button on extensions and "Answer with video" for calls offering video',
+  'Webcam': 'Webcam',
+  'Predefinita di sistema': 'System default',
+  'Anteprima della webcam': 'Webcam preview',
+  'Riquadro con la propria immagine durante la videochiamata':
+      'Your own image in a corner during the video call',
+  'Codec video': 'Video codecs',
+  'Nessun codec video disponibile': 'No video codec available',
+  'In uso: {c}': 'In use: {c}',
+  'H264: OpenH264 {v} di Cisco, impronta verificata':
+      'H264: Cisco OpenH264 {v}, fingerprint verified',
+  'H264: installato, attivo dal prossimo avvio':
+      'H264: installed, active from the next start',
+  'H264 non installato: molti videocitofoni e telefoni SIP lo richiedono':
+      'H264 not installed: many video door phones and SIP phones require it',
+  'Download…': 'Downloading…',
+  'Scarica da Cisco…': 'Download from Cisco…',
+  'VP8 è incluso e senza brevetti. H264 arriva da Cisco per licenza: non è nel pacchetto di DrinPhone.': 'VP8 is included and patent-free. H264 comes from Cisco for licensing reasons: it is not in the DrinPhone package.',
+  'Videochiamata a {n}': 'Video call {n}',
 };

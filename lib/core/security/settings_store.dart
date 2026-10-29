@@ -45,6 +45,8 @@ class Profile {
     this.voicemailCode = '*2',
     this.favorites = const [],
     this.callWith = '',
+    this.seenMissedAt = '',
+    this.seenVoicemail = const [],
   });
   final String id;
   final String name;
@@ -55,6 +57,8 @@ class Profile {
   final String voicemailCode;
   final List<String> favorites;
   final String callWith;
+  final String seenMissedAt;
+  final List<String> seenVoicemail;
 }
 
 /// Impostazioni: i campi per-profilo descrivono il **profilo attivo**
@@ -76,6 +80,9 @@ class Settings {
     this.audio = const ('', '', ''),
     this.callWith = '',
     this.callOptions = const CallOptions(),
+    this.video = const VideoOptions(),
+    this.seenMissedAt = '',
+    this.seenVoicemail = const [],
   });
 
   /// Id del profilo nato dalla configurazione senza profili (file storici).
@@ -115,6 +122,14 @@ class Settings {
   /// Globale: cifratura media, keep-alive, DTMF (Preferenze > Avanzate).
   final CallOptions callOptions;
 
+  /// Globale: videochiamate, webcam, anteprima (Preferenze > Video).
+  final VideoOptions video;
+
+  /// Badge del profilo: ultima visita al registro chiamate (ISO 8601, '' = mai)
+  /// e messaggi vocali già visti (id del PBX; `mwi:<n>` per il solo conteggio SIP).
+  final String seenMissedAt;
+  final List<String> seenVoicemail;
+
   /// Il profilo attivo come [Profile].
   Profile get active => Profile(
     id: profileId,
@@ -126,6 +141,8 @@ class Settings {
     voicemailCode: voicemailCode,
     favorites: favorites,
     callWith: callWith,
+    seenMissedAt: seenMissedAt,
+    seenVoicemail: seenVoicemail,
   );
 
   /// Tutti i profili, per nome.
@@ -161,6 +178,9 @@ class Settings {
       audio: audio,
       callWith: t.callWith,
       callOptions: callOptions,
+      video: video,
+      seenMissedAt: t.seenMissedAt,
+      seenVoicemail: t.seenVoicemail,
     );
   }
 
@@ -178,6 +198,9 @@ class Settings {
     (String, String, String)? audio,
     String? callWith,
     CallOptions? callOptions,
+    VideoOptions? video,
+    String? seenMissedAt,
+    List<String>? seenVoicemail,
   }) => Settings(
     profileId: profileId,
     profileName: profileName ?? this.profileName,
@@ -193,6 +216,9 @@ class Settings {
     audio: audio ?? this.audio,
     callWith: callWith ?? this.callWith,
     callOptions: callOptions ?? this.callOptions,
+    video: video ?? this.video,
+    seenMissedAt: seenMissedAt ?? this.seenMissedAt,
+    seenVoicemail: seenVoicemail ?? this.seenVoicemail,
   );
 }
 
@@ -282,6 +308,10 @@ class SettingsStore {
       voicemailCode: j['voicemailCode'] as String? ?? '*2',
       favorites: [for (final f in (j['favorites'] as List? ?? const [])) '$f'],
       callWith: j['callWith'] as String? ?? '',
+      seenMissedAt: j['seenMissedAt'] as String? ?? '',
+      seenVoicemail: [
+        for (final v in (j['seenVoicemail'] as List? ?? const [])) '$v',
+      ],
     );
   }
 
@@ -316,6 +346,8 @@ class SettingsStore {
       voicemailCode: active?.voicemailCode ?? '*2',
       favorites: active?.favorites ?? const [],
       callWith: active?.callWith ?? '',
+      seenMissedAt: active?.seenMissedAt ?? '',
+      seenVoicemail: active?.seenVoicemail ?? const [],
       audio: (
         j['audioCapture'] as String? ?? '',
         j['audioPlayback'] as String? ?? '',
@@ -329,6 +361,11 @@ class SettingsStore {
         encryptionMandatory: j['encryptionMandatory'] as bool? ?? false,
         keepAlive: j['keepAlive'] as bool? ?? true,
         dtmfInfo: j['dtmfInfo'] as bool? ?? false,
+      ),
+      video: VideoOptions(
+        enabled: j['videoEnabled'] as bool? ?? true,
+        camera: j['videoCamera'] as String? ?? '',
+        preview: j['videoPreview'] as bool? ?? false,
       ),
     );
   }
@@ -364,6 +401,8 @@ class SettingsStore {
     'voicemailCode': p.voicemailCode,
     'favorites': p.favorites,
     'callWith': p.callWith,
+    'seenMissedAt': p.seenMissedAt,
+    'seenVoicemail': p.seenVoicemail,
     'pbx': [
       for (final c in p.pbx)
         {'id': c.id, 'label': c.label, 'realtime': c.realtime},
@@ -413,6 +452,9 @@ class SettingsStore {
         'encryptionMandatory': s.callOptions.encryptionMandatory,
         'keepAlive': s.callOptions.keepAlive,
         'dtmfInfo': s.callOptions.dtmfInfo,
+        'videoEnabled': s.video.enabled,
+        'videoCamera': s.video.camera,
+        'videoPreview': s.video.preview,
       }),
     );
   }

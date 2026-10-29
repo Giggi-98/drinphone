@@ -199,9 +199,17 @@ class AnimatedPopup extends StatelessWidget {
 
 /// Pulsante tondo di chiamata (solo simbolo, testo nel tooltip).
 class CallIconButton extends StatelessWidget {
-  const CallIconButton({super.key, required this.onPressed, this.tooltip});
+  const CallIconButton({
+    super.key,
+    required this.onPressed,
+    this.tooltip,
+    this.icon = Icons.call_rounded,
+  });
   final VoidCallback? onPressed;
   final String? tooltip;
+
+  /// `Icons.videocam_rounded` per la videochiamata.
+  final IconData icon;
 
   @override
   Widget build(BuildContext context) {
@@ -215,7 +223,7 @@ class CallIconButton extends StatelessWidget {
         minimumSize: const Size(40, 40),
       ),
       onPressed: onPressed,
-      icon: const Icon(Icons.call_rounded, size: 18),
+      icon: Icon(icon, size: 18),
     );
   }
 }

@@ -60,7 +60,14 @@ class _HomeScreenState extends State<HomeScreen> {
     super.dispose();
   }
 
+  /// Entrando (o restando) in Registro chiamate / Casella vocale il badge si spegne.
+  void _markSeen() {
+    if (_section == _Section.history) p.markHistorySeen();
+    if (_section == _Section.voicemail) p.markVoicemailSeen();
+  }
+
   void _onPhone() {
+    _markSeen();
     final n = p.notice;
     if (n != null && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(n)));
@@ -166,10 +173,13 @@ class _HomeScreenState extends State<HomeScreen> {
             section: _section == _Section.live && !p.hasLiveCalls
                 ? _Section.extensions
                 : _section,
-            missed: p.history.where((r) => r.missed).length,
-            voicemailNew: p.voicemailNew,
+            missed: p.missedUnseen,
+            voicemailNew: p.voicemailUnseen,
             showLive: p.hasLiveCalls,
-            onSection: (s) => setState(() => _section = s),
+            onSection: (s) {
+              setState(() => _section = s);
+              _markSeen();
+            },
           ),
           Expanded(
             child: Stack(
@@ -452,7 +462,9 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ],
           const Spacer(),
-          Flexible(child: SearchBox(phone: p, onCall: _call)),
+          Flexible(
+            child: SearchBox(phone: p, onCall: _call),
+          ),
           const SizedBox(width: 12),
           // Profili (DECISIONS "Profili"): uno attivo alla volta.
           PopupMenuButton<String>(
@@ -630,7 +642,9 @@ class _Sidebar extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         color: selected ? c.accent : c.text,
-                        fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+                        fontWeight: selected
+                            ? FontWeight.w600
+                            : FontWeight.w400,
                       ),
                     ),
                   ),
@@ -1033,7 +1047,8 @@ class _ExtensionsViewState extends State<_ExtensionsView> {
                       gridDelegate:
                           const SliverGridDelegateWithMaxCrossAxisExtent(
                             maxCrossAxisExtent: 300,
-                            mainAxisExtent: 72,
+                            // Due righe: identità e stato, poi i pulsanti.
+                            mainAxisExtent: 112,
                             crossAxisSpacing: 10,
                             mainAxisSpacing: 10,
                           ),
@@ -1051,6 +1066,9 @@ class _ExtensionsViewState extends State<_ExtensionsView> {
                           onFavorite: () => phone.toggleFavorite(e),
                           // Tramite l'account SIP del PBX dell'interno.
                           onCall: () => phone.dial(e.number, via: e),
+                          onVideoCall: phone.videoEnabled
+                              ? () => phone.dial(e.number, via: e, video: true)
+                              : null,
                           onRemove: phone.isManual(e)
                               ? () => phone.removeExtension(e)
                               : null,
@@ -1103,6 +1121,7 @@ class _ExtensionTile extends StatefulWidget {
     required this.favorite,
     required this.onFavorite,
     required this.onCall,
+    this.onVideoCall,
     required this.onRemove,
   });
   final Extension ext;
@@ -1114,6 +1133,9 @@ class _ExtensionTile extends StatefulWidget {
   final bool favorite;
   final VoidCallback onFavorite;
   final VoidCallback onCall;
+
+  /// Null se le videochiamate sono spente in Preferenze > Video.
+  final VoidCallback? onVideoCall;
   final VoidCallback? onRemove;
 
   @override
@@ -1158,61 +1180,88 @@ class _ExtensionTileState extends State<_ExtensionTile> {
                   ],
                 ),
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            child: Row(
+            padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                StatusAvatar(
-                  name: ext.name,
-                  blf: blf,
-                  stale: w.blfStale,
-                  presence: w.presence,
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        ext.name,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontWeight: FontWeight.w600,
-                          color: blf == BlfStatus.offline ? c.muted : c.text,
+                Row(
+                  children: [
+                    StatusAvatar(
+                      name: ext.name,
+                      blf: blf,
+                      stale: w.blfStale,
+                      presence: w.presence,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            ext.name,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontWeight: FontWeight.w600,
+                              color: blf == BlfStatus.offline
+                                  ? c.muted
+                                  : c.text,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(ext.number, style: mono(c.muted, size: 12)),
+                        ],
+                      ),
+                    ),
+                    if (onRemove != null)
+                      Tooltip(
+                        message: tr(
+                          'Inserito a mano · tasto destro per rimuovere',
+                        ),
+                        child: Icon(
+                          Icons.push_pin_outlined,
+                          size: 14,
+                          color: c.muted,
                         ),
                       ),
-                      const SizedBox(height: 2),
-                      Text(ext.number, style: mono(c.muted, size: 12)),
-                    ],
-                  ),
+                    if (favorite || _hover)
+                      IconButton(
+                        tooltip: favorite
+                            ? tr('Togli dai preferiti')
+                            : tr('Aggiungi ai preferiti'),
+                        visualDensity: VisualDensity.compact,
+                        onPressed: onFavorite,
+                        icon: Icon(
+                          favorite
+                              ? Icons.star_rounded
+                              : Icons.star_border_rounded,
+                          size: 20,
+                          color: favorite ? c.ringing : c.muted,
+                        ),
+                      ),
+                  ],
                 ),
-                if (onRemove != null)
-                  Tooltip(
-                    message: tr('Inserito a mano · tasto destro per rimuovere'),
-                    child: Icon(
-                      Icons.push_pin_outlined,
-                      size: 14,
-                      color: c.muted,
+                const Spacer(),
+                // Pulsanti su una riga a parte: chiamata e videochiamata.
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    CallIconButton(
+                      tooltip: callable
+                          ? tr('Chiama {n}', {'n': ext.number})
+                          : tr('Nessun account SIP su questo PBX'),
+                      onPressed: canDial && callable ? onCall : null,
                     ),
-                  ),
-                if (favorite || _hover)
-                  IconButton(
-                    tooltip: favorite
-                        ? tr('Togli dai preferiti')
-                        : tr('Aggiungi ai preferiti'),
-                    visualDensity: VisualDensity.compact,
-                    onPressed: onFavorite,
-                    icon: Icon(
-                      favorite ? Icons.star_rounded : Icons.star_border_rounded,
-                      size: 20,
-                      color: favorite ? c.ringing : c.muted,
-                    ),
-                  ),
-                CallIconButton(
-                  tooltip: callable
-                      ? tr('Chiama {n}', {'n': ext.number})
-                      : tr('Nessun account SIP su questo PBX'),
-                  onPressed: canDial && callable ? onCall : null,
+                    if (w.onVideoCall != null) ...[
+                      const SizedBox(width: 8),
+                      CallIconButton(
+                        icon: Icons.videocam_rounded,
+                        tooltip: callable
+                            ? tr('Videochiamata a {n}', {'n': ext.number})
+                            : tr('Nessun account SIP su questo PBX'),
+                        onPressed: canDial && callable ? w.onVideoCall : null,
+                      ),
+                    ],
+                  ],
                 ),
               ],
             ),
@@ -1396,7 +1445,9 @@ class _GroupsPanelState extends State<_GroupsPanel> {
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         color: selected ? c.accent : c.text,
-                        fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+                        fontWeight: selected
+                            ? FontWeight.w600
+                            : FontWeight.w400,
                       ),
                     ),
                   ),

@@ -7,6 +7,7 @@ import '../../app/phone_controller.dart';
 import '../../app/theme.dart';
 import '../../core/sip/sip_engine.dart';
 import 'keypad.dart';
+import 'native_video_view.dart';
 
 /// Pannello della chiamata corrente: in arrivo, in uscita, in linea.
 class CallPanel extends StatefulWidget {
@@ -22,6 +23,9 @@ class _CallPanelState extends State<CallPanel> {
   Timer? _tick;
   bool _dtmfOpen = false;
   String _dtmf = '';
+
+  /// Video ingrandito nel pannello.
+  bool _bigVideo = false;
 
   @override
   void initState() {
@@ -63,9 +67,19 @@ class _CallPanelState extends State<CallPanel> {
         : p.nameFor(call.remoteNumber);
     final title = name.isNotEmpty ? name : call.remoteNumber;
     final incoming = call.phase == CallPhase.incoming;
+    final showVideo =
+        call.video &&
+        (call.phase == CallPhase.active || call.phase == CallPhase.paused);
+    final screen = MediaQuery.sizeOf(context).width - 48;
+    final width = showVideo
+        ? (_bigVideo ? 960.0 : 560.0).clamp(
+            340.0,
+            screen < 340 ? 340.0 : screen,
+          )
+        : 340.0;
 
     return Container(
-      width: 340,
+      width: width,
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: c.surface,
@@ -110,6 +124,15 @@ class _CallPanelState extends State<CallPanel> {
                 style: TextStyle(fontFamily: monoFont, color: c.muted),
               ),
             const SizedBox(height: 20),
+            if (showVideo) ...[_video(p), const SizedBox(height: 12)],
+            if (incoming && call.remoteVideo && p.videoEnabled) ...[
+              _bigButton(
+                tr('Rispondi in video'),
+                DrinColors.callGreen,
+                () => p.answer(call.id, true),
+              ),
+              const SizedBox(height: 10),
+            ],
             if (incoming)
               Row(
                 children: [
@@ -183,6 +206,18 @@ class _CallPanelState extends State<CallPanel> {
                     ),
                   ],
                 ),
+                if (p.videoEnabled) ...[
+                  const SizedBox(height: 10),
+                  _toggle(
+                    context,
+                    call.video ? tr('Spegni video') : tr('Video'),
+                    call.video,
+                    call.video
+                        ? Icons.videocam_off_outlined
+                        : Icons.videocam_outlined,
+                    p.toggleCallVideo,
+                  ),
+                ],
               ],
               if (_dtmfOpen) ...[
                 const SizedBox(height: 12),
@@ -225,6 +260,53 @@ class _CallPanelState extends State<CallPanel> {
       ),
     );
   }
+
+  /// Video remoto con l'anteprima della webcam in un angolo (se attiva).
+  /// Sono finestre native: i pulsanti stanno sotto, non sopra il video.
+  Widget _video(PhoneController p) => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      ClipRRect(
+        borderRadius: BorderRadius.circular(10),
+        child: AspectRatio(
+          aspectRatio: 16 / 9,
+          child: Stack(
+            children: [
+              Positioned.fill(
+                child: NativeVideoView(
+                  label: tr('Video non disponibile su questa piattaforma'),
+                  onHandle: (h) => p.setVideoWindow(remote: h),
+                ),
+              ),
+              if (p.settings.video.preview)
+                Positioned(
+                  right: 8,
+                  bottom: 8,
+                  child: SizedBox(
+                    width: 160,
+                    height: 90,
+                    child: NativeVideoView(
+                      onHandle: (h) => p.setVideoWindow(preview: h),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+      Align(
+        alignment: Alignment.centerRight,
+        child: TextButton.icon(
+          onPressed: () => setState(() => _bigVideo = !_bigVideo),
+          icon: Icon(
+            _bigVideo ? Icons.close_fullscreen : Icons.open_in_full,
+            size: 16,
+          ),
+          label: Text(_bigVideo ? tr('Riduci') : tr('Ingrandisci')),
+        ),
+      ),
+    ],
+  );
 
   Widget _bigButton(String label, Color color, VoidCallback onTap) =>
       FilledButton(

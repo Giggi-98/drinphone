@@ -597,6 +597,71 @@ class LinphoneFfiEngine implements SipEngine {
         void Function(Pointer<Void>, int)
       >('linphone_nat_policy_enable_turn');
 
+  // --- video.
+  late final _setNativeVideoWindow = _lib.lookupFunction<_VoidPP, _VoidPPDart>(
+    'linphone_core_set_native_video_window_id',
+  );
+  late final _setNativePreviewWindow = _lib
+      .lookupFunction<_VoidPP, _VoidPPDart>(
+        'linphone_core_set_native_preview_window_id',
+      );
+  late final _getVideoDevices = _lib
+      .lookupFunction<
+        Pointer<Pointer<Utf8>> Function(Pointer<Void>),
+        Pointer<Pointer<Utf8>> Function(Pointer<Void>)
+      >('linphone_core_get_video_devices');
+  late final _setVideoDevice = _lib
+      .lookupFunction<
+        Int32 Function(Pointer<Void>, Pointer<Utf8>),
+        int Function(Pointer<Void>, Pointer<Utf8>)
+      >('linphone_core_set_video_device');
+  late final _paramsEnableVideo = _lib
+      .lookupFunction<
+        Void Function(Pointer<Void>, Uint8),
+        void Function(Pointer<Void>, int)
+      >('linphone_call_params_enable_video');
+  late final _paramsVideoEnabled = _lib
+      .lookupFunction<
+        Uint8 Function(Pointer<Void>),
+        int Function(Pointer<Void>)
+      >('linphone_call_params_video_enabled');
+  late final _callCurrentParams = _lib.lookupFunction<_PP, _PP>(
+    'linphone_call_get_current_params',
+  );
+  late final _callRemoteParams = _lib.lookupFunction<_PP, _PP>(
+    'linphone_call_get_remote_params',
+  );
+  late final _acceptWithParams = _lib.lookupFunction<_IntPP, _IntPPDart>(
+    'linphone_call_accept_with_params',
+  );
+  late final _callUpdate = _lib.lookupFunction<_IntPP, _IntPPDart>(
+    'linphone_call_update',
+  );
+  late final _interpretUrl = _lib
+      .lookupFunction<
+        Pointer<Void> Function(Pointer<Void>, Pointer<Utf8>),
+        Pointer<Void> Function(Pointer<Void>, Pointer<Utf8>)
+      >('linphone_core_interpret_url');
+  late final _videoPayloads = _lib.lookupFunction<_PP, _PP>(
+    'linphone_core_get_video_payload_types',
+  );
+  late final _ptMime = _lib.lookupFunction<_PS, _PS>(
+    'linphone_payload_type_get_mime_type',
+  );
+  late final _ptUsable = _lib
+      .lookupFunction<
+        Uint8 Function(Pointer<Void>),
+        int Function(Pointer<Void>)
+      >('linphone_payload_type_is_usable');
+  late final _ptEnabled = _lib
+      .lookupFunction<
+        Uint8 Function(Pointer<Void>),
+        int Function(Pointer<Void>)
+      >('linphone_payload_type_enabled');
+  late final _ptUnref = _lib.lookupFunction<_VoidP, _VoidPDart>(
+    'linphone_payload_type_unref',
+  );
+
   // --- opzioni globali delle chiamate.
   late final _setMediaEncryption = _lib
       .lookupFunction<
@@ -681,8 +746,19 @@ class LinphoneFfiEngine implements SipEngine {
     required String dataDir,
     required String logDir,
     required bool debug,
+    String? codecDir,
   }) async {
     final exeDir = File(Platform.resolvedExecutable).parent.path;
+    // OpenH264 (verificato dal chiamante): il plugin libmsopenh264 importa
+    // `openh264.dll`, cercata anche nella cartella impostata qui.
+    if (codecDir != null && Platform.isWindows) {
+      using((a) {
+        DynamicLibrary.open('kernel32.dll').lookupFunction<
+          Int32 Function(Pointer<Utf16>),
+          int Function(Pointer<Utf16>)
+        >('SetDllDirectoryW')(codecDir.toNativeUtf16(allocator: a));
+      });
+    }
     _lib = DynamicLibrary.open(
       Platform.isWindows
           ? '$exeDir${Platform.pathSeparator}liblinphone.dll'
@@ -750,9 +826,11 @@ class LinphoneFfiEngine implements SipEngine {
     _setTlsPort(transports, -1);
     _setTransports(_core, transports);
     _transportsUnref(transports);
-    // Solo audio: niente webcam né offerta video nell'SDP.
+    // Video spento finché il controller non applica Preferenze > Video.
     _enableVideoCapture(_core, 0);
     _enableVideoDisplay(_core, 0);
+    _setNativeVideoWindow(_core, nullptr);
+    _setNativePreviewWindow(_core, nullptr);
 
     final rc = _start(_core);
     if (rc != 0) throw StateError('linphone_core_start rc=$rc');
@@ -909,11 +987,27 @@ class LinphoneFfiEngine implements SipEngine {
   }
 
   @override
-  Future<int?> dial(String number, {String? accountId}) async {
+  Future<int?> dial(
+    String number, {
+    String? accountId,
+    bool video = false,
+  }) async {
     final acc = accountId == null ? null : _accounts[accountId];
-    final call = acc == null
+    final call = acc == null && !video
         // Numero nudo: il core lo completa con il dominio dell'account predefinito.
         ? using((a) => _invite(_core, number.toNativeUtf8(allocator: a)))
+        : acc == null
+        ? using((a) {
+            // Videochiamata sull'account predefinito.
+            final to = _interpretUrl(_core, number.toNativeUtf8(allocator: a));
+            if (to == nullptr) return nullptr;
+            final params = _createCallParams(_core, nullptr);
+            _paramsEnableVideo(params, 1);
+            final c = _inviteWithParams(_core, to, params);
+            _callParamsUnref(params);
+            _addressUnref(to);
+            return c;
+          })
         : using((a) {
             // Account esplicito (multi-PBX): indirizzo sul suo host e parametri
             // di chiamata legati a quell'account.
@@ -924,6 +1018,7 @@ class LinphoneFfiEngine implements SipEngine {
             if (to == nullptr) return nullptr;
             final params = _createCallParams(_core, nullptr);
             _callParamsSetAccount(params, acc);
+            _paramsEnableVideo(params, video ? 1 : 0);
             final c = _inviteWithParams(_core, to, params);
             _callParamsUnref(params);
             _addressUnref(to);
@@ -947,8 +1042,72 @@ class LinphoneFfiEngine implements SipEngine {
   }
 
   @override
-  Future<void> answer(int id) async {
-    if (_ptr(id) != nullptr) _accept(_ptr(id));
+  Future<void> answer(int id, {bool video = false}) async {
+    final call = _ptr(id);
+    if (call == nullptr) return;
+    // Video solo se scelto ("Rispondi in video"), anche se il chiamante lo offre.
+    final params = _createCallParams(_core, call);
+    if (params == nullptr) {
+      _accept(call);
+      return;
+    }
+    _paramsEnableVideo(params, video ? 1 : 0);
+    _acceptWithParams(call, params);
+    _callParamsUnref(params);
+  }
+
+  @override
+  Future<void> setCallVideo(int id, bool on) async {
+    final call = _ptr(id);
+    if (call == nullptr) return;
+    final params = _createCallParams(_core, call);
+    if (params == nullptr) return;
+    _paramsEnableVideo(params, on ? 1 : 0);
+    _callUpdate(call, params);
+    _callParamsUnref(params);
+  }
+
+  @override
+  Future<void> setVideo(VideoOptions o) async {
+    _enableVideoCapture(_core, o.enabled ? 1 : 0);
+    _enableVideoDisplay(_core, o.enabled ? 1 : 0);
+    if (o.camera.isNotEmpty) {
+      using((a) => _setVideoDevice(_core, o.camera.toNativeUtf8(allocator: a)));
+    }
+  }
+
+  @override
+  List<String> videoDevices() {
+    final list = _getVideoDevices(_core);
+    if (list == nullptr) return const [];
+    return [for (var i = 0; list[i] != nullptr; i++) list[i].toDartString()];
+  }
+
+  @override
+  List<String> videoCodecs() {
+    final list = _videoPayloads(_core);
+    final out = <String>[];
+    // bctbx_list_t: { next, prev, data }.
+    var node = list.cast<IntPtr>();
+    while (node != nullptr) {
+      final pt = Pointer<Void>.fromAddress(node[2]);
+      if (_ptUsable(pt) != 0 && _ptEnabled(pt) != 0) {
+        out.add(_ptMime(pt).toDartString());
+      }
+      _ptUnref(pt);
+      node = Pointer<IntPtr>.fromAddress(node[0]);
+    }
+    if (list != nullptr) _listFree(list);
+    return out;
+  }
+
+  @override
+  Future<void> setVideoWindows({
+    required int remote,
+    required int preview,
+  }) async {
+    _setNativeVideoWindow(_core, Pointer.fromAddress(remote));
+    _setNativePreviewWindow(_core, Pointer.fromAddress(preview));
   }
 
   @override
@@ -1188,9 +1347,14 @@ class LinphoneFfiEngine implements SipEngine {
         remoteNumber: remote == nullptr ? '' : _str(_addressUsername(remote)),
         remoteName: remote == nullptr ? '' : _str(_addressDisplayName(remote)),
         message: _str(msg),
+        video: _videoOf(_callCurrentParams(call)),
+        remoteVideo: _videoOf(_callRemoteParams(call)),
       ),
     );
   }
+
+  bool _videoOf(Pointer<Void> params) =>
+      params != nullptr && _paramsVideoEnabled(params) != 0;
 
   static String _str(Pointer<Utf8> p) => p == nullptr ? '' : p.toDartString();
 }

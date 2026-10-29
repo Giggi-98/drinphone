@@ -200,4 +200,72 @@ void main() {
     await phone.toggleFavorite(sala);
     expect(phone.visibleExtensions, isEmpty);
   });
+
+  test(
+    'badge: si spengono entrando nella sezione, solo le novità li riaccendono',
+    () async {
+      ev(CallPhase.incoming, CallDirection.incoming, '350');
+      ev(CallPhase.ended, CallDirection.incoming, '350');
+      expect(phone.missedUnseen, 1);
+      await phone.markHistorySeen();
+      expect(phone.missedUnseen, 0);
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+      ev(CallPhase.incoming, CallDirection.incoming, '301');
+      ev(CallPhase.ended, CallDirection.incoming, '301');
+      expect(phone.missedUnseen, 1);
+
+      // Casella vocale senza API: conteggio MWI.
+      engine.voicemailCtl.add(const VoicemailEvent(2, 0));
+      expect(phone.voicemailUnseen, 2);
+      await phone.markVoicemailSeen();
+      expect(phone.voicemailUnseen, 0);
+      engine.voicemailCtl.add(const VoicemailEvent(3, 0));
+      expect(phone.voicemailUnseen, 1);
+    },
+  );
+
+  test(
+    'video: videochiamata, rispondi in video, spento = solo audio, anteprima',
+    () async {
+      await phone.saveAccount(
+        const SipAccount(username: '305', password: 'p', domain: 'pbx.test'),
+      );
+      engine.registrationsCtl.add(
+        const RegistrationEvent(RegistrationStatus.ok),
+      );
+      await phone.dial('301', video: true);
+      expect(engine.log.last, 'dial 301 video');
+      engine.callsCtl.add(
+        const CallEvent(
+          id: 7,
+          phase: CallPhase.incoming,
+          direction: CallDirection.incoming,
+          remoteNumber: '350',
+          remoteVideo: true,
+        ),
+      );
+      await phone.answer(7, true);
+      expect(engine.log.last, 'answer 7 video');
+
+      // Anteprima: la finestra arriva al motore solo se attiva in Preferenze.
+      await phone.setVideoWindow(remote: 11, preview: 22);
+      expect(engine.windows, (11, 0));
+      await phone.setVideoOptions(const VideoOptions(preview: true));
+      expect(engine.windows, (11, 22));
+      expect(engine.video.preview, isTrue);
+
+      await phone.setVideoOptions(const VideoOptions(enabled: false));
+      expect(phone.videoEnabled, isFalse);
+      engine.callsCtl.add(
+        const CallEvent(
+          id: 7,
+          phase: CallPhase.ended,
+          direction: CallDirection.incoming,
+          remoteNumber: '350',
+        ),
+      );
+      await phone.dial('301', video: true);
+      expect(engine.log.last, 'dial 301');
+    },
+  );
 }
