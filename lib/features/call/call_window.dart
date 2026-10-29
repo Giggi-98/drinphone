@@ -127,23 +127,9 @@ class _CallWindowState extends State<CallWindow> {
               style: TextStyle(color: c.ringing, fontWeight: FontWeight.w600),
             ),
             const SizedBox(height: 16),
-            // Videochiamata in arrivo: anteprima della propria webcam (solo
-            // locale; nulla parte finché non si risponde in video).
-            if (call.remoteVideo && p.videoEnabled) ...[
-              ClipRRect(
-                borderRadius: BorderRadius.circular(10),
-                child: SizedBox(
-                  width: 340,
-                  height: 190,
-                  child: NativeVideoView(onHandle: p.setCameraTest),
-                ),
-              ),
-              const SizedBox(height: 12),
-            ] else
-              _Avatar(
-                name: name.isNotEmpty ? name : call.remoteNumber,
-                size: 72,
-              ),
+            // Niente anteprima durante lo squillo: liblinphone avvia la webcam
+            // solo con lo stream della chiamata, cioè dopo la risposta.
+            _Avatar(name: name.isNotEmpty ? name : call.remoteNumber, size: 72),
             const SizedBox(height: 12),
             Text(
               name.isNotEmpty ? name : call.remoteNumber,

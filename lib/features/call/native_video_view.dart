@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../core/platform/video_surface.dart';
@@ -17,7 +19,10 @@ class NativeVideoView extends StatefulWidget {
 
 class _NativeVideoViewState extends State<NativeVideoView> {
   VideoSurface? _surface;
-  Rect? _placed;
+
+  /// Spostare la finestra dell'app non produce frame Flutter: si ricontrolla
+  /// la posizione anche a intervalli (la superficie salta i doppioni).
+  Timer? _poll;
 
   @override
   void initState() {
@@ -30,6 +35,11 @@ class _NativeVideoViewState extends State<NativeVideoView> {
       });
     }
     _follow();
+    if (_surface != null) {
+      _poll = Timer.periodic(const Duration(milliseconds: 100), (_) {
+        if (mounted) _place();
+      });
+    }
   }
 
   /// Dopo ogni frame: la finestra nativa segue posizione e dimensioni.
@@ -53,8 +63,6 @@ class _NativeVideoViewState extends State<NativeVideoView> {
       (r.right * dpr).roundToDouble(),
       (r.bottom * dpr).roundToDouble(),
     );
-    if (px == _placed) return;
-    _placed = px;
     s.place(
       px.left.toInt(),
       px.top.toInt(),
@@ -65,6 +73,7 @@ class _NativeVideoViewState extends State<NativeVideoView> {
 
   @override
   void dispose() {
+    _poll?.cancel();
     final s = _surface;
     if (s != null) {
       widget.onHandle(0);
