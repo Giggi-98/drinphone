@@ -42,6 +42,10 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     p.addListener(_onPhone);
+    // Finestre video permanenti, appena esiste la finestra dell'app.
+    WidgetsBinding.instance.addPostFrameCallback(
+      (_) => p.attachVideoSurfaces(),
+    );
     _lifecycle = AppLifecycleListener(
       // Rientro nella finestra: riallinea i dati PBX (saltato se letti da < 10 s).
       onResume: () => p.resync(force: false),

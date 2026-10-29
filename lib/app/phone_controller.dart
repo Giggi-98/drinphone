@@ -7,6 +7,7 @@ import '../core/call_history.dart';
 import '../core/contacts/personal_contacts.dart';
 import 'l10n.dart';
 import '../core/pbx/pbx_cache.dart';
+import '../core/platform/video_surface.dart';
 import '../core/video/openh264.dart';
 import '../core/pbx/pbx_connection.dart';
 import '../core/pbx/yeastar_api.dart';
@@ -640,26 +641,27 @@ class PhoneController extends ChangeNotifier {
     settings = settings.copyWith(video: o);
     await _store.save(settings);
     if (engineError == null) await _engine.setVideo(o);
-    await _applyVideoWindows();
     notifyListeners();
   }
 
-  /// Finestre native del pannello di chiamata (0 = chiusa).
-  int _remoteWindow = 0, _previewWindow = 0;
+  /// Finestre video permanenti (video remoto e anteprima), create una volta
+  /// all'avvio e consegnate al core: il pannello e "Prova webcam" le mostrano,
+  /// spostano e nascondono (core/platform/video_surface.dart).
+  VideoSurface? remoteSurface, previewSurface;
 
-  Future<void> setVideoWindow({int? remote, int? preview}) async {
-    _remoteWindow = remote ?? _remoteWindow;
-    _previewWindow = preview ?? _previewWindow;
-    await _applyVideoWindows();
-  }
-
-  Future<void> _applyVideoWindows() async {
-    if (engineError != null) return;
+  /// Chiamato dalla schermata principale quando la finestra dell'app esiste.
+  Future<void> attachVideoSurfaces() async {
+    if (engineError != null || remoteSurface != null) return;
+    final remote = await VideoSurface.create();
+    final preview = await VideoSurface.create();
+    if (remote == null || preview == null) return;
+    remoteSurface = remote;
+    previewSurface = preview;
     await _engine.setVideoWindows(
-      remote: _remoteWindow,
-      // Anteprima solo se scelta in Preferenze > Video.
-      preview: settings.video.preview ? _previewWindow : 0,
+      remote: remote.handle,
+      preview: preview.handle,
     );
+    notifyListeners();
   }
 
   // ------------------------------------------- finestra di chiamata
@@ -748,16 +750,9 @@ class PhoneController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// "Prova webcam" in Preferenze: anteprima nella finestra [handle] (0 = fine).
-  Future<void> setCameraTest(int handle) async {
-    if (engineError != null) return;
-    if (handle != 0) {
-      await _engine.setVideoWindows(remote: _remoteWindow, preview: handle);
-      await _engine.setCameraPreview(true);
-    } else {
-      await _engine.setCameraPreview(false);
-      await _applyVideoWindows();
-    }
+  /// "Prova webcam" in Preferenze: anteprima della webcam fuori dalle chiamate.
+  Future<void> setCameraTest(bool on) async {
+    if (engineError == null) await _engine.setCameraPreview(on);
   }
 
   /// Webcam accesa/spenta nella chiamata corrente.

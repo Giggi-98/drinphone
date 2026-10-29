@@ -4,45 +4,31 @@ import 'package:flutter/material.dart';
 
 import '../../core/platform/video_surface.dart';
 
-/// Riquadro dove liblinphone disegna il video: una finestra nativa tenuta
-/// sopra questo widget a ogni frame. [onHandle] riceve l'HWND (0 alla chiusura).
-class NativeVideoView extends StatefulWidget {
-  const NativeVideoView({super.key, required this.onHandle, this.label = ''});
-  final void Function(int handle) onHandle;
-
-  /// Testo mostrato dove la finestra nativa non c'è (fuori da Windows).
+/// Riquadro dove compare una finestra video permanente ([surface], creata dal
+/// controller): la sposta sopra di sé a ogni frame e ogni 100 ms (gli
+/// spostamenti della finestra dell'app non producono frame) e la nasconde
+/// quando sparisce. Null = video non disponibile (si mostra [label]).
+class VideoSlot extends StatefulWidget {
+  const VideoSlot({super.key, required this.surface, this.label = ''});
+  final VideoSurface? surface;
   final String label;
 
   @override
-  State<NativeVideoView> createState() => _NativeVideoViewState();
+  State<VideoSlot> createState() => _VideoSlotState();
 }
 
-class _NativeVideoViewState extends State<NativeVideoView> {
-  VideoSurface? _surface;
-
-  /// Spostare la finestra dell'app non produce frame Flutter: si ricontrolla
-  /// la posizione anche a intervalli (la superficie salta i doppioni).
+class _VideoSlotState extends State<VideoSlot> {
   Timer? _poll;
 
   @override
   void initState() {
     super.initState();
-    _surface = VideoSurface.create();
-    final s = _surface;
-    if (s != null) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) widget.onHandle(s.handle);
-      });
-    }
     _follow();
-    if (_surface != null) {
-      _poll = Timer.periodic(const Duration(milliseconds: 100), (_) {
-        if (mounted) _place();
-      });
-    }
+    _poll = Timer.periodic(const Duration(milliseconds: 100), (_) {
+      if (mounted) _place();
+    });
   }
 
-  /// Dopo ogni frame: la finestra nativa segue posizione e dimensioni.
   void _follow() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -52,40 +38,36 @@ class _NativeVideoViewState extends State<NativeVideoView> {
   }
 
   void _place() {
-    final s = _surface;
+    final s = widget.surface;
     final box = context.findRenderObject() as RenderBox?;
     if (s == null || box == null || !box.hasSize) return;
     final dpr = View.of(context).devicePixelRatio;
-    final r = (box.localToGlobal(Offset.zero) & box.size);
-    final px = Rect.fromLTRB(
-      (r.left * dpr).roundToDouble(),
-      (r.top * dpr).roundToDouble(),
-      (r.right * dpr).roundToDouble(),
-      (r.bottom * dpr).roundToDouble(),
-    );
+    final r = box.localToGlobal(Offset.zero) & box.size;
     s.place(
-      px.left.toInt(),
-      px.top.toInt(),
-      px.width.toInt(),
-      px.height.toInt(),
+      (r.left * dpr).round(),
+      (r.top * dpr).round(),
+      (r.width * dpr).round(),
+      (r.height * dpr).round(),
     );
+  }
+
+  @override
+  void didUpdateWidget(covariant VideoSlot old) {
+    super.didUpdateWidget(old);
+    if (old.surface != widget.surface) old.surface?.hide();
   }
 
   @override
   void dispose() {
     _poll?.cancel();
-    final s = _surface;
-    if (s != null) {
-      widget.onHandle(0);
-      s.destroy();
-    }
+    widget.surface?.hide();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) => ColoredBox(
     color: Colors.black,
-    child: _surface == null && widget.label.isNotEmpty
+    child: widget.surface == null && widget.label.isNotEmpty
         ? Center(
             child: Text(
               widget.label,

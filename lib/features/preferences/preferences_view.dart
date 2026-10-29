@@ -1495,6 +1495,12 @@ class _VideoTab extends StatefulWidget {
 class _VideoTabState extends State<_VideoTab> {
   bool _busy = false;
 
+  @override
+  void dispose() {
+    if (_testing) p.setCameraTest(false);
+    super.dispose();
+  }
+
   PhoneController get p => widget.phone;
 
   bool _testing = false;
@@ -1651,7 +1657,10 @@ class _VideoTabState extends State<_VideoTab> {
               // Prova fuori dalle chiamate: webcam e visualizzazione.
               OutlinedButton.icon(
                 onPressed: o.enabled && p.calls.isEmpty
-                    ? () => setState(() => _testing = !_testing)
+                    ? () {
+                        setState(() => _testing = !_testing);
+                        p.setCameraTest(_testing);
+                      }
                     : null,
                 icon: Icon(
                   _testing
@@ -1665,9 +1674,9 @@ class _VideoTabState extends State<_VideoTab> {
                 SizedBox(
                   width: 480,
                   height: 270,
-                  child: NativeVideoView(
+                  child: VideoSlot(
+                    surface: p.previewSurface,
                     label: tr('Video non disponibile su questa piattaforma'),
-                    onHandle: p.setCameraTest,
                   ),
                 ),
               ],

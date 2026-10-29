@@ -431,9 +431,9 @@ class _CallWindowState extends State<CallWindow> {
   Widget _video() => Stack(
     children: [
       Positioned.fill(
-        child: NativeVideoView(
+        child: VideoSlot(
+          surface: p.remoteSurface,
           label: tr('Video non disponibile su questa piattaforma'),
-          onHandle: (h) => p.setVideoWindow(remote: h),
         ),
       ),
       if (p.settings.video.preview)
@@ -443,9 +443,7 @@ class _CallWindowState extends State<CallWindow> {
           child: SizedBox(
             width: 200,
             height: 112,
-            child: NativeVideoView(
-              onHandle: (h) => p.setVideoWindow(preview: h),
-            ),
+            child: VideoSlot(surface: p.previewSurface),
           ),
         ),
     ],

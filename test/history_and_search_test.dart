@@ -247,12 +247,13 @@ void main() {
       await phone.answer(7, true);
       expect(engine.log.last, 'answer 7 video');
 
-      // Anteprima: la finestra arriva al motore solo se attiva in Preferenze.
-      await phone.setVideoWindow(remote: 11, preview: 22);
-      expect(engine.windows, (11, 0));
+      // Opzioni video al motore; "Prova webcam" accende e spegne l'anteprima.
       await phone.setVideoOptions(const VideoOptions(preview: true));
-      expect(engine.windows, (11, 22));
       expect(engine.video.preview, isTrue);
+      await phone.setCameraTest(true);
+      expect(engine.cameraPreview, isTrue);
+      await phone.setCameraTest(false);
+      expect(engine.cameraPreview, isFalse);
 
       await phone.setVideoOptions(const VideoOptions(enabled: false));
       expect(phone.videoEnabled, isFalse);

@@ -164,10 +164,14 @@ spikes/f0a/                         spike F0-A (non prodotto)
   sul pilota, chiamata video reale `DA VALIDARE`) — DECISIONS "Videochiamate".
   `SipEngine`: `dial/answer(video)`, `setCallVideo`, `setVideo` (webcam, cattura e
   visualizzazione nel core), `videoDevices`, `videoCodecs`, `setVideoWindows`;
-  `CallEvent.video/remoteVideo`. Video remoto e anteprima disegnati da liblinphone
-  in finestre native figlie (`core/platform/video_surface.dart`) che
-  `NativeVideoView` (`features/call/`) tiene sopra il riquadro a ogni frame; limite:
-  stanno sopra a menu e dialoghi Flutter. Anteprima passata al core solo se attiva.
+  `CallEvent.video/remoteVideo`. Video remoto e anteprima disegnati da MSOGL
+  (contesto `MSOglContextInfo`, non l'HWND) in **due finestre permanenti**
+  (`core/platform/video_surface.dart`): popup di proprietà della finestra
+  dell'app, create all'avvio da un **thread dedicato** con il suo ciclo di
+  messaggi e consegnate al core una volta sola (mai finestra assente né cambiata a
+  stream avviato: evita i blocchi tra thread dell'interfaccia e thread di disegno).
+  `VideoSlot` (`features/call/`) le sposta, mostra e nasconde con comandi
+  asincroni; limite: stanno sopra a menu e dialoghi Flutter.
   H264: `OpenH264` (`core/video/openh264.dart`) scarica nella cartella `codecs`
   dei dati app e verifica SHA-256 di archivio e DLL; all'avvio, se verificata,
   `SetDllDirectoryW` fa trovare `openh264.dll` al plugin `libmsopenh264` (installato
