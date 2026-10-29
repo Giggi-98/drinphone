@@ -82,7 +82,9 @@ class StatusAvatar extends StatelessWidget {
           child: Stack(
             clipBehavior: Clip.none,
             children: [
-              Container(
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 220),
+                curve: Curves.easeOutCubic,
                 width: size + 6,
                 height: size + 6,
                 padding: const EdgeInsets.all(2),
@@ -93,7 +95,8 @@ class StatusAvatar extends StatelessWidget {
                     width: 2,
                   ),
                 ),
-                child: Opacity(
+                child: AnimatedOpacity(
+                  duration: const Duration(milliseconds: 220),
                   opacity: offline ? 0.45 : 1,
                   child: CircleAvatar(
                     backgroundColor: c.avatar,
@@ -108,23 +111,88 @@ class StatusAvatar extends StatelessWidget {
                   ),
                 ),
               ),
-              if (p != null)
-                Positioned(
-                  right: -2,
-                  bottom: -2,
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: c.card,
-                      shape: BoxShape.circle,
-                    ),
-                    padding: const EdgeInsets.all(1.5),
-                    child: Icon(p.$1, size: size * 0.38, color: p.$2),
-                  ),
+              Positioned(
+                right: -2,
+                bottom: -2,
+                child: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 180),
+                  transitionBuilder: (child, anim) =>
+                      ScaleTransition(scale: anim, child: child),
+                  child: p == null
+                      ? const SizedBox.shrink()
+                      : Container(
+                          key: ValueKey(presence),
+                          decoration: BoxDecoration(
+                            color: c.card,
+                            shape: BoxShape.circle,
+                          ),
+                          padding: const EdgeInsets.all(1.5),
+                          child: Icon(p.$1, size: size * 0.38, color: p.$2),
+                        ),
                 ),
+              ),
             ],
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Transizione morbida (dissolvenza + leggero scorrimento) al cambio di sezione o scheda.
+class AnimatedSectionSwitch extends StatelessWidget {
+  const AnimatedSectionSwitch({super.key, required this.child});
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 220),
+      switchInCurve: Curves.easeOutCubic,
+      switchOutCurve: Curves.easeInCubic,
+      layoutBuilder: (currentChild, previousChildren) => Stack(
+        alignment: Alignment.topLeft,
+        fit: StackFit.passthrough,
+        children: [...previousChildren, ?currentChild],
+      ),
+      transitionBuilder: (child, anim) => FadeTransition(
+        opacity: anim,
+        child: SlideTransition(
+          position: Tween<Offset>(
+            begin: const Offset(0, 0.018),
+            end: Offset.zero,
+          ).animate(anim),
+          child: child,
+        ),
+      ),
+      child: child,
+    );
+  }
+}
+
+/// Animazione d'ingresso per menu a tendina, popup di ricerca e tastierino.
+class AnimatedPopup extends StatelessWidget {
+  const AnimatedPopup({super.key, required this.child});
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0, end: 1),
+      duration: const Duration(milliseconds: 180),
+      curve: Curves.easeOutCubic,
+      builder: (_, t, child) => Opacity(
+        opacity: t,
+        child: Transform.translate(
+          offset: Offset(0, (1 - t) * -8),
+          child: Transform.scale(
+            scale: 0.96 + 0.04 * t,
+            alignment: Alignment.topCenter,
+            child: child,
+          ),
+        ),
+      ),
+      child: child,
     );
   }
 }

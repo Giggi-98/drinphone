@@ -80,9 +80,32 @@ class DrinColors extends ThemeExtension<DrinColors> {
   DrinColors copyWith() => this;
 
   @override
-  DrinColors lerp(DrinColors? other, double t) =>
-      t < 0.5 ? this : (other ?? this);
+  DrinColors lerp(DrinColors? other, double t) {
+    if (other == null) return this;
+    Color c(Color a, Color b) => Color.lerp(a, b, t)!;
+    return DrinColors(
+      ground: c(ground, other.ground),
+      side: c(side, other.side),
+      surface: c(surface, other.surface),
+      card: c(card, other.card),
+      field: c(field, other.field),
+      border: c(border, other.border),
+      text: c(text, other.text),
+      muted: c(muted, other.muted),
+      accent: c(accent, other.accent),
+      keyBtn: c(keyBtn, other.keyBtn),
+      avatar: c(avatar, other.avatar),
+      ok: c(ok, other.ok),
+      okText: c(okText, other.okText),
+      busy: c(busy, other.busy),
+      busyText: c(busyText, other.busyText),
+      ringing: c(ringing, other.ringing),
+    );
+  }
 }
+
+/// Tema dell'interfaccia (Sistema, Scuro, Chiaro), commutabile al volo.
+final appThemeMode = ValueNotifier<ThemeMode>(ThemeMode.system);
 
 extension DrinColorsX on BuildContext {
   DrinColors get drin => Theme.of(this).extension<DrinColors>()!;

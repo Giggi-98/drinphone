@@ -193,45 +193,72 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                     Expanded(
                       // Live Calls sparisce senza eventi o nei profili SIP generici.
-                      child: switch (_section == _Section.live &&
-                              !p.hasLiveCalls
-                          ? _Section.extensions
-                          : _section) {
-                        _Section.extensions => _ExtensionsView(
-                          phone: p,
-                          onCall: _call,
-                        ),
-                        _Section.contacts => ContactsView(
-                          phone: p,
-                          onCall: _call,
-                        ),
-                        _Section.history => HistoryView(
-                          phone: p,
-                          onCall: _call,
-                        ),
-                        _Section.voicemail => VoicemailView(
-                          phone: p,
-                          onCall: _call,
-                        ),
-                        _Section.live => LiveCallsView(
-                          phone: p,
-                          onOpenPreferences: () => _openPreferences(5),
-                        ),
-                        _Section.preferences => PreferencesView(
-                          key: ValueKey(_prefsTab),
-                          phone: p,
-                          initialTab: _prefsTab,
-                        ),
-                      },
+                      child: AnimatedSectionSwitch(
+                        child: switch (_section == _Section.live &&
+                                !p.hasLiveCalls
+                            ? _Section.extensions
+                            : _section) {
+                          _Section.extensions => _ExtensionsView(
+                            key: const ValueKey('sec_ext'),
+                            phone: p,
+                            onCall: _call,
+                          ),
+                          _Section.contacts => ContactsView(
+                            key: const ValueKey('sec_contacts'),
+                            phone: p,
+                            onCall: _call,
+                          ),
+                          _Section.history => HistoryView(
+                            key: const ValueKey('sec_history'),
+                            phone: p,
+                            onCall: _call,
+                          ),
+                          _Section.voicemail => VoicemailView(
+                            key: const ValueKey('sec_vm'),
+                            phone: p,
+                            onCall: _call,
+                          ),
+                          _Section.live => LiveCallsView(
+                            key: const ValueKey('sec_live'),
+                            phone: p,
+                            onOpenPreferences: () => _openPreferences(5),
+                          ),
+                          _Section.preferences => PreferencesView(
+                            key: ValueKey(('sec_prefs', _prefsTab)),
+                            phone: p,
+                            initialTab: _prefsTab,
+                          ),
+                        },
+                      ),
                     ),
                   ],
                 ),
-                if (call != null)
-                  Positioned(
-                    right: 24,
-                    bottom: 24,
-                    child: CallPanel(phone: p, call: call),
+                Positioned(
+                  right: 24,
+                  bottom: 24,
+                  child: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 220),
+                    switchInCurve: Curves.easeOutCubic,
+                    switchOutCurve: Curves.easeInCubic,
+                    transitionBuilder: (child, anim) => FadeTransition(
+                      opacity: anim,
+                      child: SlideTransition(
+                        position: Tween<Offset>(
+                          begin: const Offset(0, 0.08),
+                          end: Offset.zero,
+                        ).animate(anim),
+                        child: child,
+                      ),
+                    ),
+                    child: call == null
+                        ? const SizedBox.shrink()
+                        : CallPanel(
+                            key: ValueKey('call_${call.id}'),
+                            phone: p,
+                            call: call,
+                          ),
                   ),
+                ),
               ],
             ),
           ),
@@ -270,16 +297,19 @@ class _HomeScreenState extends State<HomeScreen> {
       RegistrationStatus.failed => (c.busy, tr('Errore registrazione')),
       _ => (c.muted, tr('Non registrato')),
     };
-    // Più account: riepilogo "Registrati 2/3", dettaglio nel tooltip.
+    // Più account: riepilogo nel tooltip e contatore compatto accanto al pallino.
     final accounts = p.settings.accounts;
-    var tooltip = reg.message;
+    var tooltip = [label, if (reg.message.isNotEmpty) reg.message].join(' · ');
+    var multiCount = '';
     if (accounts.length > 1) {
       bool ok(SipAccount a) =>
           p.registrations[a.id]?.status == RegistrationStatus.ok;
       final n = accounts.where(ok).length;
       label = tr('Registrati {n}/{t}', {'n': n, 't': accounts.length});
+      multiCount = '$n/${accounts.length}';
       dot = n == accounts.length ? c.ok : (n == 0 ? c.busy : c.ringing);
       tooltip = [
+        label,
         for (final a in accounts)
           '${a.username}@${a.domain}: ${p.registrations[a.id]?.status.name ?? '-'}',
       ].join('\n');
@@ -293,6 +323,7 @@ class _HomeScreenState extends State<HomeScreen> {
       _ => c.muted,
     };
     final presence = presenceOf(c, p.ownPresence);
+    final customNote = p.ownDetail?.customPresence.trim() ?? '';
     Widget pill(List<Widget> children) => Container(
       height: 36,
       padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -311,8 +342,8 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       child: Row(
         children: [
-          // "Chiama con" (come "Call Using" di Linkus): account per i numeri
-          // liberi, con lo stato di registrazione.
+          // "Chiama con": il pallino indica già lo stato di registrazione;
+          // il testo compare nel tooltip o solo se manca un account.
           Tooltip(
             message: tooltip,
             child: PopupMenuButton<String>(
@@ -355,48 +386,73 @@ class _HomeScreenState extends State<HomeScreen> {
                 PopupMenuItem(value: '', child: Text(tr('Gestisci account…'))),
               ],
               child: pill([
-                Container(
-                  width: 8,
-                  height: 8,
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 220),
+                  width: 9,
+                  height: 9,
                   decoration: BoxDecoration(color: dot, shape: BoxShape.circle),
                 ),
-                const SizedBox(width: 8),
-                Text(label, style: TextStyle(fontSize: 13, color: c.text)),
+                if (multiCount.isNotEmpty) ...[
+                  const SizedBox(width: 6),
+                  Text(
+                    multiCount,
+                    style: mono(c.muted, size: 11, weight: FontWeight.w600),
+                  ),
+                ],
                 if (via != null) ...[
-                  Text('  ·  ', style: TextStyle(color: c.muted)),
+                  const SizedBox(width: 8),
                   Icon(Icons.call_made_rounded, size: 14, color: c.muted),
                   const SizedBox(width: 4),
                   Text(
                     via.username,
                     style: mono(c.text, size: 12, weight: FontWeight.w600),
                   ),
+                ] else ...[
+                  const SizedBox(width: 8),
+                  Text(label, style: TextStyle(fontSize: 13, color: c.text)),
                 ],
                 const SizedBox(width: 4),
                 Icon(Icons.expand_more_rounded, size: 18, color: c.muted),
               ]),
             ),
           ),
-          // Presenza del proprio interno (dal PBX); dettaglio in Preferenze.
+          // Presenza del proprio interno: simbolo + colore bastano, testo nel tooltip.
           if (presence != null) ...[
             const SizedBox(width: 8),
             Tooltip(
-              message: tr('Stato di presenza'),
+              message: '${tr('Stato di presenza')} · ${presence.$3}',
               child: InkWell(
                 onTap: () => _openPreferences(1),
                 borderRadius: BorderRadius.circular(999),
                 child: pill([
-                  Icon(presence.$1, size: 16, color: presence.$2),
-                  const SizedBox(width: 8),
-                  Text(
-                    presence.$3,
-                    style: TextStyle(fontSize: 13, color: c.text),
+                  AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 200),
+                    transitionBuilder: (child, anim) =>
+                        ScaleTransition(scale: anim, child: child),
+                    child: Icon(
+                      presence.$1,
+                      key: ValueKey(p.ownPresence),
+                      size: 17,
+                      color: presence.$2,
+                    ),
                   ),
+                  if (customNote.isNotEmpty) ...[
+                    const SizedBox(width: 8),
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 140),
+                      child: Text(
+                        customNote,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontSize: 12, color: c.text),
+                      ),
+                    ),
+                  ],
                 ]),
               ),
             ),
           ],
           const Spacer(),
-          SearchBox(phone: p, onCall: _call),
+          Flexible(child: SearchBox(phone: p, onCall: _call)),
           const SizedBox(width: 12),
           // Profili (DECISIONS "Profili"): uno attivo alla volta.
           PopupMenuButton<String>(
@@ -418,22 +474,22 @@ class _HomeScreenState extends State<HomeScreen> {
                   enabled: prof.id == p.settings.profileId || p.calls.isEmpty,
                   child: Row(
                     children: [
-                      Icon(
-                        prof.kind == ProfileKind.yeastar
-                            ? Icons.hub_outlined
-                            : Icons.dialpad_rounded,
-                        size: 18,
-                        color: c.muted,
+                      Tooltip(
+                        message: prof.kind == ProfileKind.yeastar
+                            ? tr('Yeastar')
+                            : tr('SIP generico'),
+                        child: Icon(
+                          prof.kind == ProfileKind.yeastar
+                              ? Icons.hub_rounded
+                              : Icons.dialpad_rounded,
+                          size: 18,
+                          color: prof.id == p.settings.profileId
+                              ? c.accent
+                              : c.muted,
+                        ),
                       ),
                       const SizedBox(width: 10),
                       Text(prof.name.isEmpty ? tr('Profilo') : prof.name),
-                      const SizedBox(width: 8),
-                      Text(
-                        prof.kind == ProfileKind.yeastar
-                            ? tr('Yeastar')
-                            : tr('SIP generico'),
-                        style: TextStyle(fontSize: 12, color: c.muted),
-                      ),
                       const SizedBox(width: 12),
                       if (prof.id == p.settings.profileId)
                         Icon(Icons.check_rounded, size: 18, color: c.accent),
@@ -462,8 +518,18 @@ class _HomeScreenState extends State<HomeScreen> {
                     radius: 17,
                     backgroundColor: c.avatar,
                     child: Text(
-                      account?.username ?? '?',
-                      style: mono(c.text, size: 11, weight: FontWeight.w700),
+                      initialsOf(
+                        account != null && account.displayName.isNotEmpty
+                            ? account.displayName
+                            : (p.settings.profileName.isNotEmpty
+                                  ? p.settings.profileName
+                                  : (account?.username ?? '?')),
+                      ),
+                      style: TextStyle(
+                        color: c.text,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                   ),
                   const SizedBox(width: 10),
@@ -529,40 +595,49 @@ class _Sidebar extends StatelessWidget {
       Widget? trailing,
     }) => Padding(
       padding: const EdgeInsets.only(bottom: 4),
-      child: Material(
-        color: selected ? c.keyBtn : Colors.transparent,
-        borderRadius: BorderRadius.circular(10),
-        child: InkWell(
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOutCubic,
+        decoration: BoxDecoration(
+          color: selected ? c.keyBtn : Colors.transparent,
           borderRadius: BorderRadius.circular(10),
-          onTap: onTap,
-          child: SizedBox(
-            height: 44,
-            child: Row(
-              children: [
-                Container(
-                  width: 3,
-                  height: 20,
-                  decoration: BoxDecoration(
-                    color: selected ? c.accent : Colors.transparent,
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Icon(icon, size: 20, color: selected ? c.accent : c.muted),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    label,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: selected ? c.accent : c.text,
-                      fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+        ),
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(10),
+            onTap: onTap,
+            child: SizedBox(
+              height: 44,
+              child: Row(
+                children: [
+                  AnimatedContainer(
+                    duration: const Duration(milliseconds: 180),
+                    curve: Curves.easeOutCubic,
+                    width: 3,
+                    height: selected ? 20 : 0,
+                    decoration: BoxDecoration(
+                      color: selected ? c.accent : Colors.transparent,
+                      borderRadius: BorderRadius.circular(2),
                     ),
                   ),
-                ),
-                ?trailing,
-                const SizedBox(width: 10),
-              ],
+                  const SizedBox(width: 10),
+                  Icon(icon, size: 20, color: selected ? c.accent : c.muted),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      label,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: selected ? c.accent : c.text,
+                        fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+                      ),
+                    ),
+                  ),
+                  ?trailing,
+                  const SizedBox(width: 10),
+                ],
+              ),
             ),
           ),
         ),
@@ -616,20 +691,20 @@ class _Sidebar extends StatelessWidget {
             ),
           ),
           item(
-            Icons.people_alt_outlined,
+            Icons.grid_view_rounded,
             tr('Interni'),
             section == _Section.extensions,
             () => onSection(_Section.extensions),
           ),
           if (showLive)
             item(
-              Icons.monitor_heart_outlined,
+              Icons.graphic_eq_rounded,
               tr('Live Calls'),
               section == _Section.live,
               () => onSection(_Section.live),
             ),
           item(
-            Icons.contacts_outlined,
+            Icons.import_contacts_rounded,
             tr('Rubrica'),
             section == _Section.contacts,
             () => onSection(_Section.contacts),
@@ -662,7 +737,7 @@ class _Sidebar extends StatelessWidget {
 }
 
 class _ExtensionsView extends StatefulWidget {
-  const _ExtensionsView({required this.phone, required this.onCall});
+  const _ExtensionsView({super.key, required this.phone, required this.onCall});
   final PhoneController phone;
   final ValueChanged<String> onCall;
 
@@ -673,6 +748,7 @@ class _ExtensionsView extends StatefulWidget {
 class _ExtensionsViewState extends State<_ExtensionsView> {
   int _page = 0;
   String? _pageGroup;
+  BlfStatus? _blfFilter;
 
   PhoneController get phone => widget.phone;
 
@@ -743,6 +819,57 @@ class _ExtensionsViewState extends State<_ExtensionsView> {
   /// Reparto selezionato (`<pbx>:<org>`), non un PBX intero o i Preferiti.
   static bool _isOrg(String? g) => g != null && g.split(':').length > 1;
 
+  /// Pillola filtro BLF a soli simboli (il colore/icona indica già lo stato;
+  /// la parola sta nel tooltip).
+  Widget _filterChip(
+    DrinColors c, {
+    required BlfStatus? status,
+    required String tooltip,
+    required Widget symbol,
+    required int count,
+  }) {
+    final selected = _blfFilter == status;
+    return Padding(
+      padding: const EdgeInsets.only(right: 6),
+      child: Tooltip(
+        message: tooltip,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(999),
+          onTap: () => setState(() {
+            _blfFilter = selected && status != null ? null : status;
+            _page = 0;
+          }),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 180),
+            curve: Curves.easeOutCubic,
+            height: 32,
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            decoration: BoxDecoration(
+              color: selected ? c.keyBtn : c.field,
+              border: Border.all(color: selected ? c.accent : c.border),
+              borderRadius: BorderRadius.circular(999),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                symbol,
+                const SizedBox(width: 6),
+                Text(
+                  '$count',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                    color: selected ? c.accent : c.text,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final c = context.drin;
@@ -751,10 +878,27 @@ class _ExtensionsViewState extends State<_ExtensionsView> {
       _pageGroup = phone.selectedGroup;
       _page = 0;
     }
-    final list = phone.visibleExtensions;
+    final allInGroup = phone.visibleExtensions;
+    final idleCount = allInGroup
+        .where((e) => phone.blfOf(e) == BlfStatus.idle)
+        .length;
+    final busyCount = allInGroup
+        .where((e) => phone.blfOf(e) == BlfStatus.busy)
+        .length;
+    final ringingCount = allInGroup
+        .where((e) => phone.blfOf(e) == BlfStatus.ringing)
+        .length;
+    final list = _blfFilter == null
+        ? allInGroup
+        : allInGroup.where((e) => phone.blfOf(e) == _blfFilter).toList();
     final pages = (list.length + pageSize - 1) ~/ pageSize;
     if (_page >= pages && pages > 0) _page = pages - 1;
     final slice = Pager.slice(list, _page, pageSize);
+    Widget dot(Color color) => Container(
+      width: 8,
+      height: 8,
+      decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+    );
     final grid = Container(
       margin: const EdgeInsets.all(16),
       padding: const EdgeInsets.all(16),
@@ -788,6 +932,45 @@ class _ExtensionsViewState extends State<_ExtensionsView> {
                   ],
                 ),
               ),
+              if (allInGroup.isNotEmpty) ...[
+                _filterChip(
+                  c,
+                  status: null,
+                  tooltip: tr('Tutti gli interni'),
+                  symbol: Icon(
+                    Icons.grid_view_rounded,
+                    size: 14,
+                    color: _blfFilter == null ? c.accent : c.muted,
+                  ),
+                  count: allInGroup.length,
+                ),
+                _filterChip(
+                  c,
+                  status: BlfStatus.idle,
+                  tooltip: tr('Libero'),
+                  symbol: dot(c.ok),
+                  count: idleCount,
+                ),
+                _filterChip(
+                  c,
+                  status: BlfStatus.busy,
+                  tooltip: tr('Occupato'),
+                  symbol: dot(c.busy),
+                  count: busyCount,
+                ),
+                if (ringingCount > 0 || _blfFilter == BlfStatus.ringing)
+                  _filterChip(
+                    c,
+                    status: BlfStatus.ringing,
+                    tooltip: tr('Squilla'),
+                    symbol: Icon(
+                      Icons.ring_volume_rounded,
+                      size: 14,
+                      color: c.ringing,
+                    ),
+                    count: ringingCount,
+                  ),
+              ],
               if (_isOrg(phone.selectedGroup))
                 Padding(
                   padding: const EdgeInsets.only(right: 8),
@@ -834,43 +1017,47 @@ class _ExtensionsViewState extends State<_ExtensionsView> {
           ),
           const SizedBox(height: 14),
           Expanded(
-            child: list.isEmpty
-                ? Center(
-                    child: Text(
-                      tr(
-                        'Nessun interno. Aggiungi quelli che chiami più spesso.',
-                      ),
-                      style: TextStyle(color: c.muted),
-                    ),
-                  )
-                : GridView.builder(
-                    gridDelegate:
-                        const SliverGridDelegateWithMaxCrossAxisExtent(
-                          maxCrossAxisExtent: 300,
-                          mainAxisExtent: 72,
-                          crossAxisSpacing: 10,
-                          mainAxisSpacing: 10,
+            child: AnimatedSectionSwitch(
+              child: list.isEmpty
+                  ? Center(
+                      key: ValueKey(('empty', _pageGroup, _blfFilter)),
+                      child: Text(
+                        tr(
+                          'Nessun interno. Aggiungi quelli che chiami più spesso.',
                         ),
-                    itemCount: slice.length,
-                    itemBuilder: (_, i) {
-                      final e = slice[i];
-                      return _ExtensionTile(
-                        ext: e,
-                        callable: phone.isCallable(e),
-                        canDial: phone.canDial,
-                        blf: phone.blfOf(e),
-                        blfStale: phone.blfStale(e),
-                        presence: phone.presenceOf(e),
-                        favorite: phone.isFavorite(e),
-                        onFavorite: () => phone.toggleFavorite(e),
-                        // Tramite l'account SIP del PBX dell'interno.
-                        onCall: () => phone.dial(e.number, via: e),
-                        onRemove: phone.isManual(e)
-                            ? () => phone.removeExtension(e)
-                            : null,
-                      );
-                    },
-                  ),
+                        style: TextStyle(color: c.muted),
+                      ),
+                    )
+                  : GridView.builder(
+                      key: ValueKey(('grid', _pageGroup, _blfFilter, _page)),
+                      gridDelegate:
+                          const SliverGridDelegateWithMaxCrossAxisExtent(
+                            maxCrossAxisExtent: 300,
+                            mainAxisExtent: 72,
+                            crossAxisSpacing: 10,
+                            mainAxisSpacing: 10,
+                          ),
+                      itemCount: slice.length,
+                      itemBuilder: (_, i) {
+                        final e = slice[i];
+                        return _ExtensionTile(
+                          ext: e,
+                          callable: phone.isCallable(e),
+                          canDial: phone.canDial,
+                          blf: phone.blfOf(e),
+                          blfStale: phone.blfStale(e),
+                          presence: phone.presenceOf(e),
+                          favorite: phone.isFavorite(e),
+                          onFavorite: () => phone.toggleFavorite(e),
+                          // Tramite l'account SIP del PBX dell'interno.
+                          onCall: () => phone.dial(e.number, via: e),
+                          onRemove: phone.isManual(e)
+                              ? () => phone.removeExtension(e)
+                              : null,
+                        );
+                      },
+                    ),
+            ),
           ),
           const SizedBox(height: 8),
           Pager(
@@ -1145,67 +1332,78 @@ class _GroupsPanelState extends State<_GroupsPanel> {
     final selected = phone.selectedGroup == r.key;
     final open = !_collapsed.contains(r.key);
     return Padding(
+      key: ValueKey('tree_${r.key}'),
       padding: const EdgeInsets.only(bottom: 2),
-      child: Material(
-        color: selected ? c.keyBtn : Colors.transparent,
-        borderRadius: BorderRadius.circular(8),
-        child: InkWell(
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 160),
+        curve: Curves.easeOutCubic,
+        decoration: BoxDecoration(
+          color: selected ? c.keyBtn : Colors.transparent,
           borderRadius: BorderRadius.circular(8),
-          onTap: () => phone.selectGroup(r.key),
-          child: SizedBox(
-            height: 36,
-            child: Row(
-              children: [
-                Container(
-                  width: 3,
-                  height: 20,
-                  decoration: BoxDecoration(
-                    color: selected ? c.accent : Colors.transparent,
-                    borderRadius: BorderRadius.circular(2),
+        ),
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(8),
+            onTap: () => phone.selectGroup(r.key),
+            child: SizedBox(
+              height: 36,
+              child: Row(
+                children: [
+                  AnimatedContainer(
+                    duration: const Duration(milliseconds: 160),
+                    curve: Curves.easeOutCubic,
+                    width: 3,
+                    height: selected ? 20 : 0,
+                    decoration: BoxDecoration(
+                      color: selected ? c.accent : Colors.transparent,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
                   ),
-                ),
-                for (var d = 0; d < r.depth; d++)
+                  for (var d = 0; d < r.depth; d++)
+                    SizedBox(
+                      width: 16,
+                      child: Center(
+                        child: Container(width: 1, height: 36, color: c.border),
+                      ),
+                    ),
                   SizedBox(
-                    width: 16,
-                    child: Center(
-                      child: Container(width: 1, height: 36, color: c.border),
+                    width: 24,
+                    child: r.hasChildren
+                        ? IconButton(
+                            padding: EdgeInsets.zero,
+                            iconSize: 18,
+                            tooltip: open ? tr('Chiudi') : tr('Apri'),
+                            onPressed: () => setState(
+                              () => open
+                                  ? _collapsed.add(r.key)
+                                  : _collapsed.remove(r.key),
+                            ),
+                            icon: AnimatedRotation(
+                              turns: open ? 0.25 : 0,
+                              duration: const Duration(milliseconds: 180),
+                              curve: Curves.easeOutCubic,
+                              child: Icon(Icons.chevron_right, color: c.muted),
+                            ),
+                          )
+                        : null,
+                  ),
+                  Icon(r.icon, size: 18, color: selected ? c.accent : c.muted),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      r.label,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: selected ? c.accent : c.text,
+                        fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+                      ),
                     ),
                   ),
-                SizedBox(
-                  width: 24,
-                  child: r.hasChildren
-                      ? IconButton(
-                          padding: EdgeInsets.zero,
-                          iconSize: 18,
-                          tooltip: open ? tr('Chiudi') : tr('Apri'),
-                          onPressed: () => setState(
-                            () => open
-                                ? _collapsed.add(r.key)
-                                : _collapsed.remove(r.key),
-                          ),
-                          icon: AnimatedRotation(
-                            turns: open ? 0.25 : 0,
-                            duration: const Duration(milliseconds: 150),
-                            child: Icon(Icons.chevron_right, color: c.muted),
-                          ),
-                        )
-                      : null,
-                ),
-                Icon(r.icon, size: 18, color: selected ? c.accent : c.muted),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    r.label,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: selected ? c.accent : c.text,
-                      fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
-                    ),
-                  ),
-                ),
-                _pill(c, r.count, selected),
-                const SizedBox(width: 8),
-              ],
+                  _pill(c, r.count, selected),
+                  const SizedBox(width: 8),
+                ],
+              ),
             ),
           ),
         ),

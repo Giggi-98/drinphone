@@ -180,11 +180,13 @@ spikes/f0a/                         spike F0-A (non prodotto)
   doppioni per numero (`sameNumber`). In Rubrica, ricerca e nome del chiamante.
 - **SettingsStore** — `settings.json` (profili, come sopra) + password in
   `flutter_secure_storage`.
-- **UI** — `ChangeNotifier` senza librerie di stato. Sezioni: Interni (lista locale,
-  pallino e testo da BLF SIP + presenza Yeastar; pannello reparti solo se il PBX
-  li fornisce, sola lettura), Live Calls, Rubrica, Registro chiamate, Casella
-  vocale; in fondo Preferenze (schede Utente, Presenza, Casella vocale, Audio,
-  Funzionalità — solo segnaposto —, Integrazione PBX, Lingua, Diagnostica).
+- **UI** — `ChangeNotifier` senza librerie di stato. Sezioni con transizioni
+  animate e indicatori di stato visivi: Interni (lista locale, anello BLF SIP +
+  presenza Yeastar, filtro rapido per stato BLF; pannello reparti se il PBX li
+  fornisce, sola lettura), Live Calls, Rubrica, Registro chiamate, Casella
+  vocale; in fondo Preferenze organizzate in 2 ambiti (`Profilo`: Account SIP e
+  Integrazione PBX, Presenza, Casella vocale; `Applicazione`: Audio/Cifratura/
+  Funzionalità, Diagnostica/Lingua/Tema).
 - **Push / Yeastar / Update** — non implementati (F4 / F6 / F7).
 
 ## 4. Flussi

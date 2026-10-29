@@ -10,72 +10,191 @@ import '../../core/sip/sip_engine.dart';
 import '../account/api_dialog.dart';
 import '../shell/widgets.dart';
 
-/// Preferenze a schede (organizzazione ispirata a Linkus Desktop: Utente,
-/// Presenza, Casella vocale, Audio, Funzionalità, Integrazione, Lingua…).
-class PreferencesView extends StatelessWidget {
+/// Preferenze riorganizzate per ambito (Profilo vs Applicazione) con
+/// transizioni fluide tra le sezioni e indicatori di stato visivi.
+class PreferencesView extends StatefulWidget {
   const PreferencesView({super.key, required this.phone, this.initialTab = 0});
   final PhoneController phone;
   final int initialTab;
 
   @override
+  State<PreferencesView> createState() => _PreferencesViewState();
+}
+
+class _PreferencesViewState extends State<PreferencesView> {
+  late int _index = _mapInitialTab(widget.initialTab);
+
+  int _mapInitialTab(int tab) {
+    // 5 era "Integrazione PBX", ora unificata nella prima sezione con Account SIP.
+    if (tab == 5 || tab == 0) return 0;
+    if (tab == 1 && widget.phone.isYeastar) return 1;
+    return tab;
+  }
+
+  @override
+  void didUpdateWidget(covariant PreferencesView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.initialTab != widget.initialTab) {
+      _index = _mapInitialTab(widget.initialTab);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     final c = context.drin;
-    final tabs = [
-      (tr('Utente'), _UserTab(phone: phone)),
-      if (phone.isYeastar) (tr('Presenza'), _PresenceTab(phone: phone)),
-      (tr('Casella vocale'), _VoicemailTab(phone: phone)),
-      (tr('Audio'), AudioSettings(phone: phone)),
-      (tr('Funzionalità'), const _FeaturesTab()),
+    final phone = widget.phone;
+    final profileItems = <(IconData, String, Widget)>[
+      (trIconAccount, tr('Account SIP'), _UserTab(phone: phone)),
       if (phone.isYeastar)
-        (tr('Integrazione PBX'), PbxConnectionsPanel(phone: phone)),
-      (tr('Lingua'), _LanguageTab(phone: phone)),
-      (tr('Avanzate'), _AdvancedTab(phone: phone)),
-      (tr('Diagnostica'), _DiagnosticsTab(phone: phone)),
-    ];
-    return DefaultTabController(
-      length: tabs.length,
-      initialIndex: initialTab.clamp(0, tabs.length - 1),
-      child: Container(
-        margin: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: c.surface,
-          border: Border.all(color: c.border),
-          borderRadius: BorderRadius.circular(14),
+        (
+          Icons.verified_user_outlined,
+          tr('Presenza'),
+          _PresenceTab(phone: phone),
         ),
-        child: Column(
+      (
+        Icons.voicemail_rounded,
+        tr('Casella vocale'),
+        _VoicemailTab(phone: phone),
+      ),
+    ];
+    final appItems = <(IconData, String, Widget)>[
+      (
+        Icons.headphones_rounded,
+        tr('Audio'),
+        Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            TabBar(
-              isScrollable: true,
-              tabAlignment: TabAlignment.start,
-              labelColor: c.accent,
-              unselectedLabelColor: c.text,
-              indicatorColor: c.accent,
-              dividerColor: c.border,
-              tabs: [for (final t in tabs) Tab(text: t.$1)],
-            ),
-            Expanded(
-              child: TabBarView(
-                children: [
-                  for (final t in tabs)
-                    SingleChildScrollView(
-                      padding: const EdgeInsets.all(20),
-                      child: Align(
-                        alignment: Alignment.topLeft,
-                        child: ConstrainedBox(
-                          constraints: const BoxConstraints(maxWidth: 900),
-                          child: t.$2,
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-            ),
+            AudioSettings(phone: phone),
+            _AdvancedTab(phone: phone),
+            const _FeaturesTab(),
           ],
         ),
       ),
+      (
+        Icons.settings_suggest_rounded,
+        tr('Diagnostica'),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _LanguageTab(phone: phone),
+            _DiagnosticsTab(phone: phone),
+          ],
+        ),
+      ),
+    ];
+    final all = [...profileItems, ...appItems];
+    final idx = _index.clamp(0, all.length - 1);
+
+    Widget navHeader(String label) => Padding(
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 6),
+      child: Text(
+        label.toUpperCase(),
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+          letterSpacing: 0.8,
+          color: c.muted,
+        ),
+      ),
+    );
+
+    Widget navTile(int i, IconData icon, String label) {
+      final active = i == idx;
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 4),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(10),
+          onTap: () => setState(() => _index = i),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 180),
+            curve: Curves.easeOutCubic,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              color: active ? c.accent.withValues(alpha: 0.14) : Colors.transparent,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                color: active
+                    ? c.accent.withValues(alpha: 0.35)
+                    : Colors.transparent,
+              ),
+            ),
+            child: Row(
+              children: [
+                Icon(icon, size: 18, color: active ? c.accent : c.muted),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    label,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: active ? FontWeight.w700 : FontWeight.w500,
+                      color: active ? c.accent : c.text,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Container(
+      margin: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: c.surface,
+        border: Border.all(color: c.border),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Container(
+            width: 220,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              border: Border(right: BorderSide(color: c.border)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                navHeader(tr('Profilo')),
+                for (var i = 0; i < profileItems.length; i++)
+                  navTile(i, profileItems[i].$1, profileItems[i].$2),
+                const SizedBox(height: 8),
+                Divider(color: c.border, height: 1),
+                navHeader(tr('Applicazione')),
+                for (var i = 0; i < appItems.length; i++)
+                  navTile(
+                    profileItems.length + i,
+                    appItems[i].$1,
+                    appItems[i].$2,
+                  ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: AnimatedSectionSwitch(
+              child: SingleChildScrollView(
+                key: ValueKey('pref-scroll-$idx'),
+                padding: const EdgeInsets.all(20),
+                child: Align(
+                  alignment: Alignment.topLeft,
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 900),
+                    child: all[idx].$3,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
+
+  static const IconData trIconAccount = Icons.hub_rounded;
 }
 
 /// Riquadro con titolo, come le sezioni delle preferenze di Linkus.
@@ -125,31 +244,46 @@ class _Card extends StatelessWidget {
 }
 
 class _Field extends StatelessWidget {
-  const _Field(this.label, this.value);
+  const _Field(this.label, this.value, {this.icon});
   final String label;
   final String value;
+  final IconData? icon;
 
   @override
   Widget build(BuildContext context) {
     final c = context.drin;
-    return SizedBox(
-      width: 380,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+    return Container(
+      constraints: const BoxConstraints(minWidth: 160, maxWidth: 280),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: c.surface,
+        border: Border.all(color: c.border),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Text(label, style: TextStyle(fontSize: 12, color: c.muted)),
-          const SizedBox(height: 4),
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-            decoration: BoxDecoration(
-              color: c.field,
-              border: Border.all(color: c.border),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Text(
-              value.isEmpty ? '—' : value,
-              style: TextStyle(color: c.text),
+          if (icon != null) ...[
+            Icon(icon, size: 16, color: c.muted),
+            const SizedBox(width: 8),
+          ],
+          Flexible(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(label, style: TextStyle(fontSize: 11, color: c.muted)),
+                const SizedBox(height: 2),
+                Text(
+                  value.isEmpty ? '—' : value,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: c.text,
+                  ),
+                ),
+              ],
             ),
           ),
         ],
@@ -181,23 +315,39 @@ class _UserTab extends StatelessWidget {
             child: Icon(Icons.lock_outline, size: 16, color: c.muted),
           ),
           child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               StatusAvatar(
                 name: me?.name ?? a?.displayName ?? '?',
                 presence: me?.presence ?? '',
-                size: 64,
+                size: 56,
               ),
-              const SizedBox(width: 24),
+              const SizedBox(width: 20),
               Expanded(
                 child: Wrap(
-                  spacing: 20,
-                  runSpacing: 14,
+                  spacing: 12,
+                  runSpacing: 10,
                   children: [
-                    _Field(tr('Interno'), a?.username ?? ''),
-                    _Field(tr('Nome'), me?.name ?? a?.displayName ?? ''),
-                    _Field(tr('Email'), me?.email ?? ''),
-                    _Field(tr('Cellulare'), me?.mobile ?? ''),
+                    _Field(
+                      tr('Interno'),
+                      a?.username ?? '',
+                      icon: Icons.tag_rounded,
+                    ),
+                    _Field(
+                      tr('Nome'),
+                      me?.name ?? a?.displayName ?? '',
+                      icon: Icons.person_outline_rounded,
+                    ),
+                    _Field(
+                      tr('Email'),
+                      me?.email ?? '',
+                      icon: Icons.alternate_email_rounded,
+                    ),
+                    _Field(
+                      tr('Cellulare'),
+                      me?.mobile ?? '',
+                      icon: Icons.smartphone_rounded,
+                    ),
                   ],
                 ),
               ),
@@ -234,6 +384,7 @@ class _UserTab extends StatelessWidget {
             ],
           ),
         ),
+        if (phone.isYeastar) PbxConnectionsPanel(phone: phone),
       ],
     );
   }
@@ -268,10 +419,18 @@ class _AccountTile extends StatelessWidget {
         children: [
           Tooltip(
             message: state,
-            child: Container(
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 220),
               width: 10,
               height: 10,
-              decoration: BoxDecoration(color: dot, shape: BoxShape.circle),
+              decoration: BoxDecoration(
+                color: dot,
+                shape: BoxShape.circle,
+                boxShadow: [
+                  if (phone.registrations[a.id]?.status == RegistrationStatus.ok)
+                    BoxShadow(color: dot.withValues(alpha: 0.4), blurRadius: 6),
+                ],
+              ),
             ),
           ),
           const SizedBox(width: 12),
@@ -746,24 +905,44 @@ class _PresenceTabState extends State<_PresenceTab> {
           const SizedBox(width: 8),
           SizedBox(
             width: 150,
-            child: Text(label, style: TextStyle(color: c.text)),
+            child: Text(
+              label,
+              style: TextStyle(color: on ? c.text : c.muted),
+            ),
           ),
           if (on)
             Expanded(
               child: Row(
                 children: [
-                  Icon(Icons.arrow_forward_rounded, size: 14, color: c.muted),
+                  Icon(Icons.arrow_forward_rounded, size: 14, color: c.accent),
                   const SizedBox(width: 6),
-                  Expanded(
-                    child: Text(
-                      _dest(f!),
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(color: c.text),
+                  Flexible(
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: c.surface,
+                        border: Border.all(color: c.border),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text(
+                        _dest(f!),
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: c.text,
+                        ),
+                      ),
                     ),
                   ),
                 ],
               ),
-            ),
+            )
+          else
+            Text('—', style: TextStyle(color: c.muted)),
         ],
       ),
     );
@@ -848,19 +1027,44 @@ class _PresenceTabState extends State<_PresenceTab> {
                   for (final st in _statuses)
                     () {
                       final pr = presenceOf(c, st)!;
-                      return ChoiceChip(
-                        selected: st == viewed,
-                        onSelected: (_) => setState(() => _viewed = st),
-                        avatar: Icon(pr.$1, size: 16, color: pr.$2),
-                        label: Text(
-                          st == current ? '${pr.$3} · ${tr('attuale')}' : pr.$3,
+                      final isCurrent = st == current;
+                      return Tooltip(
+                        message: isCurrent
+                            ? '${pr.$3} · ${tr('attuale')}'
+                            : pr.$3,
+                        child: ChoiceChip(
+                          selected: st == viewed,
+                          showCheckmark: false,
+                          onSelected: (_) => setState(() => _viewed = st),
+                          avatar: Icon(pr.$1, size: 16, color: pr.$2),
+                          label: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(pr.$3),
+                              if (isCurrent) ...[
+                                const SizedBox(width: 6),
+                                Container(
+                                  width: 7,
+                                  height: 7,
+                                  decoration: BoxDecoration(
+                                    color: pr.$2,
+                                    shape: BoxShape.circle,
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
                         ),
                       );
                     }(),
                 ],
               ),
               const SizedBox(height: 14),
-              _Field(tr('Informazioni di presenza'), d?.customPresence ?? ''),
+              _Field(
+                tr('Informazioni di presenza'),
+                d?.customPresence ?? '',
+                icon: Icons.chat_bubble_outline_rounded,
+              ),
               if (d == null) ...[
                 const SizedBox(height: 10),
                 Text(
@@ -877,19 +1081,22 @@ class _PresenceTabState extends State<_PresenceTab> {
           title: tr('Inoltro di chiamata · {p}', {
             'p': presenceOf(c, viewed)!.$3,
           }),
-          child: Wrap(
-            spacing: 40,
-            runSpacing: 16,
-            children: [
-              SizedBox(
-                width: 380,
-                child: _forwards(c, tr('Chiamate interne'), 'in', setting),
-              ),
-              SizedBox(
-                width: 380,
-                child: _forwards(c, tr('Chiamate esterne'), 'ex', setting),
-              ),
-            ],
+          child: AnimatedSectionSwitch(
+            child: Wrap(
+              key: ValueKey('fwd-wrap-$viewed'),
+              spacing: 40,
+              runSpacing: 16,
+              children: [
+                SizedBox(
+                  width: 380,
+                  child: _forwards(c, tr('Chiamate interne'), 'in', setting),
+                ),
+                SizedBox(
+                  width: 380,
+                  child: _forwards(c, tr('Chiamate esterne'), 'ex', setting),
+                ),
+              ],
+            ),
           ),
         ),
         _Card(
@@ -900,6 +1107,7 @@ class _PresenceTabState extends State<_PresenceTab> {
               _Field(
                 tr('Timeout squillo (s)'),
                 d?.ringTimeout == null ? '' : '${d!.ringTimeout}',
+                icon: Icons.timer_outlined,
               ),
               const SizedBox(height: 10),
               _option(
@@ -942,7 +1150,22 @@ class _VoicemailTabState extends State<_VoicemailTab> {
     super.dispose();
   }
 
-  String _yes(bool v) => v ? tr('Sì') : tr('No');
+  Widget _boolBadge(DrinColors c, String label, bool on) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+    decoration: BoxDecoration(
+      color: c.surface,
+      border: Border.all(color: c.border),
+      borderRadius: BorderRadius.circular(10),
+    ),
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _ReadOnlyCheck(on),
+        const SizedBox(width: 8),
+        Text(label, style: TextStyle(fontSize: 13, color: c.text)),
+      ],
+    ),
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -962,29 +1185,48 @@ class _VoicemailTabState extends State<_VoicemailTab> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Wrap(
-          spacing: 16,
-          runSpacing: 12,
+          spacing: 10,
+          runSpacing: 10,
           children: [
-            _Field(tr('Casella vocale attiva'), _yes(d.vmEnabled)),
-            _Field(tr('PIN richiesto'), _yes(d.vmPinAuth)),
-            _Field(tr('Notifica nuovi messaggi'), switch (d.vmNotification) {
-              'no' => tr('Nessuna email'),
-              'with_attach' => tr('Email con allegato'),
-              'without_attach' => tr('Email senza allegato'),
-              _ => d.vmNotification,
-            }),
-            _Field(tr('Dopo la notifica'), switch (d.vmAfterNotification) {
-              'no' => tr('Lascia da ascoltare'),
-              'mark_read' => tr('Segna come ascoltato'),
-              'delete' => tr('Elimina'),
-              _ => d.vmAfterNotification,
-            }),
-            _Field(tr('Annuncia data e ora'), _yes(d.vmPlayDatetime)),
-            _Field(tr('Messaggio di benvenuto'), switch (d.vmGreeting) {
-              'follow_system' => tr('Come il sistema'),
-              'no_greeting' => tr('Nessuno'),
-              _ => d.vmGreeting,
-            }),
+            _boolBadge(c, tr('Casella vocale attiva'), d.vmEnabled),
+            _boolBadge(c, tr('PIN richiesto'), d.vmPinAuth),
+            _boolBadge(c, tr('Annuncia data e ora'), d.vmPlayDatetime),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Wrap(
+          spacing: 12,
+          runSpacing: 10,
+          children: [
+            _Field(
+              tr('Notifica nuovi messaggi'),
+              switch (d.vmNotification) {
+                'no' => tr('Nessuna email'),
+                'with_attach' => tr('Email con allegato'),
+                'without_attach' => tr('Email senza allegato'),
+                _ => d.vmNotification,
+              },
+              icon: Icons.mark_email_unread_outlined,
+            ),
+            _Field(
+              tr('Dopo la notifica'),
+              switch (d.vmAfterNotification) {
+                'no' => tr('Lascia da ascoltare'),
+                'mark_read' => tr('Segna come ascoltato'),
+                'delete' => tr('Elimina'),
+                _ => d.vmAfterNotification,
+              },
+              icon: Icons.done_all_rounded,
+            ),
+            _Field(
+              tr('Messaggio di benvenuto'),
+              switch (d.vmGreeting) {
+                'follow_system' => tr('Come il sistema'),
+                'no_greeting' => tr('Nessuno'),
+                _ => d.vmGreeting,
+              },
+              icon: Icons.record_voice_over_outlined,
+            ),
           ],
         ),
         const SizedBox(height: 12),
@@ -1317,20 +1559,51 @@ class _LanguageTab extends StatelessWidget {
   final PhoneController phone;
 
   @override
-  Widget build(BuildContext context) => _Card(
-    title: tr('Lingua'),
-    child: Align(
-      alignment: Alignment.centerLeft,
-      child: SegmentedButton<AppLang>(
-        segments: [
-          for (final l in AppLang.values)
-            ButtonSegment(value: l, label: Text(l.label)),
+  Widget build(BuildContext context) {
+    return _Card(
+      title: tr('Lingua'),
+      child: Wrap(
+        spacing: 24,
+        runSpacing: 14,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          SegmentedButton<AppLang>(
+            segments: [
+              for (final l in AppLang.values)
+                ButtonSegment(value: l, label: Text(l.label)),
+            ],
+            selected: {appLang.value},
+            onSelectionChanged: (s) => phone.setLanguage(s.first),
+          ),
+          ValueListenableBuilder<ThemeMode>(
+            valueListenable: appThemeMode,
+            builder: (context, mode, _) => SegmentedButton<ThemeMode>(
+              showSelectedIcon: false,
+              segments: [
+                ButtonSegment(
+                  value: ThemeMode.system,
+                  tooltip: tr('Sistema'),
+                  icon: const Icon(Icons.brightness_auto_rounded, size: 18),
+                ),
+                ButtonSegment(
+                  value: ThemeMode.dark,
+                  tooltip: tr('Scuro'),
+                  icon: const Icon(Icons.dark_mode_rounded, size: 18),
+                ),
+                ButtonSegment(
+                  value: ThemeMode.light,
+                  tooltip: tr('Chiaro'),
+                  icon: const Icon(Icons.light_mode_rounded, size: 18),
+                ),
+              ],
+              selected: {mode},
+              onSelectionChanged: (s) => appThemeMode.value = s.first,
+            ),
+          ),
         ],
-        selected: {appLang.value},
-        onSelectionChanged: (s) => phone.setLanguage(s.first),
       ),
-    ),
-  );
+    );
+  }
 }
 
 // --------------------------------------------------------------- Diagnostica
@@ -1375,7 +1648,8 @@ class _DiagnosticsTab extends StatelessWidget {
   }
 }
 
-/// Casella di sola lettura (valore letto dal PBX, non modificabile).
+/// Indicatore visivo di sola lettura (valore booleano letto dal PBX): mostra
+/// lo stato tramite icona e colore con etichetta nel tooltip.
 class _ReadOnlyCheck extends StatelessWidget {
   const _ReadOnlyCheck(this.on);
   final bool on;
@@ -1383,16 +1657,12 @@ class _ReadOnlyCheck extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = context.drin;
-    return SizedBox(
-      width: 20,
-      height: 20,
-      child: Checkbox(
-        value: on,
-        onChanged: null,
-        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-        visualDensity: VisualDensity.compact,
-        fillColor: WidgetStatePropertyAll(on ? c.accent : Colors.transparent),
-        side: BorderSide(color: c.muted, width: 1.5),
+    return Tooltip(
+      message: on ? tr('Sì') : tr('No'),
+      child: Icon(
+        on ? Icons.check_circle_rounded : Icons.remove_circle_outline_rounded,
+        size: 18,
+        color: on ? c.ok : c.muted,
       ),
     );
   }

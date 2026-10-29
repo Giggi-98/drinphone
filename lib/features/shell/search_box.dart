@@ -41,6 +41,7 @@ class _SearchBoxState extends State<SearchBox> {
     super.initState();
     _focus.addListener(() {
       if (!_focus.hasFocus) _results.hide();
+      if (mounted) setState(() {});
     });
   }
 
@@ -110,18 +111,20 @@ class _SearchBoxState extends State<SearchBox> {
       link: _link,
       targetAnchor: Alignment.bottomLeft,
       offset: const Offset(0, 8),
-      child: Material(
-        color: c.surface,
-        elevation: 12,
-        shadowColor: Colors.black54,
-        borderRadius: BorderRadius.circular(14),
-        child: Container(
-          decoration: BoxDecoration(
-            border: Border.all(color: c.border),
-            borderRadius: BorderRadius.circular(14),
+      child: AnimatedPopup(
+        child: Material(
+          color: c.surface,
+          elevation: 12,
+          shadowColor: Colors.black54,
+          borderRadius: BorderRadius.circular(14),
+          child: Container(
+            decoration: BoxDecoration(
+              border: Border.all(color: c.border),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            padding: const EdgeInsets.all(8),
+            child: child,
           ),
-          padding: const EdgeInsets.all(8),
-          child: child,
         ),
       ),
     ),
@@ -259,73 +262,83 @@ class _SearchBoxState extends State<SearchBox> {
         overlayChildBuilder: (_) => _popup(c, _resultsList(c)),
         child: CompositedTransformTarget(
           link: _link,
-          child: Container(
-            width: _width,
-            padding: const EdgeInsets.fromLTRB(12, 4, 4, 4),
-            decoration: BoxDecoration(
-              color: c.field,
-              border: Border.all(color: c.border),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Row(
-              children: [
-                Icon(Icons.search_rounded, size: 18, color: c.muted),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Focus(
-                    onKeyEvent: _key,
-                    child: TextField(
-                      controller: _text,
-                      focusNode: _focus,
-                      onChanged: _changed,
-                      onTap: () {
-                        if (_typed.isNotEmpty) _results.show();
-                      },
-                      onSubmitted: (_) {
-                        _activate(_selected);
-                        _focus.requestFocus();
-                      },
-                      style: mono(c.text, size: 15),
-                      decoration: InputDecoration(
-                        hintText: tr('Numero, interno o nome'),
-                        // Il segnaposto non eredita il monospazio del testo digitato.
-                        hintStyle: TextStyle(
-                          fontFamily: 'Segoe UI Variable Text',
-                          fontFamilyFallback: const ['Segoe UI'],
-                          fontSize: 14,
-                          color: c.muted,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: _width),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 180),
+              curve: Curves.easeOutCubic,
+              padding: const EdgeInsets.fromLTRB(12, 4, 4, 4),
+              decoration: BoxDecoration(
+                color: c.field,
+                border: Border.all(
+                  color: _focus.hasFocus ? c.accent : c.border,
+                ),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.search_rounded,
+                    size: 18,
+                    color: _focus.hasFocus ? c.accent : c.muted,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Focus(
+                      onKeyEvent: _key,
+                      child: TextField(
+                        controller: _text,
+                        focusNode: _focus,
+                        onChanged: _changed,
+                        onTap: () {
+                          if (_typed.isNotEmpty) _results.show();
+                        },
+                        onSubmitted: (_) {
+                          _activate(_selected);
+                          _focus.requestFocus();
+                        },
+                        style: mono(c.text, size: 15),
+                        decoration: InputDecoration(
+                          hintText: tr('Numero, interno o nome'),
+                          // Il segnaposto non eredita il monospazio del testo digitato.
+                          hintStyle: TextStyle(
+                            fontFamily: 'Segoe UI Variable Text',
+                            fontFamilyFallback: const ['Segoe UI'],
+                            fontSize: 14,
+                            color: c.muted,
+                          ),
+                          border: InputBorder.none,
+                          enabledBorder: InputBorder.none,
+                          focusedBorder: InputBorder.none,
+                          filled: false,
                         ),
-                        border: InputBorder.none,
-                        enabledBorder: InputBorder.none,
-                        focusedBorder: InputBorder.none,
-                        filled: false,
                       ),
                     ),
                   ),
-                ),
-                IconButton(
-                  tooltip: tr('Tastierino'),
-                  style: IconButton.styleFrom(
-                    backgroundColor: c.keyBtn,
-                    foregroundColor: c.accent,
+                  IconButton(
+                    tooltip: tr('Tastierino'),
+                    style: IconButton.styleFrom(
+                      backgroundColor: c.keyBtn,
+                      foregroundColor: c.accent,
+                    ),
+                    onPressed: _keypad.toggle,
+                    icon: const Icon(Icons.dialpad_rounded, size: 18),
                   ),
-                  onPressed: _keypad.toggle,
-                  icon: const Icon(Icons.dialpad_rounded, size: 18),
-                ),
-                const SizedBox(width: 4),
-                IconButton(
-                  tooltip: tr('Chiama'),
-                  style: IconButton.styleFrom(
-                    backgroundColor: DrinColors.callGreen,
-                    foregroundColor: Colors.white,
-                    disabledBackgroundColor: c.keyBtn,
+                  const SizedBox(width: 4),
+                  IconButton(
+                    tooltip: tr('Chiama'),
+                    style: IconButton.styleFrom(
+                      backgroundColor: DrinColors.callGreen,
+                      foregroundColor: Colors.white,
+                      disabledBackgroundColor: c.keyBtn,
+                    ),
+                    onPressed: p.canDial && _rows > 0
+                        ? () => _activate(_selected)
+                        : null,
+                    icon: const Icon(Icons.call_rounded, size: 18),
                   ),
-                  onPressed: p.canDial && _rows > 0
-                      ? () => _activate(_selected)
-                      : null,
-                  icon: const Icon(Icons.call_rounded, size: 18),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),

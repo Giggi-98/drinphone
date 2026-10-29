@@ -361,18 +361,22 @@ class _CallsTableState extends State<_CallsTable> {
                             ),
                             Expanded(
                               flex: 2,
-                              child: Row(
-                                children: [
-                                  Icon(icon, size: 16, color: color),
-                                  const SizedBox(width: 6),
-                                  Flexible(
-                                    child: Text(
-                                      label,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: TextStyle(color: color),
+                              child: Align(
+                                alignment: Alignment.centerLeft,
+                                child: Tooltip(
+                                  message: label,
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 4,
                                     ),
+                                    decoration: BoxDecoration(
+                                      color: color.withValues(alpha: 0.14),
+                                      borderRadius: BorderRadius.circular(999),
+                                    ),
+                                    child: Icon(icon, size: 16, color: color),
                                   ),
-                                ],
+                                ),
                               ),
                             ),
                             Expanded(
@@ -498,13 +502,17 @@ class _BlfColumnState extends State<_BlfColumn> {
                 for (final (name, list, fav) in groups)
                   if (list.isNotEmpty || (fav && q.isEmpty)) ...[
                     InkWell(
+                      borderRadius: BorderRadius.circular(8),
                       onTap: () => setState(
                         () => _closed.contains(name)
                             ? _closed.remove(name)
                             : _closed.add(name),
                       ),
                       child: Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        padding: const EdgeInsets.symmetric(
+                          vertical: 8,
+                          horizontal: 4,
+                        ),
                         child: Row(
                           children: [
                             if (fav)
@@ -524,19 +532,34 @@ class _BlfColumnState extends State<_BlfColumn> {
                                 ),
                               ),
                             ),
-                            Icon(
-                              _closed.contains(name)
-                                  ? Icons.expand_more_rounded
-                                  : Icons.expand_less_rounded,
-                              size: 18,
-                              color: c.muted,
+                            AnimatedRotation(
+                              turns: _closed.contains(name) ? -0.25 : 0,
+                              duration: const Duration(milliseconds: 200),
+                              curve: Curves.easeOutCubic,
+                              child: Icon(
+                                Icons.expand_more_rounded,
+                                size: 18,
+                                color: c.muted,
+                              ),
                             ),
                           ],
                         ),
                       ),
                     ),
-                    if (!_closed.contains(name))
-                      for (final e in list) _BlfRow(phone: p, ext: e),
+                    AnimatedSize(
+                      duration: const Duration(milliseconds: 220),
+                      curve: Curves.easeOutCubic,
+                      alignment: Alignment.topCenter,
+                      child: _closed.contains(name)
+                          ? const SizedBox.shrink()
+                          : Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                for (final e in list)
+                                  _BlfRow(phone: p, ext: e),
+                              ],
+                            ),
+                    ),
                     Divider(color: c.border, height: 8),
                   ],
               ],
@@ -580,7 +603,8 @@ class _BlfRow extends StatelessWidget {
           padding: const EdgeInsets.symmetric(vertical: 5, horizontal: 4),
           child: Row(
             children: [
-              Container(
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 220),
                 width: 10,
                 height: 10,
                 decoration: BoxDecoration(color: dot, shape: BoxShape.circle),

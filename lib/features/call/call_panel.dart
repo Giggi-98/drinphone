@@ -79,144 +79,149 @@ class _CallPanelState extends State<CallPanel> {
           ),
         ],
       ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(
-            _status,
-            style: TextStyle(
-              color: incoming ? c.ringing : c.accent,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: 12),
-          Text(
-            title.isEmpty ? tr('Sconosciuto') : title,
-            style: TextStyle(
-              fontSize: 22,
-              fontWeight: FontWeight.w600,
-              color: c.text,
-            ),
-            overflow: TextOverflow.ellipsis,
-          ),
-          if (name.isNotEmpty)
+      child: AnimatedSize(
+        duration: const Duration(milliseconds: 220),
+        curve: Curves.easeOutCubic,
+        alignment: Alignment.bottomCenter,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
             Text(
-              call.remoteNumber,
-              style: TextStyle(fontFamily: monoFont, color: c.muted),
+              _status,
+              style: TextStyle(
+                color: incoming ? c.ringing : c.accent,
+                fontWeight: FontWeight.w600,
+              ),
             ),
-          const SizedBox(height: 20),
-          if (incoming)
-            Row(
-              children: [
-                Expanded(
-                  child: _bigButton(
-                    tr('Rispondi'),
-                    DrinColors.callGreen,
-                    p.answer,
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: _bigButton(
-                    tr('Rifiuta'),
-                    DrinColors.hangupRed,
-                    p.hangup,
-                  ),
-                ),
-              ],
-            )
-          else ...[
-            if (call.phase != CallPhase.outgoing)
+            const SizedBox(height: 12),
+            Text(
+              title.isEmpty ? tr('Sconosciuto') : title,
+              style: TextStyle(
+                fontSize: 22,
+                fontWeight: FontWeight.w600,
+                color: c.text,
+              ),
+              overflow: TextOverflow.ellipsis,
+            ),
+            if (name.isNotEmpty)
+              Text(
+                call.remoteNumber,
+                style: TextStyle(fontFamily: monoFont, color: c.muted),
+              ),
+            const SizedBox(height: 20),
+            if (incoming)
               Row(
                 children: [
                   Expanded(
-                    child: _toggle(
-                      context,
-                      p.muted ? tr('Riattiva') : tr('Muto'),
-                      p.muted,
-                      Icons.mic_off_outlined,
-                      p.toggleMute,
+                    child: _bigButton(
+                      tr('Rispondi'),
+                      DrinColors.callGreen,
+                      p.answer,
                     ),
                   ),
                   const SizedBox(width: 10),
                   Expanded(
-                    child: _toggle(
-                      context,
-                      p.onHold ? tr('Riprendi') : tr('Attesa'),
-                      p.onHold,
-                      Icons.pause_rounded,
-                      p.toggleHold,
+                    child: _bigButton(
+                      tr('Rifiuta'),
+                      DrinColors.hangupRed,
+                      p.hangup,
                     ),
                   ),
                 ],
-              ),
-            if (call.phase != CallPhase.outgoing) ...[
-              const SizedBox(height: 10),
-              Row(
-                children: [
-                  Expanded(
-                    child: _toggle(
-                      context,
-                      tr('Tastiera'),
-                      _dtmfOpen,
-                      Icons.dialpad,
-                      () => setState(() => _dtmfOpen = !_dtmfOpen),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: _toggle(
-                      context,
-                      tr('Trasferisci'),
-                      false,
-                      Icons.phone_forwarded_rounded,
-                      () => showDialog<void>(
-                        context: context,
-                        builder: (_) => _TransferDialog(phone: p),
+              )
+            else ...[
+              if (call.phase != CallPhase.outgoing)
+                Row(
+                  children: [
+                    Expanded(
+                      child: _toggle(
+                        context,
+                        p.muted ? tr('Riattiva') : tr('Muto'),
+                        p.muted,
+                        Icons.mic_off_outlined,
+                        p.toggleMute,
                       ),
                     ),
-                  ),
-                ],
-              ),
-            ],
-            if (_dtmfOpen) ...[
-              const SizedBox(height: 12),
-              Text(
-                _dtmf,
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontFamily: monoFont,
-                  fontSize: 18,
-                  color: c.text,
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: _toggle(
+                        context,
+                        p.onHold ? tr('Riprendi') : tr('Attesa'),
+                        p.onHold,
+                        Icons.pause_rounded,
+                        p.toggleHold,
+                      ),
+                    ),
+                  ],
                 ),
-              ),
-              const SizedBox(height: 8),
-              Keypad(
-                onKey: (d) {
-                  setState(() => _dtmf += d);
-                  p.sendDtmf(d);
-                },
-              ),
-            ],
-            const SizedBox(height: 16),
-            if (p.canCompleteTransfer) ...[
+              if (call.phase != CallPhase.outgoing) ...[
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _toggle(
+                        context,
+                        tr('Tastiera'),
+                        _dtmfOpen,
+                        Icons.dialpad,
+                        () => setState(() => _dtmfOpen = !_dtmfOpen),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: _toggle(
+                        context,
+                        tr('Trasferisci'),
+                        false,
+                        Icons.phone_forwarded_rounded,
+                        () => showDialog<void>(
+                          context: context,
+                          builder: (_) => _TransferDialog(phone: p),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+              if (_dtmfOpen) ...[
+                const SizedBox(height: 12),
+                Text(
+                  _dtmf,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontFamily: monoFont,
+                    fontSize: 18,
+                    color: c.text,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Keypad(
+                  onKey: (d) {
+                    setState(() => _dtmf += d);
+                    p.sendDtmf(d);
+                  },
+                ),
+              ],
+              const SizedBox(height: 16),
+              if (p.canCompleteTransfer) ...[
+                const SizedBox(height: 10),
+                _bigButton(
+                  tr('Completa trasferimento'),
+                  c.accent,
+                  p.completeTransfer,
+                ),
+              ],
               const SizedBox(height: 10),
-              _bigButton(
-                tr('Completa trasferimento'),
-                c.accent,
-                p.completeTransfer,
-              ),
+              _bigButton(tr('Riaggancia'), DrinColors.hangupRed, p.hangup),
             ],
-            const SizedBox(height: 10),
-            _bigButton(tr('Riaggancia'), DrinColors.hangupRed, p.hangup),
+            // Altre chiamate: in attesa (scambio) o in arrivo (avviso di chiamata).
+            for (final other in p.otherCalls) ...[
+              const SizedBox(height: 12),
+              _OtherCallRow(phone: p, call: other),
+            ],
           ],
-          // Altre chiamate: in attesa (scambio) o in arrivo (avviso di chiamata).
-          for (final other in p.otherCalls) ...[
-            const SizedBox(height: 12),
-            _OtherCallRow(phone: p, call: other),
-          ],
-        ],
+        ),
       ),
     );
   }
@@ -362,10 +367,13 @@ class _OtherCallRow extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Icon(
-            incoming ? Icons.ring_volume_rounded : Icons.pause_circle_outline,
-            size: 20,
-            color: incoming ? c.ringing : c.muted,
+          Tooltip(
+            message: incoming ? tr('In arrivo') : tr('In attesa'),
+            child: Icon(
+              incoming ? Icons.ring_volume_rounded : Icons.pause_circle_outline,
+              size: 20,
+              color: incoming ? c.ringing : c.muted,
+            ),
           ),
           const SizedBox(width: 10),
           Expanded(
@@ -377,10 +385,8 @@ class _OtherCallRow extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(fontWeight: FontWeight.w600, color: c.text),
                 ),
-                Text(
-                  incoming ? tr('In arrivo') : tr('In attesa'),
-                  style: TextStyle(fontSize: 12, color: c.muted),
-                ),
+                if (name.isNotEmpty)
+                  Text(call.remoteNumber, style: mono(c.muted, size: 12)),
               ],
             ),
           ),

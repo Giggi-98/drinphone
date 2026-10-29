@@ -44,17 +44,21 @@ class DrinPhoneApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Cambio lingua dalle Impostazioni: si ricostruisce tutta l'interfaccia.
-    return ValueListenableBuilder<AppLang>(
-      valueListenable: appLang,
-      builder: (_, lang, _) => MaterialApp(
-        title: 'DrinPhone',
-        debugShowCheckedModeBanner: false,
-        locale: Locale(lang.name),
-        theme: buildTheme(Brightness.light),
-        darkTheme: buildTheme(Brightness.dark),
-        home: HomeScreen(key: ValueKey(lang), phone: phone),
-      ),
+    // Cambio lingua o tema dalle Impostazioni: si ricostruisce l'interfaccia.
+    return ListenableBuilder(
+      listenable: Listenable.merge([appLang, appThemeMode]),
+      builder: (_, _) {
+        final lang = appLang.value;
+        return MaterialApp(
+          title: 'DrinPhone',
+          debugShowCheckedModeBanner: false,
+          locale: Locale(lang.name),
+          themeMode: appThemeMode.value,
+          theme: buildTheme(Brightness.light),
+          darkTheme: buildTheme(Brightness.dark),
+          home: HomeScreen(key: ValueKey(lang), phone: phone),
+        );
+      },
     );
   }
 }

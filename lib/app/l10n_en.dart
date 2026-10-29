@@ -383,4 +383,8 @@ const en = <String, String>{
   'SIP INFO': 'SIP INFO',
   'Dati salvati · aggiornamento in corso': 'Saved data · updating',
   'da confermare': 'to be confirmed',
+  'Applicazione': 'Application',
+  'Sistema': 'System',
+  'Scuro': 'Dark',
+  'Chiaro': 'Light',
 };
