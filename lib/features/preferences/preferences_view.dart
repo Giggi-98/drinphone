@@ -9,6 +9,7 @@ import '../../core/pbx/yeastar_api.dart';
 import '../../core/video/openh264.dart';
 import '../../core/sip/sip_engine.dart';
 import '../account/api_dialog.dart';
+import '../call/native_video_view.dart';
 import '../shell/widgets.dart';
 
 /// Preferenze riorganizzate per ambito (Profilo vs Applicazione) con
@@ -1445,13 +1446,21 @@ class _VideoTabState extends State<_VideoTab> {
 
   PhoneController get p => widget.phone;
 
-  void _set({bool? enabled, String? camera, bool? preview}) {
+  bool _testing = false;
+
+  void _set({
+    bool? enabled,
+    String? camera,
+    bool? preview,
+    VideoQuality? quality,
+  }) {
     final o = p.settings.video;
     p.setVideoOptions(
       VideoOptions(
         enabled: enabled ?? o.enabled,
         camera: camera ?? o.camera,
         preview: preview ?? o.preview,
+        quality: quality ?? o.quality,
       ),
     );
   }
@@ -1550,6 +1559,31 @@ class _VideoTabState extends State<_VideoTab> {
                   onChanged: o.enabled ? (v) => _set(camera: v ?? '') : null,
                 ),
               ),
+              const SizedBox(height: 12),
+              SizedBox(
+                width: 420,
+                child: DropdownButtonFormField<VideoQuality>(
+                  initialValue: o.quality,
+                  decoration: InputDecoration(
+                    labelText: tr('Qualità video inviata'),
+                  ),
+                  items: [
+                    DropdownMenuItem(
+                      value: VideoQuality.low,
+                      child: Text(tr('Bassa · 480p (reti lente)')),
+                    ),
+                    DropdownMenuItem(
+                      value: VideoQuality.medium,
+                      child: Text(tr('Media · 720p')),
+                    ),
+                    DropdownMenuItem(
+                      value: VideoQuality.high,
+                      child: Text(tr('Alta · 1080p')),
+                    ),
+                  ],
+                  onChanged: o.enabled ? (v) => _set(quality: v) : null,
+                ),
+              ),
               const SizedBox(height: 6),
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
@@ -1562,6 +1596,30 @@ class _VideoTabState extends State<_VideoTab> {
                 value: o.preview,
                 onChanged: o.enabled ? (v) => _set(preview: v) : null,
               ),
+              const SizedBox(height: 8),
+              // Prova fuori dalle chiamate: webcam e visualizzazione.
+              OutlinedButton.icon(
+                onPressed: o.enabled && p.calls.isEmpty
+                    ? () => setState(() => _testing = !_testing)
+                    : null,
+                icon: Icon(
+                  _testing
+                      ? Icons.videocam_off_outlined
+                      : Icons.videocam_outlined,
+                ),
+                label: Text(_testing ? tr('Ferma prova') : tr('Prova webcam')),
+              ),
+              if (_testing) ...[
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: 480,
+                  height: 270,
+                  child: NativeVideoView(
+                    label: tr('Video non disponibile su questa piattaforma'),
+                    onHandle: p.setCameraTest,
+                  ),
+                ),
+              ],
             ],
           ),
         ),

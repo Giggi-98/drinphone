@@ -657,6 +657,18 @@ class PhoneController extends ChangeNotifier {
     );
   }
 
+  /// "Prova webcam" in Preferenze: anteprima nella finestra [handle] (0 = fine).
+  Future<void> setCameraTest(int handle) async {
+    if (engineError != null) return;
+    if (handle != 0) {
+      await _engine.setVideoWindows(remote: _remoteWindow, preview: handle);
+      await _engine.setCameraPreview(true);
+    } else {
+      await _engine.setCameraPreview(false);
+      await _applyVideoWindows();
+    }
+  }
+
   /// Webcam accesa/spenta nella chiamata corrente.
   Future<void> toggleCallVideo() async {
     final c = call;

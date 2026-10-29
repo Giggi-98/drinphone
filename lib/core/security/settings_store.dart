@@ -366,6 +366,9 @@ class SettingsStore {
         enabled: j['videoEnabled'] as bool? ?? true,
         camera: j['videoCamera'] as String? ?? '',
         preview: j['videoPreview'] as bool? ?? false,
+        quality:
+            VideoQuality.values.asNameMap()[j['videoQuality']] ??
+            VideoQuality.medium,
       ),
     );
   }
@@ -455,6 +458,7 @@ class SettingsStore {
         'videoEnabled': s.video.enabled,
         'videoCamera': s.video.camera,
         'videoPreview': s.video.preview,
+        'videoQuality': s.video.quality.name,
       }),
     );
   }

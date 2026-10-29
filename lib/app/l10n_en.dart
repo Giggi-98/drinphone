@@ -421,4 +421,10 @@ const en = <String, String>{
   'Scarica da Cisco…': 'Download from Cisco…',
   'VP8 è incluso e senza brevetti. H264 arriva da Cisco per licenza: non è nel pacchetto di DrinPhone.': 'VP8 is included and patent-free. H264 comes from Cisco for licensing reasons: it is not in the DrinPhone package.',
   'Videochiamata a {n}': 'Video call {n}',
+  'Qualità video inviata': 'Sent video quality',
+  'Bassa · 480p (reti lente)': 'Low · 480p (slow networks)',
+  'Media · 720p': 'Medium · 720p',
+  'Alta · 1080p': 'High · 1080p',
+  'Ferma prova': 'Stop test',
+  'Prova webcam': 'Test webcam',
 };

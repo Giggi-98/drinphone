@@ -662,6 +662,25 @@ class LinphoneFfiEngine implements SipEngine {
     'linphone_payload_type_unref',
   );
 
+  late final _enableVideoPreview = _lib
+      .lookupFunction<
+        Void Function(Pointer<Void>, Uint8),
+        void Function(Pointer<Void>, int)
+      >('linphone_core_enable_video_preview');
+  late final _setVideoDefinition = _lib.lookupFunction<_VoidPS, _VoidPSDart>(
+    'linphone_core_set_preferred_video_definition_by_name',
+  );
+  late final _setFramerate = _lib
+      .lookupFunction<
+        Void Function(Pointer<Void>, Float),
+        void Function(Pointer<Void>, double)
+      >('linphone_core_set_preferred_framerate');
+  late final _setUploadBandwidth = _lib
+      .lookupFunction<
+        Void Function(Pointer<Void>, Int32),
+        void Function(Pointer<Void>, int)
+      >('linphone_core_set_upload_bandwidth');
+
   // --- opzioni globali delle chiamate.
   late final _setMediaEncryption = _lib
       .lookupFunction<
@@ -1071,10 +1090,24 @@ class LinphoneFfiEngine implements SipEngine {
   Future<void> setVideo(VideoOptions o) async {
     _enableVideoCapture(_core, o.enabled ? 1 : 0);
     _enableVideoDisplay(_core, o.enabled ? 1 : 0);
+    // Default del core: 640x480 a ~400 kbit/s (immagine sgranata). Risoluzione,
+    // 25 fps e banda in uscita secondo la qualità scelta.
+    final (name, kbps) = switch (o.quality) {
+      VideoQuality.low => ('vga', 800),
+      VideoQuality.medium => ('720p', 1800),
+      VideoQuality.high => ('1080p', 3500),
+    };
+    using((a) => _setVideoDefinition(_core, name.toNativeUtf8(allocator: a)));
+    _setFramerate(_core, 25);
+    _setUploadBandwidth(_core, kbps);
     if (o.camera.isNotEmpty) {
       using((a) => _setVideoDevice(_core, o.camera.toNativeUtf8(allocator: a)));
     }
   }
+
+  @override
+  Future<void> setCameraPreview(bool on) async =>
+      _enableVideoPreview(_core, on ? 1 : 0);
 
   @override
   List<String> videoDevices() {

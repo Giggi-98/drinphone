@@ -100,6 +100,9 @@ class FakeSipEngine implements SipEngine {
   }) async => windows = (remote, preview);
   @override
   Future<void> setCallVideo(int id, bool on) async => log.add('video $id $on');
+  bool cameraPreview = false;
+  @override
+  Future<void> setCameraPreview(bool on) async => cameraPreview = on;
 
   List<SipAccount> accounts = [];
   @override

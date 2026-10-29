@@ -109,12 +109,19 @@ class SipAccount {
 enum MediaEncryption { none, srtp, zrtp, dtls }
 
 /// Video (Preferenze > Video): webcam e anteprima sono globali nel core.
+/// Risoluzione inviata (la banda segue: più pixel, più kbit/s).
+enum VideoQuality { low, medium, high }
+
 class VideoOptions {
   const VideoOptions({
     this.enabled = true,
     this.camera = '',
     this.preview = false,
+    this.quality = VideoQuality.medium,
   });
+
+  /// 480p / 720p / 1080p.
+  final VideoQuality quality;
 
   /// Videochiamate possibili (webcam e visualizzazione nel core).
   final bool enabled;
@@ -251,6 +258,9 @@ abstract class SipEngine {
   /// Finestre native (HWND) dove il core disegna il video remoto e
   /// l'anteprima; 0 = nessuna.
   Future<void> setVideoWindows({required int remote, required int preview});
+
+  /// Anteprima della webcam fuori dalle chiamate (Preferenze > Video > Prova).
+  Future<void> setCameraPreview(bool on);
 
   /// Accende o spegne il video in una chiamata in corso (re-INVITE).
   Future<void> setCallVideo(int id, bool on);
