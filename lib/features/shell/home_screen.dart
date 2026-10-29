@@ -12,6 +12,7 @@ import '../contacts/contacts_view.dart';
 import '../history/history_view.dart';
 import '../live/live_calls_view.dart';
 import '../preferences/preferences_view.dart';
+import '../setup/account_picker.dart';
 import '../setup/setup_wizard.dart';
 import '../voicemail/voicemail_view.dart';
 import 'search_box.dart';
@@ -90,21 +91,12 @@ class _HomeScreenState extends State<HomeScreen> {
   /// Primo avvio rimandato con "Configura più tardi" (fino al riavvio).
   bool _setupLater = false;
 
-  void _newProfile() => Navigator.of(context).push(
-    MaterialPageRoute<void>(
-      builder: (ctx) => SetupWizard(
-        phone: p,
-        firstRun: false,
-        onDone: () => Navigator.of(ctx).pop(),
-      ),
-    ),
-  );
-
-  Future<void> _switchProfile(String id) async {
-    if (!await p.switchProfile(id) && mounted && p.calls.isNotEmpty) {
+  Future<void> _logout() async {
+    if (!await p.logout() && mounted) {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text(tr('Non durante una chiamata'))));
+      return;
     }
     setState(() => _section = _Section.extensions);
   }
@@ -114,7 +106,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final name = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text(tr('Rinomina profilo')),
+        title: Text(tr('Rinomina account')),
         content: TextField(controller: ctl, autofocus: true),
         actions: [
           TextButton(
@@ -132,32 +124,6 @@ class _HomeScreenState extends State<HomeScreen> {
     if (name != null) await p.renameProfile(name);
   }
 
-  Future<void> _deleteProfile(Profile prof) async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(tr('Eliminare il profilo {n}?', {'n': prof.name})),
-        content: Text(
-          tr(
-            'Si cancellano i suoi account, le credenziali API, il registro '
-            'chiamate e i contatti personali.',
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: Text(tr('Annulla')),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: Text(tr('Elimina')),
-          ),
-        ],
-      ),
-    );
-    if (ok == true) await p.deleteProfile(prof.id);
-  }
-
   @override
   Widget build(BuildContext context) {
     final c = context.drin;
@@ -168,6 +134,7 @@ class _HomeScreenState extends State<HomeScreen> {
         onDone: () => setState(() => _setupLater = true),
       );
     }
+    if (!p.loggedIn) return AccountPicker(phone: p);
     return Scaffold(
       body: Row(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -280,37 +247,17 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _topBar(DrinColors c) {
     final reg = p.registration;
-    var (dot, label) = switch (reg.status) {
+    final (dot, label) = switch (reg.status) {
       RegistrationStatus.ok => (c.ok, tr('Registrato')),
       RegistrationStatus.progress => (c.ringing, tr('Registrazione…')),
       RegistrationStatus.failed => (c.busy, tr('Errore registrazione')),
       _ => (c.muted, tr('Non registrato')),
     };
-    // Più account: riepilogo nel tooltip e contatore compatto accanto al pallino.
-    final accounts = p.settings.accounts;
-    var tooltip = [label, if (reg.message.isNotEmpty) reg.message].join(' · ');
-    var multiCount = '';
-    if (accounts.length > 1) {
-      bool ok(SipAccount a) =>
-          p.registrations[a.id]?.status == RegistrationStatus.ok;
-      final n = accounts.where(ok).length;
-      label = tr('Registrati {n}/{t}', {'n': n, 't': accounts.length});
-      multiCount = '$n/${accounts.length}';
-      dot = n == accounts.length ? c.ok : (n == 0 ? c.busy : c.ringing);
-      tooltip = [
-        label,
-        for (final a in accounts)
-          '${a.username}@${a.domain}: ${p.registrations[a.id]?.status.name ?? '-'}',
-      ].join('\n');
-    }
+    final tooltip = [
+      label,
+      if (reg.message.isNotEmpty) reg.message,
+    ].join(' · ');
     final account = p.settings.account;
-    final via = p.outgoingAccount;
-    Color dotOf(SipAccount a) => switch (p.registrations[a.id]?.status) {
-      RegistrationStatus.ok => c.ok,
-      RegistrationStatus.progress => c.ringing,
-      RegistrationStatus.failed => c.busy,
-      _ => c.muted,
-    };
     final presence = presenceOf(c, p.ownPresence);
     final customNote = p.ownDetail?.customPresence.trim() ?? '';
     Widget pill(List<Widget> children) => Container(
@@ -331,49 +278,12 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       child: Row(
         children: [
-          // "Chiama con": il pallino indica già lo stato di registrazione;
-          // il testo compare nel tooltip o solo se manca un account.
+          // Stato della registrazione dell'account: pallino e testo breve.
           Tooltip(
             message: tooltip,
-            child: PopupMenuButton<String>(
-              tooltip: '',
-              position: PopupMenuPosition.under,
-              onSelected: (id) =>
-                  id.isEmpty ? _openPreferences() : p.setCallWith(id),
-              itemBuilder: (_) => [
-                PopupMenuItem(
-                  enabled: false,
-                  child: Text(
-                    tr('Chiama con'),
-                    style: TextStyle(fontSize: 12, color: c.muted),
-                  ),
-                ),
-                for (final a in accounts)
-                  PopupMenuItem(
-                    value: a.id,
-                    child: Row(
-                      children: [
-                        Icon(Icons.circle, size: 10, color: dotOf(a)),
-                        const SizedBox(width: 10),
-                        Text(
-                          a.displayName.isNotEmpty
-                              ? '${a.displayName} (${a.username})'
-                              : a.username,
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          a.domain,
-                          style: TextStyle(fontSize: 12, color: c.muted),
-                        ),
-                        const SizedBox(width: 12),
-                        if (a.id == via?.id)
-                          Icon(Icons.check_rounded, size: 18, color: c.accent),
-                      ],
-                    ),
-                  ),
-                const PopupMenuDivider(),
-                PopupMenuItem(value: '', child: Text(tr('Gestisci account…'))),
-              ],
+            child: InkWell(
+              onTap: _openPreferences,
+              borderRadius: BorderRadius.circular(999),
               child: pill([
                 AnimatedContainer(
                   duration: const Duration(milliseconds: 220),
@@ -381,27 +291,8 @@ class _HomeScreenState extends State<HomeScreen> {
                   height: 9,
                   decoration: BoxDecoration(color: dot, shape: BoxShape.circle),
                 ),
-                if (multiCount.isNotEmpty) ...[
-                  const SizedBox(width: 6),
-                  Text(
-                    multiCount,
-                    style: mono(c.muted, size: 11, weight: FontWeight.w600),
-                  ),
-                ],
-                if (via != null) ...[
-                  const SizedBox(width: 8),
-                  Icon(Icons.call_made_rounded, size: 14, color: c.muted),
-                  const SizedBox(width: 4),
-                  Text(
-                    via.username,
-                    style: mono(c.text, size: 12, weight: FontWeight.w600),
-                  ),
-                ] else ...[
-                  const SizedBox(width: 8),
-                  Text(label, style: TextStyle(fontSize: 13, color: c.text)),
-                ],
-                const SizedBox(width: 4),
-                Icon(Icons.expand_more_rounded, size: 18, color: c.muted),
+                const SizedBox(width: 8),
+                Text(label, style: TextStyle(fontSize: 13, color: c.text)),
               ]),
             ),
           ),
@@ -445,61 +336,33 @@ class _HomeScreenState extends State<HomeScreen> {
             child: SearchBox(phone: p, onCall: _call),
           ),
           const SizedBox(width: 12),
-          // Profili (DECISIONS "Profili"): uno attivo alla volta.
+          // Account in uso (DECISIONS "Un account vivo alla volta").
           PopupMenuButton<String>(
-            tooltip: tr('Profili'),
+            tooltip: tr('Account'),
             position: PopupMenuPosition.under,
             onSelected: (v) => switch (v) {
-              '+new' => _newProfile(),
-              '+rename' => _renameProfile(),
-              '+prefs' => _openPreferences(),
-              _ when v.startsWith('-') => _deleteProfile(
-                p.settings.others.firstWhere((x) => x.id == v.substring(1)),
-              ),
-              _ => _switchProfile(v),
+              'rename' => _renameProfile(),
+              'logout' => _logout(),
+              _ => _openPreferences(),
             },
             itemBuilder: (_) => [
-              for (final prof in p.settings.profiles)
-                PopupMenuItem(
-                  value: prof.id,
-                  enabled: prof.id == p.settings.profileId || p.calls.isEmpty,
-                  child: Row(
-                    children: [
-                      Tooltip(
-                        message: prof.kind == ProfileKind.yeastar
-                            ? tr('Yeastar')
-                            : tr('SIP generico'),
-                        child: Icon(
-                          prof.kind == ProfileKind.yeastar
-                              ? Icons.hub_rounded
-                              : Icons.dialpad_rounded,
-                          size: 18,
-                          color: prof.id == p.settings.profileId
-                              ? c.accent
-                              : c.muted,
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Text(prof.name.isEmpty ? tr('Profilo') : prof.name),
-                      const SizedBox(width: 12),
-                      if (prof.id == p.settings.profileId)
-                        Icon(Icons.check_rounded, size: 18, color: c.accent),
-                    ],
-                  ),
-                ),
-              const PopupMenuDivider(),
-              PopupMenuItem(value: '+new', child: Text(tr('Nuovo profilo…'))),
+              PopupMenuItem(value: 'prefs', child: Text(tr('Preferenze'))),
               PopupMenuItem(
-                value: '+rename',
-                child: Text(tr('Rinomina profilo…')),
+                value: 'rename',
+                child: Text(tr('Rinomina account…')),
               ),
-              for (final prof in p.settings.others)
-                PopupMenuItem(
-                  value: '-${prof.id}',
-                  child: Text(tr('Elimina profilo {n}…', {'n': prof.name})),
-                ),
               const PopupMenuDivider(),
-              PopupMenuItem(value: '+prefs', child: Text(tr('Preferenze'))),
+              PopupMenuItem(
+                value: 'logout',
+                enabled: p.calls.isEmpty,
+                child: Row(
+                  children: [
+                    Icon(Icons.logout_rounded, size: 18, color: c.muted),
+                    const SizedBox(width: 10),
+                    Text(tr('Esci (logout)')),
+                  ],
+                ),
+              ),
             ],
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),

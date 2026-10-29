@@ -227,9 +227,15 @@ class PbxConnection {
     // Dati della volta scorsa subito a schermo; la sync li aggiorna.
     final cached = directory.isEmpty ? await cache?.load() : null;
     if (cached != null && !_stopped) {
-      directory = cached.$1;
-      orgs = cached.$2;
-      contacts = cached.$3;
+      directory = cached.directory;
+      orgs = cached.orgs;
+      contacts = cached.contacts;
+      // Casella e presenze solo se sono del proprio interno (stesso account).
+      if (voicemailOf != null) {
+        voicemail = cached.voicemail;
+        ownDetail = cached.detail;
+      }
+      recordCode = cached.recordCode;
       status = tr('Dati salvati · aggiornamento in corso');
       onUpdate(this, true);
     }
@@ -311,6 +317,7 @@ class PbxConnection {
           optionalErrors.add('dettaglio interno: ${_short(e)}');
         }
       }
+      final detailChanged = !identical(newDetail, ownDetail);
       ownDetail = newDetail;
       final fp =
           '${_fingerprintOf(ext, newOrgs, newContacts)}\n'
@@ -321,7 +328,18 @@ class PbxConnection {
       orgs = newOrgs;
       contacts = newContacts;
       // Cache aggiornata solo se i dati sono cambiati (non a ogni giro).
-      if (changed) unawaited(cache?.save(ext, newOrgs, newContacts));
+      if (changed || detailChanged) {
+        unawaited(
+          cache?.save(
+            ext,
+            newOrgs,
+            newContacts,
+            voicemail: newVm,
+            detail: newDetail,
+            recordCode: recordCode,
+          ),
+        );
+      }
       voicemail = newVm;
       lastSync = DateTime.now();
       _failures = 0;

@@ -326,6 +326,7 @@ void main() {
       cacheFor: cacheFor,
     );
     await phone.init();
+    await phone.connectionsStarted;
     return phone;
   }
 
@@ -442,7 +443,7 @@ void main() {
   );
 
   test(
-    'multi-PBX: interni di un PBX senza account SIP visibili ma non chiamabili',
+    'due PBX e un interno: resta solo il PBX dell’account (stesso host)',
     () async {
       final other = FakePbx();
       await other.start();
@@ -452,12 +453,10 @@ void main() {
         'a': pbx.baseUrl,
         'b': other.baseUrl.replaceFirst('127.0.0.1', 'localhost'),
       });
+      // Un account vivo alla volta: la connessione senza interno resta fuori.
+      expect(phone.connections.map((c) => c.id), ['a']);
       expect(phone.primaryConnection!.id, 'a');
-      final fromB = phone.allExtensions.where((e) => e.source == 'b').toList();
-      expect(fromB.map((e) => e.number), ['301', '305', '350']);
-      expect(fromB.every((e) => !phone.isCallable(e)), isTrue);
-      phone.selectGroup('b');
-      expect(phone.visibleExtensions.every((e) => e.source == 'b'), isTrue);
+      expect(phone.allExtensions.any((e) => e.source == 'b'), isFalse);
 
       engine.registrationsCtl.add(
         const RegistrationEvent(RegistrationStatus.ok),

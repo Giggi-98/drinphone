@@ -33,7 +33,11 @@ class PbxConnectionInfo {
 /// Tipo di profilo (DECISIONS "Profili"): decide quali sezioni si vedono.
 enum ProfileKind { yeastar, sip }
 
-/// Profilo non attivo: stessi dati per-profilo di [Settings], fermi su disco.
+/// Account non attivo: stessi dati per-account di [Settings], fermi su disco.
+///
+/// Nell'interfaccia è un **account**: una sola registrazione SIP ([accounts]
+/// ha al più un elemento) e al più una connessione API ([pbx]). Un account
+/// vivo alla volta (DECISIONS "Un account vivo alla volta").
 class Profile {
   const Profile({
     required this.id,
@@ -44,7 +48,6 @@ class Profile {
     this.pbx = const [],
     this.voicemailCode = '*2',
     this.favorites = const [],
-    this.callWith = '',
     this.seenMissedAt = '',
     this.seenVoicemail = const [],
   });
@@ -56,9 +59,21 @@ class Profile {
   final List<PbxConnectionInfo> pbx;
   final String voicemailCode;
   final List<String> favorites;
-  final String callWith;
   final String seenMissedAt;
   final List<String> seenVoicemail;
+
+  Profile renamed(String n) => Profile(
+    id: id,
+    name: n,
+    kind: kind,
+    accounts: accounts,
+    extensions: extensions,
+    pbx: pbx,
+    voicemailCode: voicemailCode,
+    favorites: favorites,
+    seenMissedAt: seenMissedAt,
+    seenVoicemail: seenVoicemail,
+  );
 }
 
 /// Impostazioni: i campi per-profilo descrivono il **profilo attivo**
@@ -78,11 +93,11 @@ class Settings {
     this.voicemailCode = '*2',
     this.favorites = const [],
     this.audio = const ('', '', ''),
-    this.callWith = '',
     this.callOptions = const CallOptions(),
     this.video = const VideoOptions(),
     this.seenMissedAt = '',
     this.seenVoicemail = const [],
+    this.defaultProfile = '',
   });
 
   /// Id del profilo nato dalla configurazione senza profili (file storici).
@@ -95,7 +110,7 @@ class Settings {
   /// Profili non attivi.
   final List<Profile> others;
 
-  /// Account SIP; il primo è il principale (predefinito per le chiamate).
+  /// Registrazione SIP dell'account (al più una).
   final List<SipAccount> accounts;
   SipAccount? get account => accounts.firstOrNull;
   final bool debugLog;
@@ -116,9 +131,6 @@ class Settings {
   /// Dispositivi audio scelti (microfono, altoparlante, suoneria); '' = predefinito.
   final (String, String, String) audio;
 
-  /// Account SIP per le chiamate a numeri liberi ("Chiama con"); '' = principale.
-  final String callWith;
-
   /// Globale: cifratura media, keep-alive, DTMF (Preferenze > Avanzate).
   final CallOptions callOptions;
 
@@ -130,6 +142,10 @@ class Settings {
   final String seenMissedAt;
   final List<String> seenVoicemail;
 
+  /// Globale: account in cui si entra all'avvio ('' = si sceglie a ogni avvio,
+  /// se gli account sono più di uno).
+  final String defaultProfile;
+
   /// Il profilo attivo come [Profile].
   Profile get active => Profile(
     id: profileId,
@@ -140,7 +156,6 @@ class Settings {
     pbx: pbx,
     voicemailCode: voicemailCode,
     favorites: favorites,
-    callWith: callWith,
     seenMissedAt: seenMissedAt,
     seenVoicemail: seenVoicemail,
   );
@@ -176,11 +191,39 @@ class Settings {
       voicemailCode: t.voicemailCode,
       favorites: t.favorites,
       audio: audio,
-      callWith: t.callWith,
       callOptions: callOptions,
       video: video,
       seenMissedAt: t.seenMissedAt,
       seenVoicemail: t.seenVoicemail,
+      defaultProfile: defaultProfile,
+    );
+  }
+
+  /// Stessi dati globali con i profili [all]; attivo quello con lo stesso id,
+  /// altrimenti il primo.
+  Settings withProfiles(List<Profile> all) {
+    final a = all.where((x) => x.id == profileId).firstOrNull ?? all.first;
+    return Settings(
+      profileId: a.id,
+      profileName: a.name,
+      profileKind: a.kind,
+      others: [
+        for (final x in all)
+          if (x != a) x,
+      ],
+      accounts: a.accounts,
+      debugLog: debugLog,
+      extensions: a.extensions,
+      pbx: a.pbx,
+      lang: lang,
+      voicemailCode: a.voicemailCode,
+      favorites: a.favorites,
+      audio: audio,
+      callOptions: callOptions,
+      video: video,
+      seenMissedAt: a.seenMissedAt,
+      seenVoicemail: a.seenVoicemail,
+      defaultProfile: defaultProfile,
     );
   }
 
@@ -196,11 +239,11 @@ class Settings {
     String? voicemailCode,
     List<String>? favorites,
     (String, String, String)? audio,
-    String? callWith,
     CallOptions? callOptions,
     VideoOptions? video,
     String? seenMissedAt,
     List<String>? seenVoicemail,
+    String? defaultProfile,
   }) => Settings(
     profileId: profileId,
     profileName: profileName ?? this.profileName,
@@ -214,11 +257,11 @@ class Settings {
     voicemailCode: voicemailCode ?? this.voicemailCode,
     favorites: favorites ?? this.favorites,
     audio: audio ?? this.audio,
-    callWith: callWith ?? this.callWith,
     callOptions: callOptions ?? this.callOptions,
     video: video ?? this.video,
     seenMissedAt: seenMissedAt ?? this.seenMissedAt,
     seenVoicemail: seenVoicemail ?? this.seenVoicemail,
+    defaultProfile: defaultProfile ?? this.defaultProfile,
   );
 }
 
@@ -310,7 +353,6 @@ class SettingsStore {
       pbx: pbx,
       voicemailCode: j['voicemailCode'] as String? ?? '*2',
       favorites: [for (final f in (j['favorites'] as List? ?? const [])) '$f'],
-      callWith: j['callWith'] as String? ?? '',
       seenMissedAt: j['seenMissedAt'] as String? ?? '',
       seenVoicemail: [
         for (final v in (j['seenVoicemail'] as List? ?? const [])) '$v',
@@ -348,9 +390,9 @@ class SettingsStore {
       lang: j['lang'] as String? ?? 'it',
       voicemailCode: active?.voicemailCode ?? '*2',
       favorites: active?.favorites ?? const [],
-      callWith: active?.callWith ?? '',
       seenMissedAt: active?.seenMissedAt ?? '',
       seenVoicemail: active?.seenVoicemail ?? const [],
+      defaultProfile: j['defaultProfile'] as String? ?? '',
       audio: (
         j['audioCapture'] as String? ?? '',
         j['audioPlayback'] as String? ?? '',
@@ -408,7 +450,6 @@ class SettingsStore {
     'extensions': [for (final e in p.extensions) e.toJson()],
     'voicemailCode': p.voicemailCode,
     'favorites': p.favorites,
-    'callWith': p.callWith,
     'seenMissedAt': p.seenMissedAt,
     'seenVoicemail': p.seenVoicemail,
     'pbx': [
@@ -450,6 +491,7 @@ class SettingsStore {
     await file.writeAsString(
       jsonEncode({
         'activeProfile': s.profileId,
+        'defaultProfile': s.defaultProfile,
         'profiles': [for (final p in s.profiles) _profileJson(p)],
         'debugLog': s.debugLog,
         'lang': s.lang,
@@ -467,4 +509,57 @@ class SettingsStore {
       }),
     );
   }
+}
+
+/// Divide un profilo con più registrazioni SIP (versioni con più account vivi
+/// insieme) in un account per registrazione, ognuno con la connessione API
+/// del suo PBX: quella scelta nell'account, poi quella con lo stesso host
+/// ([hosts]: id connessione → host API), poi le rimaste in ordine. Il primo
+/// tiene id, registro, interni manuali e badge del profilo; [newId] dà l'id
+/// agli altri. Le connessioni senza account restano fuori.
+List<Profile> splitProfile(
+  Profile p, {
+  required String Function() newId,
+  Map<String, String> hosts = const {},
+}) {
+  if (p.accounts.length <= 1 && p.pbx.length <= 1) return [p];
+  if (p.accounts.isEmpty) return [p];
+  final free = [...p.pbx];
+  final conn = <SipAccount, PbxConnectionInfo>{};
+  void assign(PbxConnectionInfo? Function(SipAccount) pick) {
+    for (final a in p.accounts) {
+      if (conn.containsKey(a)) continue;
+      final c = pick(a);
+      if (c == null) continue;
+      conn[a] = c;
+      free.remove(c);
+    }
+  }
+
+  assign((a) => free.where((c) => c.id == a.pbxId).firstOrNull);
+  assign((a) => free.where((c) => hosts[c.id] == a.host).firstOrNull);
+  assign((a) => free.firstOrNull);
+  return [
+    for (final (i, a) in p.accounts.indexed)
+      () {
+        final c = conn[a];
+        bool fav(String f) =>
+            f.startsWith('${c?.id ?? '\u0000'}:') ||
+            (i == 0 && f.startsWith(':'));
+        return Profile(
+          id: i == 0 ? p.id : newId(),
+          name: [a.username, c?.label ?? a.domain].join(' · '),
+          kind: c != null
+              ? ProfileKind.yeastar
+              : (i == 0 ? p.kind : ProfileKind.sip),
+          accounts: [a],
+          extensions: i == 0 ? p.extensions : const [],
+          pbx: [?c],
+          voicemailCode: p.voicemailCode,
+          favorites: p.favorites.where(fav).toList(),
+          seenMissedAt: p.seenMissedAt,
+          seenVoicemail: p.seenVoicemail,
+        );
+      }(),
+  ];
 }

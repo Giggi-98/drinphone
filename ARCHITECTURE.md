@@ -26,7 +26,7 @@ lib/features/account/               editor account SIP, pannello connessioni PBX
 lib/features/preferences/           Preferenze a schede (utente, audio, PBX, lingua…)
 lib/features/live/                  Live Calls: chiamate in corso del PBX + colonna BLF
 lib/features/contacts|history|voicemail/  rubrica, registro chiamate, casella vocale
-lib/features/setup/                 procedura guidata (primo avvio, nuovo profilo)
+lib/features/setup/                 scelta dell'account, procedura guidata (primo avvio, nuovo account)
 lib/core/contacts/                  contatti personali + import CSV/vCard
 test/                               controller e UI con FakeSipEngine
 windows/                            runner Flutter; CMake installa l'SDK accanto all'exe
@@ -86,17 +86,18 @@ spikes/f0a/                         spike F0-A (non prodotto)
   squillo, impostazioni casella vocale. **Sola lettura** (DECISIONS 2026-10-28 bis):
   `vm_pin` arriva nella risposta e viene scartato nel parse. Preferenze > Presenza e
   Casella vocale; chip presenza in alto.
-- **Chiama con** — menu in alto a sinistra (come "Call Using" di Linkus): account SIP
-  per i numeri liberi (`Settings.callWith`, '' = principale) con stato di registrazione.
+- **Stato registrazione** — pillola in alto a sinistra (pallino e testo; dettagli nel
+  tooltip), accanto alla presenza. Una sola registrazione: niente "Chiama con".
 - **Dispositivi audio** (`IMPLEMENTATO`, `DA VALIDARE`) — `linphone_core_get_sound_devices`
   + set capture/playback/ringer; scelta in Preferenze > Audio, salvata in
   `settings.json` e riapplicata all'avvio.
 - **Connessioni PBX** (`IMPLEMENTATO`) — `PbxConnection` (`lib/core/pbx/pbx_connection.dart`),
   una per PBX, elenco id/etichetta in `settings.json`, credenziali in
   `yeastar-api[-<id>].dpapi` (`default` = file della versione singola, migrato).
-  Sync adattiva (DECISIONS "Multi-PBX e sincronizzazione"); "Sincronizza ora"
-  per connessione o globale. PBX dell'account SIP = host uguale al dominio SIP
-  (o unica connessione): solo i suoi interni sono chiamabili e in BLF.
+  Sync adattiva (DECISIONS "Multi-PBX e sincronizzazione"); "Sincronizza ora".
+  Al più una connessione per account (DECISIONS "Un account vivo alla volta"):
+  avviata senza aspettare la sync (`PhoneController.connectionsStarted` per i
+  test), le sezioni partono dalla cache.
 - **Yeastar OpenAPI** (`IMPLEMENTATO`, verificato sul pilota) — `YeastarApi`
   (`lib/core/pbx/`): `get_token` con Client ID/Secret, refresh a 25 min, `del_token`
   all'uscita, `extension/list` paginato e `organization/list` (reparti), riletti
@@ -135,18 +136,26 @@ spikes/f0a/                         spike F0-A (non prodotto)
 - **Attenzione chiamata entrante** (Windows) — `WindowAttention` (user32 via FFI):
   ripristina la finestra, `SetForegroundWindow`, `FlashWindowEx` sulla barra.
   Nessuna notifica toast (servirebbe un plugin/WinRT).
-- **Profili** (`IMPLEMENTATO`; cambio profilo `DA VALIDARE` sul PBX: un-REGISTER
-  degli account lasciati) — DECISIONS "Profili". `Settings`: i campi per-profilo
-  (account, connessioni PBX, interni manuali, preferiti, "Chiama con", codice
-  casella) sono quelli del profilo **attivo**, gli altri in `others`; globali
-  lingua, audio, diagnostica. `settings.json` = `{activeProfile, profiles[…]}`;
-  file senza profili letto come profilo `default` ("Econnet" se aveva API) e
-  copiato in `settings.v1.json` alla prima riscrittura. Password SIP di **tutti**
-  i profili in `flutter_secure_storage` (chiave per id account, unico). Tipo
-  `yeastar` / `sip`: i profili SIP generici non mostrano Live Calls, Presenza,
-  Integrazione PBX. `PhoneController.switchProfile/createProfile/deleteProfile`:
-  mai durante una chiamata; elimina = credenziali DPAPI delle sue connessioni,
-  registro, contatti. Menu in alto a destra.
+- **Account** (`IMPLEMENTATO`; logout `DA VALIDARE` sul PBX: un-REGISTER) —
+  DECISIONS "Un account vivo alla volta". Nel codice restano `Profile`/`profileId`:
+  un profilo = un account, con al più una registrazione (`accounts`) e una
+  connessione (`pbx`). `Settings`: i campi per-account (registrazione, connessione,
+  interni manuali, preferiti, codice casella, badge) sono quelli dell'account
+  **attivo**, gli altri in `others`; globali lingua, audio, diagnostica, video,
+  opzioni chiamate e `defaultProfile` (predefinito all'avvio). `settings.json` =
+  `{activeProfile, defaultProfile, profiles[…]}`; file senza profili letto come
+  `default` e copiato in `settings.v1.json` alla prima riscrittura; profili con più
+  interni divisi all'avvio (`splitProfile` in `settings_store.dart`,
+  `PhoneController._splitProfiles`). Password SIP di **tutti** gli account in
+  `flutter_secure_storage` (chiave per id, unico). `PhoneController.loggedIn`:
+  all'avvio `autoLoginId` (unico account o predefinito) altrimenti
+  `features/setup/account_picker.dart` (entra, radio predefinito, aggiungi,
+  rinomina, elimina); `login/logout/createProfile/deleteProfile` mai durante una
+  chiamata; logout = `setAccounts([])`, connessioni ferme (revoca token in
+  sottofondo). Elimina = credenziali DPAPI e cache della connessione, registro,
+  contatti. Tipo `yeastar` / `sip`: gli account SIP generici non mostrano Live
+  Calls, Presenza, Integrazione PBX. Menu account in alto a destra: Preferenze,
+  Rinomina, Esci (logout).
 - **Account avanzato** (`IMPLEMENTATO`, `DA VALIDARE` campo per campo su PBX/trunk) —
   finestra account, sezione "Avanzate": proxy in uscita (destinazione del REGISTER
   — in liblinphone il REGISTER va solo al server dell'account, le route no — e
@@ -200,17 +209,19 @@ spikes/f0a/                         spike F0-A (non prodotto)
 - **Cache dati PBX** (`IMPLEMENTATO`, verificato sul pilota: dati a schermo in
   ~1 s dall'avvio) — `PbxCache` (`core/pbx/pbx_cache.dart`) su `DpapiBox`
   (`core/security/api_credential_store.dart`, condiviso con le credenziali):
-  `pbx-cache-<connessione>.dpapi` con interni, reparti, rubrica; letta a
+  `pbx-cache-<connessione>.dpapi` con interni, reparti, rubrica e (formato v2)
+  casella vocale, dettaglio del proprio interno, codice di registrazione; letta a
   `PbxConnection.start`, riscritta (file temporaneo + rinomina) solo se la sync
   trova dati cambiati; cancellata con la connessione o il profilo.
-- **BLF al cambio profilo** — ultimi stati della sessione per profilo, in memoria:
+- **BLF al rientro** — ultimi stati della sessione per account, in memoria:
   `blfOf` li usa come ripiego e `blfStale` li segnala (anello/pallino attenuato,
   "da confermare"). SUBSCRIBE a gruppi di 10 ogni 200 ms (`watchDialogs`), ridisegno
   raggruppato a 100 ms per BLF ed eventi PBX.
 - **Procedura guidata** (`IMPLEMENTATO`, `features/setup/`) — al primo avvio
-  (nessun account in nessun profilo) e da "Nuovo profilo…": lingua → tipo e nome →
-  account (con stato di registrazione) → API (solo Yeastar, facoltative) → audio.
-- **Contatti personali** (`IMPLEMENTATO`, `core/contacts/`) — per profilo,
+  (nessun account) e da "Aggiungi account" nella scelta: lingua (solo primo avvio)
+  → tipo e nome → registrazione SIP (con stato) → API (solo Yeastar, facoltative)
+  → audio. Annulla = account creato eliminato, ritorno alla scelta.
+- **Contatti personali** (`IMPLEMENTATO`, `core/contacts/`) — per account,
   `contacts[-<profilo>].json` in chiaro come il registro; nome, azienda, email,
   numeri con etichetta. Import CSV (virgola/punto e virgola, intestazioni it/en,
   Outlook/Google) e vCard 2.1/3.0/4.0 (righe piegate, fax esclusi), anteprima e

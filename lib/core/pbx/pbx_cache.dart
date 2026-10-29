@@ -3,10 +3,20 @@ import 'dart:convert';
 import '../security/api_credential_store.dart';
 import 'yeastar_api.dart';
 
-/// Ultimi dati letti da un PBX (interni, reparti, rubrica aziendale), cifrati
-/// con DPAPI: all'avvio e al cambio profilo l'interfaccia si riempie subito,
-/// poi la sincronizzazione li aggiorna. La rubrica è dato personale di terzi:
-/// mai in chiaro su disco (DECISIONS "Cache dati PBX").
+/// Ultimi dati letti da un PBX (interni, reparti, rubrica aziendale, casella
+/// vocale e dettaglio del proprio interno, codice di registrazione), cifrati
+/// con DPAPI: all'avvio e all'accesso l'interfaccia si riempie subito, poi la
+/// sincronizzazione li aggiorna. Rubrica e casella sono dati personali di
+/// terzi: mai in chiaro su disco (DECISIONS "Cache dati PBX").
+typedef PbxCached = ({
+  List<PbxExtension> directory,
+  List<PbxOrg> orgs,
+  List<PbxContact> contacts,
+  List<PbxVoicemail>? voicemail,
+  PbxExtensionDetail? detail,
+  String? recordCode,
+});
+
 class PbxCache {
   PbxCache(String path) : _box = DpapiBox(path);
   final DpapiBox _box;
@@ -14,10 +24,21 @@ class PbxCache {
   Future<void> save(
     List<PbxExtension> directory,
     List<PbxOrg> orgs,
-    List<PbxContact> contacts,
-  ) => _box.write(
+    List<PbxContact> contacts, {
+    List<PbxVoicemail>? voicemail,
+    PbxExtensionDetail? detail,
+    String? recordCode,
+  }) => _box.write(
     jsonEncode({
-      'v': 1,
+      'v': 2,
+      'voicemail': voicemail == null
+          ? null
+          : [
+              for (final m in voicemail)
+                [m.id, m.callerName, m.callerNumber, m.time, m.seconds, m.read],
+            ],
+      'detail': detail?.toJson(),
+      'recordCode': recordCode,
       'directory': [
         for (final e in directory)
           [e.id, e.number, e.name, e.email, e.mobile, e.presence],
@@ -44,14 +65,16 @@ class PbxCache {
   );
 
   /// Null se assente, illeggibile o di un formato diverso.
-  Future<(List<PbxExtension>, List<PbxOrg>, List<PbxContact>)?> load() async {
+  Future<PbxCached?> load() async {
     final plain = await _box.read();
     if (plain == null) return null;
     try {
       final j = jsonDecode(plain) as Map<String, dynamic>;
-      if (j['v'] != 1) return null;
+      if (j['v'] != 1 && j['v'] != 2) return null;
+      final vm = j['voicemail'] as List?;
+      final detail = j['detail'] as Map<String, dynamic>?;
       return (
-        [
+        directory: [
           for (final e in j['directory'] as List)
             PbxExtension(
               id: e[0] as int,
@@ -62,7 +85,7 @@ class PbxCache {
               presence: e[5] as String,
             ),
         ],
-        [
+        orgs: [
           for (final o in j['orgs'] as List)
             PbxOrg(
               id: o[0] as int,
@@ -72,7 +95,7 @@ class PbxCache {
               extIds: {for (final x in o[4] as List) x as int},
             ),
         ],
-        [
+        contacts: [
           for (final c in j['contacts'] as List)
             PbxContact(
               id: c[0] as int,
@@ -86,6 +109,21 @@ class PbxCache {
               phonebooks: [for (final b in c[6] as List) b as String],
             ),
         ],
+        voicemail: vm == null
+            ? null
+            : [
+                for (final m in vm)
+                  PbxVoicemail(
+                    id: m[0] as String,
+                    callerName: m[1] as String,
+                    callerNumber: m[2] as String,
+                    time: m[3] as String,
+                    seconds: m[4] as int,
+                    read: m[5] as bool,
+                  ),
+              ],
+        detail: detail == null ? null : PbxExtensionDetail.parse(detail),
+        recordCode: j['recordCode'] as String?,
       );
     } catch (_) {
       return null;

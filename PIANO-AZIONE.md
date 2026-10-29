@@ -27,10 +27,11 @@ Live Calls (F6):
 - Dopo la correzione del 2026-10-28: chiamata che **sparisce al riaggancio**,
   uscenti nella tabella giusta, **una riga** per le esterne verso un interno.
 
-Multi-account e profili:
-- BLF degli interni del **secondo PBX** instradato sul suo account; stato
-  **Squilla** mai osservato.
-- **Procedura guidata** su un PC nuovo; creazione di un profilo "SIP generico".
+Account (DECISIONS "Un account vivo alla volta"):
+- **Scelta all'avvio** e radio del predefinito; **logout** con un-REGISTER nel
+  log; rientro veloce con le sezioni piene dalla cache (305, 902, NovoOne).
+- Stato BLF **Squilla** mai osservato.
+- **Procedura guidata** su un PC nuovo; "Aggiungi account" di tipo SIP generico.
 - Account **avanzato**: chiamate in uscita tramite **proxy** (route; la
   registrazione è verificata), registrar separato, utente di autenticazione/realm,
   nascondi ID chiamante, intervallo di registrazione, **STUN/ICE/TURN**.

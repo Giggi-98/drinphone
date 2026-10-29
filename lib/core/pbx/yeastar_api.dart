@@ -201,6 +201,37 @@ class PbxExtensionDetail {
     vmGreeting: vmGreeting,
   );
 
+  /// Forma di `extension/get` letta da [parse] (cache su disco).
+  Map<String, dynamic> toJson() {
+    String flag(bool b) => b ? '1' : '0';
+    return {
+      'presence_status': presence,
+      'custom_presence_status': customPresence,
+      'presence_list': [
+        for (final p in presences)
+          {
+            'status': p.status,
+            for (final MapEntry(key: k, value: f) in p.forwards.entries) ...{
+              'enb_${k}_forward': flag(f.enabled),
+              '${k}_forward_dest': f.dest,
+              '${k}_forward_value': f.value,
+              '${k}_forward_num': f.number,
+            },
+          },
+      ],
+      'ring_timeout': ringTimeout ?? '',
+      'enb_ring_mobile': flag(ringMobile),
+      'mobile_number': mobileNumber,
+      'enb_accept_call_from_rg': flag(acceptRingGroup),
+      'enb_vm': flag(vmEnabled),
+      'enb_vm_pin': flag(vmPinAuth),
+      'new_vm_notification': vmNotification,
+      'vm_after_notification': vmAfterNotification,
+      'enb_vm_play_datetime': flag(vmPlayDatetime),
+      'vm_greeting': vmGreeting,
+    };
+  }
+
   static PbxExtensionDetail parse(Map<String, dynamic> j) {
     String str(Map<String, dynamic> m, String k) => '${m[k] ?? ''}';
     bool flag(Map<String, dynamic> m, String k) => str(m, k) == '1';

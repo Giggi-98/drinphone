@@ -173,8 +173,7 @@ class PhoneController extends ChangeNotifier {
   Future<void> init() async {
     settings = await _store.load();
     appLang.value = AppLang.fromCode(settings.lang);
-    history = await historyStore?.load() ?? [];
-    personal = await personalStoreFor?.call(settings.profileId).load() ?? [];
+    await _splitProfiles();
     _subs.add(_engine.registrations.listen(_onRegistration));
     _subs.add(_engine.calls.listen(_onCall));
     _subs.add(_engine.dialogs.listen(_onDialog));
@@ -205,9 +204,6 @@ class PhoneController extends ChangeNotifier {
         codecDir: h264Installed ? openH264!.dir : null,
       );
       debugPrint('[drinphone] motore liblinphone $engineVersion avviato');
-      if (settings.accounts.isNotEmpty) {
-        await _engine.setAccounts(settings.accounts);
-      }
       await _engine.setCallOptions(settings.callOptions);
       await _engine.setVideo(settings.video);
       _engine.setRecordingDir(recordingsDir);
@@ -218,9 +214,64 @@ class PhoneController extends ChangeNotifier {
       engineError = '$e';
       debugPrint('[drinphone] avvio motore fallito: $e');
     }
-    await _startConnections();
-    notifyListeners();
+    // Un solo account, o un predefinito: si entra subito; altrimenti si sceglie.
+    // Primo avvio: si entra nel profilo vuoto per la procedura guidata.
+    final auto = needsSetup ? settings.profileId : autoLoginId;
+    if (auto != null) {
+      await login(auto);
+    } else {
+      notifyListeners();
+    }
   }
+
+  /// Account in cui entrare all'avvio: l'unico configurato o il predefinito.
+  String? get autoLoginId {
+    final ready = [
+      for (final x in settings.profiles)
+        if (x.accounts.isNotEmpty) x.id,
+    ];
+    if (ready.length == 1) return ready.single;
+    return ready.contains(settings.defaultProfile)
+        ? settings.defaultProfile
+        : null;
+  }
+
+  /// Profili con più registrazioni (versioni con più account vivi insieme):
+  /// un account per registrazione, con la sua connessione API e una copia dei
+  /// contatti personali (DECISIONS "Un account vivo alla volta").
+  Future<void> _splitProfiles() async {
+    final before = settings.profiles;
+    if (!before.any((x) => x.accounts.length > 1 || x.pbx.length > 1)) return;
+    final hosts = <String, String>{};
+    for (final x in before) {
+      for (final c in x.pbx) {
+        final creds = await apiStoreFor?.call(c.id).load();
+        final h = creds == null ? null : Uri.tryParse(creds.baseUrl)?.host;
+        if (h != null) hosts[c.id] = h;
+      }
+    }
+    final all = [
+      for (final x in before) ...splitProfile(x, newId: _newId, hosts: hosts),
+    ];
+    for (final x in all) {
+      if (before.any((o) => o.id == x.id)) continue;
+      final from = before.firstWhere(
+        (o) => o.accounts.any((a) => a.id == x.accounts.single.id),
+      );
+      final contacts = await personalStoreFor?.call(from.id).load();
+      if (contacts != null && contacts.isNotEmpty) {
+        await personalStoreFor!(x.id).save(contacts);
+      }
+    }
+    settings = settings.withProfiles(all);
+    debugPrint('[drinphone] profili divisi: ${all.length} account');
+    await _store.save(settings);
+  }
+
+  String _newId() => List.generate(
+    8,
+    (_) => Random.secure().nextInt(16).toRadixString(16),
+  ).join();
 
   // ---------------------------------------------------------------- PBX API
 
@@ -242,10 +293,15 @@ class PhoneController extends ChangeNotifier {
       connections.add(_newConnection(i.id, i.label)..realtime = i.realtime);
     }
     _assignVoicemail();
-    for (final c in connections) {
-      await c.start();
-    }
+    // Sincronizzazione in sottofondo: le sezioni partono dalla cache.
+    _starting = Future.wait([for (final c in connections) c.start()]);
   }
+
+  Future<void> _starting = Future.value();
+
+  /// Completa quando la prima sincronizzazione delle connessioni è finita.
+  @visibleForTesting
+  Future<void> get connectionsStarted => _starting;
 
   PbxConnection _newConnection(String id, String label) => PbxConnection(
     id: id,
@@ -525,26 +581,48 @@ class PhoneController extends ChangeNotifier {
     notifyListeners();
   }
 
-  // ---------------------------------------------------------------- profili
+  // ---------------------------------------------------------------- account
 
-  /// Cambia profilo (mai durante una chiamata): un profilo attivo alla volta,
-  /// DECISIONS "Profili". Restituisce false se non è stato possibile.
-  Future<bool> switchProfile(String id) async {
-    if (calls.isNotEmpty || id == settings.profileId) return false;
+  /// Dentro un account (registrato, con i suoi dati); false = schermata di
+  /// scelta dell'account. Un account vivo alla volta (DECISIONS "Un account
+  /// vivo alla volta").
+  bool loggedIn = false;
+
+  /// Entra nell'account [id] (mai durante una chiamata). Restituisce false se
+  /// non è stato possibile.
+  Future<bool> login(String id) async {
+    if (calls.isNotEmpty) return false;
+    if (loggedIn && id == settings.profileId) return true;
     await _loadProfile(settings.switchTo(id));
     return true;
   }
 
-  /// Nuovo profilo vuoto, subito attivo.
+  /// Esce dall'account: un-REGISTER, connessioni PBX ferme, si torna alla
+  /// scelta. Il predefinito resta: al prossimo avvio si rientra lì.
+  Future<bool> logout() async {
+    if (calls.isNotEmpty) return false;
+    _unload();
+    loggedIn = false;
+    history = [];
+    personal = [];
+    if (engineError == null) await _engine.setAccounts(const []);
+    notifyListeners();
+    return true;
+  }
+
+  /// Account in cui entrare all'avvio ('' = nessuno: si sceglie).
+  Future<void> setDefaultAccount(String id) async {
+    settings = settings.copyWith(defaultProfile: id);
+    await _store.save(settings);
+    notifyListeners();
+  }
+
+  /// Nuovo account vuoto, subito attivo (procedura guidata).
   Future<bool> createProfile(String name, ProfileKind kind) async {
     if (calls.isNotEmpty) return false;
-    final id = List.generate(
-      8,
-      (_) => Random.secure().nextInt(16).toRadixString(16),
-    ).join();
     await _loadProfile(
       Settings(
-        profileId: id,
+        profileId: _newId(),
         profileName: name.trim(),
         profileKind: kind,
         others: [...settings.others, settings.active],
@@ -553,16 +631,17 @@ class PhoneController extends ChangeNotifier {
         audio: settings.audio,
         callOptions: settings.callOptions,
         video: settings.video,
+        defaultProfile: settings.defaultProfile,
       ),
     );
     return true;
   }
 
-  /// Primo avvio: nessun account in nessun profilo → procedura guidata.
+  /// Primo avvio: nessun account configurato → procedura guidata.
   bool get needsSetup =>
       settings.allAccounts.isEmpty && settings.others.isEmpty;
 
-  /// Nome e (nella procedura guidata) tipo del profilo attivo.
+  /// Nome e (nella procedura guidata) tipo dell'account attivo.
   Future<void> renameProfile(String name, {ProfileKind? kind}) async {
     if (name.trim().isEmpty) return;
     settings = settings.copyWith(profileName: name.trim(), profileKind: kind);
@@ -570,10 +649,23 @@ class PhoneController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Elimina un profilo non attivo con le sue credenziali API, il registro e
-  /// i contatti; le password SIP spariscono al salvataggio.
+  /// Rinomina un account qualsiasi (anche dalla schermata di scelta).
+  Future<void> renameAccount(String id, String name) async {
+    if (name.trim().isEmpty) return;
+    if (id == settings.profileId) return renameProfile(name);
+    settings = settings.withProfiles([
+      for (final x in settings.profiles)
+        x.id == id ? x.renamed(name.trim()) : x,
+    ]);
+    await _store.save(settings);
+    notifyListeners();
+  }
+
+  /// Elimina un account (non quello in uso) con le credenziali API, la cache,
+  /// il registro e i contatti; la password SIP sparisce al salvataggio.
   Future<void> deleteProfile(String id) async {
-    final p = settings.others.where((x) => x.id == id).firstOrNull;
+    if (loggedIn && id == settings.profileId) return;
+    final p = settings.profiles.where((x) => x.id == id).firstOrNull;
     if (p == null) return;
     for (final c in p.pbx) {
       await apiStoreFor?.call(c.id).clear();
@@ -582,43 +674,63 @@ class PhoneController extends ChangeNotifier {
     _blfByProfile.remove(id);
     await historyStoreFor?.call(id).clear();
     await personalStoreFor?.call(id).clear();
-    settings = settings.copyWith(
-      others: [
-        for (final x in settings.others)
-          if (x.id != id) x,
-      ],
-    );
+    final rest = [
+      for (final x in settings.profiles)
+        if (x.id != id) x,
+    ];
+    // Se era l'attivo (fuori dall'account) diventa attivo un altro, o nessuno.
+    settings = rest.isEmpty
+        ? Settings(
+            debugLog: settings.debugLog,
+            lang: settings.lang,
+            audio: settings.audio,
+            callOptions: settings.callOptions,
+            video: settings.video,
+          )
+        : settings.withProfiles(rest);
+    if (settings.defaultProfile == id) {
+      settings = settings.copyWith(defaultProfile: '');
+    }
     await _store.save(settings);
     notifyListeners();
   }
 
-  /// Ferma il profilo attivo e avvia [next]: account, connessioni PBX,
-  /// registro e contatti.
-  Future<void> _loadProfile(Settings next) async {
+  /// Ferma l'account attivo: connessioni PBX (la revoca del token prosegue in
+  /// sottofondo), registrazioni e BLF, ricordati per il rientro.
+  void _unload() {
     for (final c in connections) {
-      await c.stop();
+      unawaited(c.stop());
     }
     connections.clear();
     selectedGroup = null;
     registrations.clear();
-    _blfByProfile[settings.profileId] = {
-      ..._staleBlf,
-      for (final e in blf.entries)
-        if (e.value.status != BlfStatus.unknown) e.key: e.value.status,
-    };
-    _staleBlf = _blfByProfile[next.profileId] ?? const {};
+    if (loggedIn) {
+      _blfByProfile[settings.profileId] = {
+        ..._staleBlf,
+        for (final e in blf.entries)
+          if (e.value.status != BlfStatus.unknown) e.key: e.value.status,
+      };
+    }
     blf.clear();
     _mwiNew = 0;
     _mwiOld = 0;
+  }
+
+  /// Ferma l'account attivo e avvia [next]: registrazione, connessioni PBX,
+  /// registro e contatti. Non aspetta la sincronizzazione: la cache riempie
+  /// subito le sezioni, i dati freschi arrivano dopo.
+  Future<void> _loadProfile(Settings next) async {
+    _unload();
+    _staleBlf = _blfByProfile[next.profileId] ?? const {};
     settings = next;
-    await _store.save(settings);
+    loggedIn = true;
     history = await historyStore?.load() ?? [];
     personal = await personalStoreFor?.call(settings.profileId).load() ?? [];
     if (engineError == null) await _engine.setAccounts(settings.accounts);
     await _startConnections();
-    _assignVoicemail();
-    await _syncDialogs();
     notifyListeners();
+    await _store.save(settings);
+    await _syncDialogs();
   }
 
   /// Profilo Yeastar integrato (altrimenti SIP generico: niente API PBX).
@@ -825,17 +937,6 @@ class PhoneController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Account per le chiamate a numeri liberi ("Chiama con" in alto).
-  SipAccount? get outgoingAccount =>
-      settings.accounts.where((a) => a.id == settings.callWith).firstOrNull ??
-      settings.account;
-
-  Future<void> setCallWith(String accountId) async {
-    settings = settings.copyWith(callWith: accountId);
-    await _store.save(settings);
-    notifyListeners();
-  }
-
   /// Dettaglio del proprio interno sul PBX dell'account (presenze, inoltri).
   PbxExtensionDetail? get ownDetail => primaryConnection?.ownDetail;
 
@@ -853,7 +954,7 @@ class PhoneController extends ChangeNotifier {
 
   /// Ascolto messaggi: codice dell'account in uso, altrimenti del profilo.
   Future<void> callVoicemail() {
-    final own = outgoingAccount?.voicemailCode ?? '';
+    final own = settings.account?.voicemailCode ?? '';
     return dial(own.isNotEmpty ? own : settings.voicemailCode);
   }
 
@@ -1051,16 +1152,8 @@ class PhoneController extends ChangeNotifier {
 
   // ---------------------------------------------------------------- account
 
-  /// Aggiunge o sostituisce (stesso id) un account SIP e riregistra tutti.
-  Future<void> saveAccount(SipAccount account) async {
-    final list = [...settings.accounts];
-    final i = list.indexWhere((a) => a.id == account.id);
-    i >= 0 ? list[i] = account : list.add(account);
-    await _applyAccounts(list);
-  }
-
-  Future<void> removeAccount(String id) =>
-      _applyAccounts(settings.accounts.where((a) => a.id != id).toList());
+  /// Imposta la registrazione SIP dell'account (una sola) e riregistra.
+  Future<void> saveAccount(SipAccount account) => _applyAccounts([account]);
 
   /// Dispositivi audio del sistema (rilettura a ogni apertura di Preferenze > Audio).
   List<SoundDevice> soundDevices() =>
@@ -1095,12 +1188,7 @@ class PhoneController extends ChangeNotifier {
   }
 
   /// Nuovo id per un account aggiunto (il primo resta `main`).
-  String newAccountId() => settings.allAccounts.isEmpty
-      ? 'main'
-      : List.generate(
-          8,
-          (_) => Random.secure().nextInt(16).toRadixString(16),
-        ).join();
+  String newAccountId() => settings.allAccounts.isEmpty ? 'main' : _newId();
 
   Future<void> _applyAccounts(List<SipAccount> list) async {
     settings = settings.copyWith(accounts: list);
@@ -1152,7 +1240,7 @@ class PhoneController extends ChangeNotifier {
   Future<void> dial(String number, {Extension? via, bool video = false}) async {
     final n = number.trim();
     if (n.isEmpty || !canDial) return;
-    final a = via == null ? outgoingAccount : accountFor(via);
+    final a = via == null ? settings.account : accountFor(via);
     await _engine.dial(
       n,
       accountId: a == null || a == settings.account ? null : a.id,

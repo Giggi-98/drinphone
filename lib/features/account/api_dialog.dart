@@ -6,8 +6,8 @@ import '../../app/theme.dart';
 import '../../core/pbx/pbx_connection.dart';
 import '../../core/security/api_credential_store.dart';
 
-/// Elenco delle connessioni API ai PBX (una per PBX, indipendenti), usato in
-/// Preferenze > Integrazione PBX.
+/// Connessione API al PBX dell'account (al più una), usata in Preferenze >
+/// Integrazione PBX e nella procedura guidata.
 class PbxConnectionsPanel extends StatelessWidget {
   const PbxConnectionsPanel({super.key, required this.phone});
   final PhoneController phone;
@@ -41,18 +41,20 @@ class PbxConnectionsPanel extends StatelessWidget {
             lastSync: _ago(conn.lastSync),
             primary: conn.id == phone.primaryConnection?.id,
           ),
-        const SizedBox(height: 8),
-        Align(
-          alignment: Alignment.centerLeft,
-          child: OutlinedButton.icon(
-            onPressed: () => showDialog<void>(
-              context: context,
-              builder: (_) => _CredentialsDialog(phone: phone),
+        if (phone.connections.isEmpty) ...[
+          const SizedBox(height: 8),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: OutlinedButton.icon(
+              onPressed: () => showDialog<void>(
+                context: context,
+                builder: (_) => _CredentialsDialog(phone: phone),
+              ),
+              icon: const Icon(Icons.add, size: 16),
+              label: Text(tr('Collega il PBX')),
             ),
-            icon: const Icon(Icons.add, size: 16),
-            label: Text(tr('Aggiungi PBX')),
           ),
-        ),
+        ],
       ],
     );
   }

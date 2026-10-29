@@ -6,6 +6,29 @@ aggiungi una voce nuova in cima che cita la vecchia. Il campo chiave è
 
 ---
 
+## 2026-10-29 · Un account vivo alla volta (di Luigi; ribalta "Profili" e "Multi-account SIP ed eventi WebSocket" del 2026-10-28)
+**Scelta:** un **account** = una registrazione SIP + al più una connessione API
+Yeastar; ne è viva **una alla volta**. Con un solo account si entra sempre lì;
+con più account si entra nel **predefinito** (radio nella schermata di scelta),
+altrimenti si sceglie. In app solo **Logout** (un-REGISTER, connessioni ferme,
+ritorno alla scelta); il predefinito resta per l'avvio successivo. Spariscono
+"Chiama con", l'elenco di più account, il trunk dentro un profilo Yeastar (ora è
+un account a sé) e la scelta del PBX collegato. Contatti personali e registro
+**per account**. Migrazione: un profilo con più interni si divide in un account
+per interno, ognuno con la connessione del suo PBX (id scelto, poi host, poi
+ordine), nome `<interno> · <PBX>`, copia dei contatti personali; il registro
+resta al primo. Accesso veloce: la sincronizzazione non blocca più
+l'interfaccia (parte in sottofondo) e la cache cifrata copre anche casella
+vocale, dettaglio del proprio interno e codice di registrazione.
+**Scartato:** più account registrati insieme (ordine, prestazioni: BLF e sync di
+N PBX a ogni avvio o cambio); tenere registrati in sottofondo gli account non in
+uso (chiamate in arrivo su un account non visibile); logout che toglie il
+predefinito (scelta dell'utente: il predefinito vale all'avvio).
+**Da rivedere se:** serve ricevere chiamate su più interni insieme (es.
+centralinista), o un trunk solo in uscita accanto all'interno Yeastar.
+
+---
+
 ## 2026-10-29 · ANGLE per il video e finestra di chiamata (di Luigi)
 **Scelta — ANGLE:** il solo filtro di visualizzazione dell'SDK è `MSOGL` (OpenGL ES
 via EGL): senza `libEGL.dll`/`libGLESv2.dll` il video arriva e si decodifica ma

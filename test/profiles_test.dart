@@ -169,7 +169,7 @@ void main() {
       const PersonalContact(id: 'x', name: 'Casa', numbers: [('Casa', '06 1')]),
     );
 
-    expect(await phone.switchProfile('default'), isTrue);
+    expect(await phone.login('default'), isTrue);
     expect(engine.accounts.single.username, '305');
     // BLF: tornando al profilo, l'ultimo stato resta "da confermare".
     const sala = Extension('Sala', '300');
@@ -188,6 +188,158 @@ void main() {
     expect(reloaded.allAccounts.map((a) => a.password), ['uno']);
     await phone.shutdown();
   });
+
+  test(
+    'avvio: più account senza predefinito → scelta; logout e rientro',
+    () async {
+      FlutterSecureStorage.setMockInitialValues({});
+      final store = SettingsStore(path);
+      await store.save(
+        const Settings(
+          profileName: 'Uno',
+          accounts: [
+            SipAccount(username: '305', password: 'p', domain: 'a.test'),
+          ],
+          others: [
+            Profile(
+              id: 'p2',
+              name: 'Due',
+              accounts: [
+                SipAccount(
+                  id: 'b2',
+                  username: '902',
+                  password: 'q',
+                  domain: 'b.test',
+                ),
+              ],
+            ),
+          ],
+        ),
+      );
+      var engine = FakeSipEngine();
+      var phone = PhoneController(
+        engine,
+        store,
+        engineDataDir: tmp.path,
+        logDir: tmp.path,
+      );
+      await phone.init();
+      expect(phone.loggedIn, isFalse);
+      expect(engine.accounts, isEmpty);
+
+      expect(await phone.login('p2'), isTrue);
+      expect(engine.accounts.single.username, '902');
+      await phone.setDefaultAccount('p2');
+      expect(await phone.logout(), isTrue);
+      expect(phone.loggedIn, isFalse);
+      // Logout = nessuna registrazione viva.
+      expect(engine.accounts, isEmpty);
+      await phone.shutdown();
+
+      // Riavvio: si rientra nel predefinito.
+      engine = FakeSipEngine();
+      phone = PhoneController(
+        engine,
+        store,
+        engineDataDir: tmp.path,
+        logDir: tmp.path,
+      );
+      await phone.init();
+      expect(phone.loggedIn, isTrue);
+      expect(phone.settings.profileId, 'p2');
+      expect(engine.accounts.single.username, '902');
+      await phone.shutdown();
+    },
+  );
+
+  test('un solo account: si entra sempre, anche senza predefinito', () async {
+    FlutterSecureStorage.setMockInitialValues({});
+    final store = SettingsStore(path);
+    await store.save(
+      const Settings(
+        accounts: [
+          SipAccount(username: '305', password: 'p', domain: 'a.test'),
+        ],
+      ),
+    );
+    final engine = FakeSipEngine();
+    final phone = PhoneController(
+      engine,
+      store,
+      engineDataDir: tmp.path,
+      logDir: tmp.path,
+    );
+    await phone.init();
+    expect(phone.loggedIn, isTrue);
+    expect(engine.accounts.single.username, '305');
+    await phone.shutdown();
+  });
+
+  test(
+    'profilo con due interni: diviso in due account, contatti copiati',
+    () async {
+      FlutterSecureStorage.setMockInitialValues({});
+      final sep = Platform.pathSeparator;
+      final store = SettingsStore(path);
+      await store.save(
+        const Settings(
+          profileName: 'Econnet',
+          accounts: [
+            SipAccount(username: '305', password: 'uno', domain: 'drin.test'),
+            SipAccount(
+              id: 'b2',
+              username: '902',
+              password: 'due',
+              domain: 'me.test',
+            ),
+          ],
+          pbx: [
+            PbxConnectionInfo('default', 'Skillworks'),
+            PbxConnectionInfo('c2', 'Cloud Me'),
+          ],
+          favorites: [':300', 'default:301', 'c2:401'],
+        ),
+      );
+      String contacts(String id) => '${tmp.path}${sep}contacts-$id.json';
+      await PersonalContactsStore(contacts('default')).save(const [
+        PersonalContact(id: 'x', name: 'Casa', numbers: [('Casa', '06 1')]),
+      ]);
+      final engine = FakeSipEngine();
+      final phone = PhoneController(
+        engine,
+        store,
+        engineDataDir: tmp.path,
+        logDir: tmp.path,
+        personalStoreFor: (id) => PersonalContactsStore(contacts(id)),
+      );
+      await phone.init();
+      final all = phone.settings.profiles;
+      expect(all.length, 2);
+      expect(
+        all.every((p) => p.accounts.length == 1 && p.pbx.length == 1),
+        isTrue,
+      );
+      final first = all.firstWhere((p) => p.id == 'default');
+      final second = all.firstWhere((p) => p.id != 'default');
+      expect(first.name, '305 · Skillworks');
+      expect(first.favorites, [':300', 'default:301']);
+      expect(second.name, '902 · Cloud Me');
+      expect(second.pbx.single.id, 'c2');
+      expect(second.favorites, ['c2:401']);
+      // Due account, nessun predefinito: si sceglie.
+      expect(phone.loggedIn, isFalse);
+      expect(
+        (await PersonalContactsStore(contacts(second.id)).load()).single.name,
+        'Casa',
+      );
+      final reloaded = await store.load();
+      expect(reloaded.allAccounts.map((a) => a.password).toSet(), {
+        'uno',
+        'due',
+      });
+      await phone.shutdown();
+    },
+  );
 
   test(
     'account avanzato e opzioni globali: salvati, TURN nello storage sicuro',
@@ -266,10 +418,11 @@ void main() {
       );
       await phone.init();
       expect(engine.options.encryption, MediaEncryption.srtp);
-      // Account tolto: via anche la password TURN.
-      await phone.removeAccount('main');
+      // Account eliminato: via anche la password TURN.
+      await phone.logout();
+      await phone.deleteProfile('default');
       s = await store.load();
-      expect(s.accounts, isEmpty);
+      expect(s.allAccounts, isEmpty);
       await store.save(
         const Settings(
           accounts: [

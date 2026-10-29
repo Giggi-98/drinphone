@@ -361,33 +361,22 @@ class _UserTab extends StatelessWidget {
         ),
         _Card(
           title: tr('Account SIP'),
-          action: TextButton.icon(
-            onPressed: () => showDialog<void>(
-              context: context,
-              builder: (_) => AccountEditor(phone: phone),
-            ),
-            icon: const Icon(Icons.add, size: 16),
-            label: Text(tr('Aggiungi account')),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              if (phone.settings.accounts.isEmpty)
-                Text(
+          action: a != null
+              ? null
+              : TextButton.icon(
+                  onPressed: () => showDialog<void>(
+                    context: context,
+                    builder: (_) => AccountEditor(phone: phone),
+                  ),
+                  icon: const Icon(Icons.add, size: 16),
+                  label: Text(tr('Configura')),
+                ),
+          child: a == null
+              ? Text(
                   tr('Nessun account SIP configurato.'),
                   style: TextStyle(color: c.muted),
-                ),
-              for (final x in phone.settings.accounts)
-                _AccountTile(phone: phone, account: x),
-              Text(
-                tr(
-                  'Il primo account è il principale. Ogni account chiama e '
-                  'segue in BLF gli interni del PBX collegato.',
-                ),
-                style: TextStyle(fontSize: 12, color: c.muted),
-              ),
-            ],
-          ),
+                )
+              : _AccountTile(phone: phone, account: a),
         ),
         if (phone.isYeastar) PbxConnectionsPanel(phone: phone),
       ],
@@ -411,7 +400,6 @@ class _AccountTile extends StatelessWidget {
       _ => (c.muted, tr('Non registrato')),
     };
     final pbx = phone.connectionOf(a)?.label;
-    final primary = a.id == phone.settings.account?.id;
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.fromLTRB(12, 8, 4, 8),
@@ -458,29 +446,12 @@ class _AccountTile extends StatelessWidget {
                         ),
                       ),
                     ),
-                    if (primary) ...[
-                      const SizedBox(width: 8),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 7,
-                          vertical: 1,
-                        ),
-                        decoration: BoxDecoration(
-                          color: c.keyBtn,
-                          borderRadius: BorderRadius.circular(999),
-                        ),
-                        child: Text(
-                          tr('Principale'),
-                          style: TextStyle(fontSize: 11, color: c.accent),
-                        ),
-                      ),
-                    ],
                   ],
                 ),
                 Text(
                   [
                     '${a.domain} · ${a.transport.name.toUpperCase()}',
-                    pbx == null ? tr('nessun PBX collegato') : 'PBX: $pbx',
+                    if (pbx != null) 'PBX: $pbx',
                   ].join(' · '),
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(fontSize: 12, color: c.muted),
@@ -495,11 +466,6 @@ class _AccountTile extends StatelessWidget {
               builder: (_) => AccountEditor(phone: phone, account: a),
             ),
             icon: Icon(Icons.edit_outlined, size: 18, color: c.muted),
-          ),
-          IconButton(
-            tooltip: tr('Rimuovi account'),
-            onPressed: () => phone.removeAccount(a.id),
-            icon: Icon(Icons.delete_outline, size: 18, color: c.busyText),
           ),
         ],
       ),
@@ -524,7 +490,7 @@ class _AccountEditorState extends State<AccountEditor> {
   late final _password = TextEditingController(text: widget.account?.password);
   late final _domain = TextEditingController(text: widget.account?.domain);
   late SipTransport _transport = widget.account?.transport ?? SipTransport.udp;
-  late String _pbxId = widget.account?.pbxId ?? '';
+  late final String _pbxId = widget.account?.pbxId ?? '';
 
   // Avanzate.
   late final _proxy = TextEditingController(text: widget.account?.proxy);
@@ -798,12 +764,9 @@ class _AccountEditorState extends State<AccountEditor> {
   @override
   Widget build(BuildContext context) {
     final c = context.drin;
-    final conns = widget.phone.connections;
     return AlertDialog(
       backgroundColor: c.surface,
-      title: Text(
-        widget.account == null ? tr('Aggiungi account') : tr('Account SIP'),
-      ),
+      title: Text(tr('Account SIP')),
       content: SizedBox(
         width: 460,
         child: Form(
@@ -855,29 +818,6 @@ class _AccountEditorState extends State<AccountEditor> {
                   ],
                   onChanged: (t) => setState(() => _transport = t!),
                 ),
-                // Profili SIP generici: nessuna connessione PBX da collegare.
-                if (widget.phone.isYeastar) const SizedBox(height: 12),
-                if (widget.phone.isYeastar)
-                  DropdownButtonFormField<String>(
-                    initialValue: conns.any((x) => x.id == _pbxId)
-                        ? _pbxId
-                        : '',
-                    decoration: InputDecoration(
-                      labelText: tr('PBX collegato'),
-                      helperText: tr(
-                        'I suoi interni si chiamano con questo account',
-                      ),
-                    ),
-                    items: [
-                      DropdownMenuItem(
-                        value: '',
-                        child: Text(tr('Automatico (stesso host)')),
-                      ),
-                      for (final x in conns)
-                        DropdownMenuItem(value: x.id, child: Text(x.label)),
-                    ],
-                    onChanged: (v) => setState(() => _pbxId = v ?? ''),
-                  ),
                 const SizedBox(height: 8),
                 _advanced(c),
               ],

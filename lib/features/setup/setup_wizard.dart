@@ -8,10 +8,11 @@ import '../../core/sip/sip_engine.dart';
 import '../account/api_dialog.dart';
 import '../preferences/preferences_view.dart';
 
-/// Procedura guidata (DECISIONS "Profili"): al primo avvio configura il
-/// profilo vuoto; da "Nuovo profilo…" ne crea uno. Passi: lingua (solo primo
-/// avvio) → tipo e nome → account con stato di registrazione → API (solo
-/// Yeastar, facoltative) → audio.
+/// Procedura guidata: al primo avvio configura l'account vuoto; dalla scelta
+/// account ("Aggiungi account") ne crea uno e ci entra. Passi: lingua (solo
+/// primo avvio) → tipo e nome → registrazione SIP con il suo stato → API (solo
+/// Yeastar, facoltative) → audio. Un account = una registrazione (DECISIONS
+/// "Un account vivo alla volta").
 class SetupWizard extends StatefulWidget {
   const SetupWizard({
     super.key,
@@ -34,8 +35,7 @@ class _SetupWizardState extends State<SetupWizard> {
   ProfileKind _kind = ProfileKind.yeastar;
   final _name = TextEditingController();
 
-  /// Profilo da cui si è partiti con "Nuovo profilo…" (per annullare).
-  String? _previous;
+  /// Account creato da "Aggiungi account" (per annullare).
   String? _created;
 
   PhoneController get p => widget.phone;
@@ -62,7 +62,6 @@ class _SetupWizardState extends State<SetupWizard> {
       if (widget.firstRun) {
         await p.renameProfile(name, kind: _kind);
       } else if (_created == null) {
-        _previous = p.settings.profileId;
         if (!await p.createProfile(name, _kind)) return;
         _created = p.settings.profileId;
       } else {
@@ -82,11 +81,11 @@ class _SetupWizardState extends State<SetupWizard> {
     if (i > 0) setState(() => _step = _steps[i - 1]);
   }
 
-  /// Annulla: un profilo appena creato si elimina e si torna al precedente.
+  /// Annulla: l'account appena creato si elimina e si torna alla scelta.
   Future<void> _cancel() async {
-    final prev = _previous, created = _created;
-    if (prev != null && created != null) {
-      await p.switchProfile(prev);
+    final created = _created;
+    if (created != null) {
+      await p.logout();
       await p.deleteProfile(created);
     }
     widget.onDone();
@@ -123,7 +122,7 @@ class _SetupWizardState extends State<SetupWizard> {
                         child: Text(
                           widget.firstRun
                               ? tr('Benvenuto in DrinPhone')
-                              : tr('Nuovo profilo'),
+                              : tr('Nuovo account'),
                           style: TextStyle(
                             fontSize: 22,
                             fontWeight: FontWeight.w700,
@@ -283,8 +282,8 @@ class _SetupWizardState extends State<SetupWizard> {
           icon: Icons.hub_outlined,
           title: tr('Yeastar P-Series (integrato)'),
           sub: tr(
-            'Fino a 3 PBX Yeastar; interni, rubrica aziendale, presenza e Live '
-            'Calls dalle API (facoltative).',
+            'Un interno del PBX Yeastar; interni, rubrica aziendale, presenza '
+            'e Live Calls dalle API (facoltative).',
           ),
           onTap: () => setState(() => _kind = ProfileKind.yeastar),
         ),
@@ -303,7 +302,7 @@ class _SetupWizardState extends State<SetupWizard> {
         TextField(
           controller: _name,
           decoration: InputDecoration(
-            labelText: tr('Nome del profilo'),
+            labelText: tr('Nome dell’account'),
             hintText: _kind == ProfileKind.yeastar ? 'Econnet' : 'Trunk VoIP',
           ),
         ),
@@ -334,28 +333,26 @@ class _SetupWizardState extends State<SetupWizard> {
   };
 
   Widget _accounts(DrinColors c) {
-    final accounts = p.settings.accounts;
+    final a = p.settings.account;
     final yeastar = _kind == ProfileKind.yeastar;
+    final reg = a == null ? null : p.registrations[a.id];
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         _title(
           c,
-          yeastar ? tr('Account SIP dei PBX Yeastar') : tr('Account SIP'),
+          tr('Account SIP'),
           yeastar
-              ? tr(
-                  'Un account (interno) per ogni PBX, fino a 3. Un trunk VoIP '
-                  'aggiunto qui serve solo per chiamare.',
-                )
+              ? tr('Il tuo interno sul PBX Yeastar: utente, password e server.')
               : tr('Server, utente e password del centralino o del trunk.'),
         ),
-        for (final a in accounts)
+        if (a != null)
           ListTile(
             contentPadding: EdgeInsets.zero,
             leading: Icon(
               Icons.circle,
               size: 12,
-              color: switch (p.registrations[a.id]?.status) {
+              color: switch (reg?.status) {
                 RegistrationStatus.ok => c.ok,
                 RegistrationStatus.progress => c.ringing,
                 RegistrationStatus.failed => c.busy,
@@ -363,11 +360,11 @@ class _SetupWizardState extends State<SetupWizard> {
               },
             ),
             title: Text('${a.username}@${a.domain}'),
-            subtitle: Text(switch (p.registrations[a.id]?.status) {
+            subtitle: Text(switch (reg?.status) {
               RegistrationStatus.ok => tr('Registrato'),
               RegistrationStatus.progress => tr('Registrazione…'),
               RegistrationStatus.failed =>
-                '${tr('Errore registrazione')} · ${p.registrations[a.id]?.message ?? ''}',
+                '${tr('Errore registrazione')} · ${reg?.message ?? ''}',
               _ => tr('Non registrato'),
             }, style: TextStyle(color: c.muted)),
             trailing: IconButton(
@@ -378,25 +375,19 @@ class _SetupWizardState extends State<SetupWizard> {
               ),
               icon: const Icon(Icons.edit_outlined),
             ),
-          ),
-        const SizedBox(height: 8),
-        Align(
-          alignment: Alignment.centerLeft,
-          child: OutlinedButton.icon(
-            onPressed: () => showDialog<void>(
-              context: context,
-              builder: (_) => AccountEditor(phone: p),
-            ),
-            icon: const Icon(Icons.add_rounded),
-            label: Text(
-              accounts.isEmpty
-                  ? tr('Aggiungi account')
-                  : (yeastar
-                        ? tr('Aggiungi un altro PBX o un trunk')
-                        : tr('Aggiungi account')),
+          )
+        else
+          Align(
+            alignment: Alignment.centerLeft,
+            child: OutlinedButton.icon(
+              onPressed: () => showDialog<void>(
+                context: context,
+                builder: (_) => AccountEditor(phone: p),
+              ),
+              icon: const Icon(Icons.add_rounded),
+              label: Text(tr('Configura account')),
             ),
           ),
-        ),
       ],
     );
   }

@@ -147,6 +147,63 @@ void main() {
     },
   );
 
+  testWidgets('più account: scelta all’avvio, accesso, logout', (tester) async {
+    tester.view.physicalSize = const Size(1440, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final two = await tester.runAsync(() async {
+      await store.save(
+        const Settings(
+          profileName: 'Uno',
+          accounts: [_account],
+          others: [
+            Profile(
+              id: 'p2',
+              name: 'Due',
+              kind: ProfileKind.sip,
+              accounts: [
+                SipAccount(
+                  id: 'b2',
+                  username: '902',
+                  password: 'q',
+                  domain: 'b.test',
+                ),
+              ],
+            ),
+          ],
+        ),
+      );
+      final c = PhoneController(
+        FakeSipEngine(),
+        store,
+        engineDataDir: tmp.path,
+        logDir: tmp.path,
+      );
+      await c.init();
+      return c;
+    });
+    await tester.pumpWidget(DrinPhoneApp(phone: two!));
+    await tester.pump();
+    expect(find.text('Scegli l’account'), findsOneWidget);
+    expect(find.text('Uno'), findsOneWidget);
+    expect(find.text('Due'), findsOneWidget);
+    expect(find.text('Chiama con'), findsNothing);
+
+    await tester.runAsync(() => two.login('p2'));
+    await tester.pumpAndSettle();
+    expect(find.text('Scegli l’account'), findsNothing);
+    expect(find.text('902'), findsWidgets);
+    await tester.tap(find.byTooltip('Account'));
+    await tester.pumpAndSettle();
+    expect(find.text('Esci (logout)'), findsOneWidget);
+    await tester.tap(find.text('Esci (logout)'));
+    await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+    await tester.pumpAndSettle();
+    expect(two.loggedIn, isFalse);
+    expect(find.text('Scegli l’account'), findsOneWidget);
+    await tester.runAsync(two.shutdown);
+  });
+
   testWidgets('chiamata in arrivo mostra Rispondi e Rifiuta', (tester) async {
     tester.view.physicalSize = const Size(1440, 900);
     tester.view.devicePixelRatio = 1;
@@ -200,39 +257,18 @@ void main() {
     expect(find.text('Termina'), findsOneWidget);
   });
 
-  test(
-    'più account: password separate, chiamata via account del PBX',
-    () async {
-      const second = SipAccount(
-        id: 'b2',
-        username: '401',
-        password: 'altra!',
-        domain: 'pbx2.test',
-      );
-      await phone.saveAccount(_account);
-      await phone.saveAccount(second);
-      expect(engine.accounts.map((a) => a.id), ['main', 'b2']);
-      final reloaded = await store.load();
-      expect(reloaded.accounts.map((a) => a.password), ['s3greta!', 'altra!']);
-      expect(await File(store.path).readAsString(), isNot(contains('altra!')));
-
-      engine.registrationsCtl.add(
-        const RegistrationEvent(RegistrationStatus.ok, '', 'b2'),
-      );
-      // Interno manuale = PBX principale: si chiama senza account esplicito.
-      await phone.dial('300', via: const Extension('Sala', '300'));
-      expect(engine.log.last, 'dial 300');
-
-      // "Chiama con": i numeri liberi passano dall'account scelto, salvato.
-      await phone.setCallWith('b2');
-      await phone.dial('0612345');
-      expect(engine.log.last, 'dial 0612345 via b2');
-      expect((await store.load()).callWith, 'b2');
-
-      await phone.removeAccount('b2');
-      // Account tolto: si torna al principale.
-      expect(phone.outgoingAccount?.id, 'main');
-      expect((await store.load()).accounts.single.id, 'main');
-    },
-  );
+  test('una registrazione per account: salvarne una sostituisce', () async {
+    const other = SipAccount(
+      id: 'main',
+      username: '401',
+      password: 'altra!',
+      domain: 'pbx2.test',
+    );
+    await phone.saveAccount(_account);
+    await phone.saveAccount(other);
+    expect(engine.accounts.map((a) => a.username), ['401']);
+    final reloaded = await store.load();
+    expect(reloaded.accounts.single.password, 'altra!');
+    expect(await File(store.path).readAsString(), isNot(contains('altra!')));
+  });
 }
