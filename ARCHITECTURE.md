@@ -153,10 +153,11 @@ spikes/f0a/                         spike F0-A (non prodotto)
   reparti o, senza pannello, filtro a stella nell'intestazione.
 - **Reparti: solo membri diretti** — casella nell'intestazione di un reparto:
   `extIds` meno quelli dei sotto-reparti diretti (non salvata).
-- **Lingua** — `tr('testo italiano')` + `l10n_en.dart`; scelta in Preferenze,
-  immediata (rebuild di MaterialApp) e salvata in `settings.json`; un test
+- **Lingua** — `tr('testo italiano')` + `l10n_en.dart`; scelta nel menu
+  dell'account, immediata (`_Relocalize`, la schermata resta) e salvata in
+  `settings.json`; un test
   verifica che ogni chiave abbia la traduzione.
-- **UI** — Segoe UI Variable + Cascadia Mono; schede compatte a simboli
+- **UI** — stile Squillo (`DESIGN.md`, font inclusi Onest/Bricolage/Red Hat Mono); schede compatte a simboli
   (anello = stato linea, badge = presenza, testo nei tooltip); pagine (60 interni,
   50 contatti/registro); ricerca con popup sotto il campo (frecce/Invio/Esc).
 - **Registro chiamate** (`IMPLEMENTATO`) — `CallHistoryStore` (`lib/core/call_history.dart`):
