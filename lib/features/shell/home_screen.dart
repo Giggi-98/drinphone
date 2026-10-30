@@ -364,6 +364,11 @@ class _HomeScreenState extends State<HomeScreen> {
             onSelected: (v) => switch (v) {
               'rename' => _renameProfile(),
               'logout' => _logout(),
+              'lang:it' => p.setLanguage(AppLang.it),
+              'lang:en' => p.setLanguage(AppLang.en),
+              'theme:system' => p.setThemeMode(ThemeMode.system),
+              'theme:light' => p.setThemeMode(ThemeMode.light),
+              'theme:dark' => p.setThemeMode(ThemeMode.dark),
               _ => _openPreferences(),
             },
             itemBuilder: (_) => [
@@ -372,6 +377,38 @@ class _HomeScreenState extends State<HomeScreen> {
                 value: 'rename',
                 child: Text(tr('Rinomina account…')),
               ),
+              const PopupMenuDivider(),
+              // Lingua e tema: si applicano subito, restando dove si è.
+              for (final (l, label) in const [
+                (AppLang.it, 'Italiano'),
+                (AppLang.en, 'English'),
+              ])
+                CheckedPopupMenuItem(
+                  value: 'lang:${l.name}',
+                  checked: appLang.value == l,
+                  child: Text(label),
+                ),
+              const PopupMenuDivider(),
+              for (final (m, icon, label) in [
+                (
+                  ThemeMode.system,
+                  Icons.brightness_auto_rounded,
+                  tr('Tema di sistema'),
+                ),
+                (ThemeMode.light, Icons.light_mode_rounded, tr('Tema chiaro')),
+                (ThemeMode.dark, Icons.dark_mode_rounded, tr('Tema scuro')),
+              ])
+                CheckedPopupMenuItem(
+                  value: 'theme:${m.name}',
+                  checked: appThemeMode.value == m,
+                  child: Row(
+                    children: [
+                      Icon(icon, size: 18, color: c.muted),
+                      const SizedBox(width: DrinSpace.s2),
+                      Text(label),
+                    ],
+                  ),
+                ),
               const PopupMenuDivider(),
               PopupMenuItem(
                 value: 'logout',
@@ -392,19 +429,16 @@ class _HomeScreenState extends State<HomeScreen> {
                   CircleAvatar(
                     radius: 17,
                     backgroundColor: c.avatar,
-                    child: Text(
-                      initialsOf(
-                        account != null && account.displayName.isNotEmpty
-                            ? account.displayName
-                            : (p.settings.profileName.isNotEmpty
-                                  ? p.settings.profileName
-                                  : (account?.username ?? '?')),
-                      ),
-                      style: TextStyle(
-                        color: c.text,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                      ),
+                    // Nome della persona dal PBX se c'è ("305" non dà iniziali).
+                    child: initialsOrIcon(
+                      p.primaryConnection?.directory
+                              .where((e) => e.number == account?.username)
+                              .firstOrNull
+                              ?.name ??
+                          account?.displayName ??
+                          p.settings.profileName,
+                      icon: Icons.person_rounded,
+                      style: DrinText.label.copyWith(color: c.ink),
                     ),
                   ),
                   const SizedBox(width: 10),
@@ -1426,13 +1460,8 @@ class _GroupsPanelState extends State<_GroupsPanel> {
             child: Row(
               children: [
                 Text(
-                  tr('REPARTI'),
-                  style: TextStyle(
-                    fontSize: 11,
-                    letterSpacing: 1.2,
-                    fontWeight: FontWeight.w700,
-                    color: c.muted,
-                  ),
+                  tr('Reparti'),
+                  style: DrinText.label.copyWith(color: c.muted),
                 ),
                 const Spacer(),
                 Tooltip(

@@ -1,6 +1,8 @@
 import 'dart:io';
 
+import 'package:drinphone/app/l10n.dart';
 import 'package:drinphone/app/phone_controller.dart';
+import 'package:drinphone/app/theme.dart';
 import 'package:drinphone/core/security/settings_store.dart';
 import 'package:drinphone/core/sip/sip_engine.dart';
 import 'package:drinphone/main.dart';
@@ -270,5 +272,45 @@ void main() {
     final reloaded = await store.load();
     expect(reloaded.accounts.single.password, 'altra!');
     expect(await File(store.path).readAsString(), isNot(contains('altra!')));
+  });
+
+  // Bug 0.1.2: cambiare lingua o tema riportava all elenco interni.
+  testWidgets('lingua e tema cambiano restando nella sezione aperta', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1280, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    addTearDown(() {
+      appLang.value = AppLang.it;
+      appThemeMode.value = ThemeMode.system;
+    });
+    late PhoneController p;
+    await tester.runAsync(() async {
+      await store.save(const Settings(accounts: [_account]));
+      p = PhoneController(
+        engine,
+        store,
+        engineDataDir: tmp.path,
+        logDir: tmp.path,
+      );
+      await p.init();
+    });
+    await tester.pumpWidget(DrinPhoneApp(phone: p));
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.tap(find.text('Preferenze').last);
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.text('Diagnostica'), findsWidgets);
+
+    await tester.runAsync(() => p.setLanguage(AppLang.en));
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.text('Diagnostics'), findsWidgets);
+    expect(find.text('Diagnostica'), findsNothing);
+
+    await tester.runAsync(() => p.setThemeMode(ThemeMode.dark));
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.text('Diagnostics'), findsWidgets);
+    expect((await tester.runAsync(store.load))!.theme, 'dark');
+    await tester.pumpWidget(const SizedBox());
   });
 }

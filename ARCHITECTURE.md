@@ -269,7 +269,8 @@ spikes/f0a/                         spike F0-A (non prodotto)
   fornisce, sola lettura), Live Calls, Rubrica, Registro chiamate, Casella
   vocale; in fondo Preferenze organizzate in 2 ambiti (`Profilo`: Account SIP e
   Integrazione PBX, Presenza, Casella vocale; `Applicazione`: Audio/Cifratura/
-  Funzionalità, Diagnostica/Lingua/Tema).
+  Funzionalità, Diagnostica). Lingua e tema (salvati) nel menu dell'account in
+  alto a destra: si applicano senza ricreare la schermata (`_Relocalize` in `main.dart`).
 - **Aggiornamenti** (`IMPLEMENTATO` solo Windows; installazione dall'app `DA VALIDARE`
   con una release vera) — DECISIONS "Aggiornamenti dalle GitHub Releases". `Updater`
   (`ChangeNotifier`, in `PhoneController.updater`): `update.json` =

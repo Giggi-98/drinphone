@@ -847,8 +847,8 @@ class _Avatar extends StatelessWidget {
         border: Border.all(color: c.border, width: size > 60 ? 6 : 2),
       ),
       alignment: Alignment.center,
-      child: Text(
-        initialsOf(name),
+      child: initialsOrIcon(
+        name,
         style: TextStyle(
           fontSize: size * 0.34,
           fontWeight: FontWeight.w600,
@@ -1083,8 +1083,8 @@ class _RingingAvatarState extends State<_RingingAvatar>
           height: size,
           alignment: Alignment.center,
           decoration: BoxDecoration(color: c.brand, shape: BoxShape.circle),
-          child: Text(
-            initialsOf(widget.name),
+          child: initialsOrIcon(
+            widget.name,
             style: DrinText.displayStyle.copyWith(
               fontSize: 26,
               color: c.onPrimary,

@@ -99,6 +99,7 @@ class Settings {
     this.extensions = const [],
     this.pbx = const [],
     this.lang = 'it',
+    this.theme = 'system',
     this.voicemailCode = '*2',
     this.favorites = const [],
     this.audio = const ('', '', ''),
@@ -128,6 +129,9 @@ class Settings {
 
   /// Codice lingua dell'interfaccia (`it`, `en`).
   final String lang;
+
+  /// Tema dell'interfaccia: `system`, `light`, `dark`.
+  final String theme;
 
   /// Codice funzione per ascoltare la casella vocale. `*2` è il default di
   /// Yeastar P-Series: configurabile, non universale (docs/sip-e-blf.md).
@@ -197,6 +201,7 @@ class Settings {
       extensions: t.extensions,
       pbx: t.pbx,
       lang: lang,
+      theme: theme,
       voicemailCode: t.voicemailCode,
       favorites: t.favorites,
       audio: audio,
@@ -225,6 +230,7 @@ class Settings {
       extensions: a.extensions,
       pbx: a.pbx,
       lang: lang,
+      theme: theme,
       voicemailCode: a.voicemailCode,
       favorites: a.favorites,
       audio: audio,
@@ -245,6 +251,7 @@ class Settings {
     List<Extension>? extensions,
     List<PbxConnectionInfo>? pbx,
     String? lang,
+    String? theme,
     String? voicemailCode,
     List<String>? favorites,
     (String, String, String)? audio,
@@ -263,6 +270,7 @@ class Settings {
     extensions: extensions ?? this.extensions,
     pbx: pbx ?? this.pbx,
     lang: lang ?? this.lang,
+    theme: theme ?? this.theme,
     voicemailCode: voicemailCode ?? this.voicemailCode,
     favorites: favorites ?? this.favorites,
     audio: audio ?? this.audio,
@@ -401,6 +409,7 @@ class SettingsStore {
       debugLog: j['debugLog'] as bool? ?? false,
       extensions: active?.extensions ?? const [],
       lang: j['lang'] as String? ?? 'it',
+      theme: j['theme'] as String? ?? 'system',
       voicemailCode: active?.voicemailCode ?? '*2',
       favorites: active?.favorites ?? const [],
       seenMissedAt: active?.seenMissedAt ?? '',
@@ -513,6 +522,7 @@ class SettingsStore {
         'profiles': [for (final p in s.profiles) _profileJson(p)],
         'debugLog': s.debugLog,
         'lang': s.lang,
+        'theme': s.theme,
         'audioCapture': s.audio.$1,
         'audioPlayback': s.audio.$2,
         'audioRinger': s.audio.$3,

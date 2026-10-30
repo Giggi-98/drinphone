@@ -2,10 +2,12 @@ import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart' show ThemeMode;
 
 import '../core/call_history.dart';
 import '../core/contacts/personal_contacts.dart';
 import 'l10n.dart';
+import 'theme.dart' show appThemeMode;
 import '../core/pbx/pbx_cache.dart';
 import '../core/platform/video_surface.dart';
 import '../core/update/updater.dart';
@@ -183,6 +185,8 @@ class PhoneController extends ChangeNotifier {
   Future<void> init() async {
     settings = await _store.load();
     appLang.value = AppLang.fromCode(settings.lang);
+    appThemeMode.value =
+        ThemeMode.values.asNameMap()[settings.theme] ?? ThemeMode.system;
     await _splitProfiles();
     _subs.add(_engine.registrations.listen(_onRegistration));
     _subs.add(_engine.calls.listen(_onCall));
@@ -602,6 +606,14 @@ class PhoneController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Tema (Sistema, Chiaro, Scuro), salvato con le impostazioni.
+  Future<void> setThemeMode(ThemeMode mode) async {
+    appThemeMode.value = mode;
+    settings = settings.copyWith(theme: mode.name);
+    await _store.save(settings);
+    notifyListeners();
+  }
+
   Future<void> setVoicemailCode(String code) async {
     settings = settings.copyWith(voicemailCode: code.trim());
     await _store.save(settings);
@@ -655,6 +667,7 @@ class PhoneController extends ChangeNotifier {
         others: [...settings.others, settings.active],
         debugLog: settings.debugLog,
         lang: settings.lang,
+        theme: settings.theme,
         audio: settings.audio,
         callOptions: settings.callOptions,
         video: settings.video,
@@ -710,6 +723,7 @@ class PhoneController extends ChangeNotifier {
         ? Settings(
             debugLog: settings.debugLog,
             lang: settings.lang,
+            theme: settings.theme,
             audio: settings.audio,
             callOptions: settings.callOptions,
             video: settings.video,

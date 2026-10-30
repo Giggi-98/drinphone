@@ -5,13 +5,28 @@ import '../../app/l10n.dart';
 import '../../app/theme.dart';
 import '../../core/sip/sip_engine.dart';
 
+/// Iniziali delle parole che cominciano con una lettera ('' per "305", "*2").
 String initialsOf(String name) => name
     .split(RegExp(r'\s+'))
-    .where((w) => w.isNotEmpty)
+    .where(
+      (w) => w.isNotEmpty && RegExp(r'\p{L}', unicode: true).hasMatch(w[0]),
+    )
     .map((w) => w[0])
     .take(2)
     .join()
     .toUpperCase();
+
+/// Iniziali, oppure un'icona se il nome è solo un numero o un codice.
+Widget initialsOrIcon(
+  String name, {
+  required TextStyle style,
+  IconData icon = Icons.dialpad_rounded,
+}) {
+  final i = initialsOf(name);
+  return i.isEmpty
+      ? Icon(icon, size: (style.fontSize ?? 14) * 1.15, color: style.color)
+      : Text(i, style: style);
+}
 
 /// Stato linea (BLF) a parole, per tooltip e lettori di schermo.
 String blfLabel(BlfStatus? s) => switch (s) {
@@ -100,8 +115,8 @@ class StatusAvatar extends StatelessWidget {
                   opacity: offline ? 0.45 : 1,
                   child: CircleAvatar(
                     backgroundColor: c.avatar,
-                    child: Text(
-                      initialsOf(name),
+                    child: initialsOrIcon(
+                      name,
                       style: TextStyle(
                         fontSize: size * 0.32,
                         fontWeight: FontWeight.w600,

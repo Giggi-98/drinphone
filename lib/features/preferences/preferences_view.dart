@@ -83,7 +83,6 @@ class _PreferencesViewState extends State<PreferencesView> {
         Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            _LanguageTab(phone: phone),
             _DiagnosticsTab(phone: phone),
             if (phone.updater case final u?)
               _Card(
@@ -99,15 +98,7 @@ class _PreferencesViewState extends State<PreferencesView> {
 
     Widget navHeader(String label) => Padding(
       padding: const EdgeInsets.fromLTRB(12, 12, 12, 6),
-      child: Text(
-        label.toUpperCase(),
-        style: TextStyle(
-          fontSize: 11,
-          fontWeight: FontWeight.w700,
-          letterSpacing: 0.8,
-          color: c.muted,
-        ),
-      ),
+      child: Text(label, style: DrinText.label.copyWith(color: c.muted)),
     );
 
     Widget navTile(int i, IconData icon, String label) {
@@ -566,15 +557,7 @@ class _AccountEditorState extends State<AccountEditor> {
 
   Widget _group(DrinColors c, String title) => Padding(
     padding: const EdgeInsets.only(top: 14, bottom: 6),
-    child: Text(
-      title,
-      style: TextStyle(
-        fontSize: 12,
-        fontWeight: FontWeight.w700,
-        letterSpacing: 0.6,
-        color: c.muted,
-      ),
-    ),
+    child: Text(title, style: DrinText.label.copyWith(color: c.muted)),
   );
 
   Widget _field(TextEditingController t, String label, [String hint = '']) =>
@@ -1055,16 +1038,6 @@ class _FeaturesTab extends StatelessWidget {
       child: Column(
         children: [
           row(
-            Icons.do_not_disturb_on_outlined,
-            tr('Non disturbare'),
-            tr('Stato sul PBX: richiede l’API in scrittura'),
-          ),
-          row(
-            Icons.phone_forwarded_outlined,
-            tr('Inoltro di chiamata'),
-            tr('Regole di inoltro del PBX: richiede l’API in scrittura'),
-          ),
-          row(
             Icons.call_received_outlined,
             tr('Risposta automatica'),
             tr('Lato app: per interfono e citofoni'),
@@ -1079,8 +1052,6 @@ class _FeaturesTab extends StatelessWidget {
     );
   }
 }
-
-// -------------------------------------------------------------------- Lingua
 
 /// Videochiamate: webcam, anteprima, codec (VP8 incluso; H264 da Cisco).
 class _VideoTab extends StatefulWidget {
@@ -1460,58 +1431,6 @@ class _AdvancedTab extends StatelessWidget {
           ),
         ),
       ],
-    );
-  }
-}
-
-class _LanguageTab extends StatelessWidget {
-  const _LanguageTab({required this.phone});
-  final PhoneController phone;
-
-  @override
-  Widget build(BuildContext context) {
-    return _Card(
-      title: tr('Lingua'),
-      child: Wrap(
-        spacing: 24,
-        runSpacing: 14,
-        crossAxisAlignment: WrapCrossAlignment.center,
-        children: [
-          SegmentedButton<AppLang>(
-            segments: [
-              for (final l in AppLang.values)
-                ButtonSegment(value: l, label: Text(l.label)),
-            ],
-            selected: {appLang.value},
-            onSelectionChanged: (s) => phone.setLanguage(s.first),
-          ),
-          ValueListenableBuilder<ThemeMode>(
-            valueListenable: appThemeMode,
-            builder: (context, mode, _) => SegmentedButton<ThemeMode>(
-              showSelectedIcon: false,
-              segments: [
-                ButtonSegment(
-                  value: ThemeMode.system,
-                  tooltip: tr('Sistema'),
-                  icon: const Icon(Icons.brightness_auto_rounded, size: 18),
-                ),
-                ButtonSegment(
-                  value: ThemeMode.dark,
-                  tooltip: tr('Scuro'),
-                  icon: const Icon(Icons.dark_mode_rounded, size: 18),
-                ),
-                ButtonSegment(
-                  value: ThemeMode.light,
-                  tooltip: tr('Chiaro'),
-                  icon: const Icon(Icons.light_mode_rounded, size: 18),
-                ),
-              ],
-              selected: {mode},
-              onSelectionChanged: (s) => appThemeMode.value = s.first,
-            ),
-          ),
-        ],
-      ),
     );
   }
 }

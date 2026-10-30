@@ -122,21 +122,56 @@ class DrinPhoneApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Cambio lingua o tema dalle Impostazioni: si ricostruisce l'interfaccia.
+    // Cambio lingua o tema dal menu dell'account: l'interfaccia si aggiorna
+    // dov'è (stessa sezione, stesso dialogo aperto), senza ripartire.
     return ListenableBuilder(
       listenable: Listenable.merge([appLang, appThemeMode]),
-      builder: (_, _) {
-        final lang = appLang.value;
-        return MaterialApp(
-          title: 'DrinPhone',
-          debugShowCheckedModeBanner: false,
-          locale: Locale(lang.name),
-          themeMode: appThemeMode.value,
-          theme: buildTheme(Brightness.light),
-          darkTheme: buildTheme(Brightness.dark),
-          home: HomeScreen(key: ValueKey(lang), phone: phone),
-        );
-      },
+      builder: (_, _) => MaterialApp(
+        title: 'DrinPhone',
+        debugShowCheckedModeBanner: false,
+        locale: Locale(appLang.value.name),
+        themeMode: appThemeMode.value,
+        theme: buildTheme(Brightness.light),
+        darkTheme: buildTheme(Brightness.dark),
+        builder: (_, child) => _Relocalize(child: child!),
+        home: HomeScreen(phone: phone),
+      ),
     );
   }
+}
+
+/// Testi tradotti al volo: `tr()` si legge nei build, quindi al cambio di
+/// lingua si ricostruisce ogni elemento senza ricrearlo (lo stato resta).
+class _Relocalize extends StatefulWidget {
+  const _Relocalize({required this.child});
+  final Widget child;
+
+  @override
+  State<_Relocalize> createState() => _RelocalizeState();
+}
+
+class _RelocalizeState extends State<_Relocalize> {
+  @override
+  void initState() {
+    super.initState();
+    appLang.addListener(_onLang);
+  }
+
+  @override
+  void dispose() {
+    appLang.removeListener(_onLang);
+    super.dispose();
+  }
+
+  void _onLang() {
+    void rebuild(Element e) {
+      e.markNeedsBuild();
+      e.visitChildren(rebuild);
+    }
+
+    (context as Element).visitChildren(rebuild);
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.child;
 }
