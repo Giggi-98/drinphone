@@ -34,3 +34,7 @@ spikes/f0a/vendor/
 /*.jpg
 # Log temporanei
 *.tmp.log
+# Materiale grafico sorgente (PSD/PDF dei loghi): in app solo assets/brand/
+/Loghi/
+/Loghi.zip
+

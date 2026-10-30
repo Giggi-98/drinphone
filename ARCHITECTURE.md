@@ -16,7 +16,12 @@ provato contro un PBX reale con audio nei due versi (CLAUDE.md §5).
 lib/main.dart                       bootstrap: AppPaths -> PhoneController -> HomeScreen
 lib/app/phone_controller.dart       stato UI (registrazione, chiamata, impostazioni)
 lib/app/theme.dart                  palette D chiaro/scuro (DrinColors)
+lib/app/brand.dart                  logo DRIN per tema, badge canale (Alpha) e versione
+lib/core/update/updater.dart        aggiornamenti dalle GitHub Releases (manifest firmato)
+lib/features/update/                pannello e finestra "Aggiornamento"
+assets/brand/                       logo "Drin!" bianco monocromatico (1x, 2.0x)
 lib/core/app_paths.dart             cartelle dati: %APPDATA%\Econnet\DrinPhone
+lib/core/install_id.dart            ID casuale dell'installazione (supporto, solo locale)
 lib/core/sip/sip_engine.dart        porta astratta SipEngine + tipi neutri
 lib/core/sip/linphone_ffi_engine.dart  unico adattatore liblinphone (FFI, API C)
 lib/core/security/settings_store.dart  impostazioni JSON + password in storage sicuro
@@ -31,6 +36,9 @@ lib/core/contacts/                  contatti personali + import CSV/vCard
 test/                               controller e UI con FakeSipEngine
 windows/                            runner Flutter; CMake installa l'SDK accanto all'exe
 tool/fetch_linphone_sdk.ps1         scarica SDK in third_party/ (non versionato)
+tool/build_installer.ps1            build release + installer Inno Setup + update.json firmato (-Publish: release GitHub)
+tool/sign_update.dart               chiave e firma Ed25519 di update.json
+installer/                          script Inno Setup e nota Alpha per i tester
 spikes/f0a/                         spike F0-A (non prodotto)
 ```
 
@@ -239,9 +247,32 @@ spikes/f0a/                         spike F0-A (non prodotto)
   vocale; in fondo Preferenze organizzate in 2 ambiti (`Profilo`: Account SIP e
   Integrazione PBX, Presenza, Casella vocale; `Applicazione`: Audio/Cifratura/
   Funzionalità, Diagnostica/Lingua/Tema).
-- **Push / Yeastar / Update** — non implementati (F4 / F6 / F7).
+- **Aggiornamenti** (`IMPLEMENTATO` solo Windows; installazione dall'app `DA VALIDARE`
+  con una release vera) — DECISIONS "Aggiornamenti dalle GitHub Releases". `Updater`
+  (`ChangeNotifier`, in `PhoneController.updater`): `update.json` =
+  `{payload, sig}`, firma Ed25519 con chiave pubblica fissata, versione > `DRIN_VERSION`
+  (build `dev`: nessun controllo automatico), nome file validato, impronta SHA-256
+  dell'installer. Voce "Aggiorna a x.y.z" nella barra laterale, pannello in
+  Preferenze > Diagnostica.
+- **Errori non gestiti** — `main.dart`: `FlutterError.onError` e
+  `PlatformDispatcher.onError` in `logs/flutter-errors.log` (token/password negli
+  URL oscurati) con versione e ID di installazione; `ErrorWidget` mostra il messaggio al posto del riquadro grigio.
+- **Push / Yeastar** — non implementati (F4 / F6).
 
 ## 4. Flussi
+- **Installer Windows (Alpha)**: `tool/build_installer.ps1` legge la versione da
+  `pubspec.yaml` -> `flutter build windows --release --dart-define=DRIN_VERSION`
+  -> `ISCC installer/drinphone.iss` (Release + runtime MSVC app-local) ->
+  `DrinPhone-Alpha-<v>-setup.exe`, per utente in `%LOCALAPPDATA%\Programs\DrinPhone`,
+  non firmato. Disinstallando restano i dati in `%APPDATA%\Econnet\DrinPhone`.
+  Poi `dart run tool/sign_update.dart sign` -> `build/installer/update.json`;
+  con `-Publish` `gh release create v<v>` con installer e manifest.
+- **Aggiornamento**: avvio +30 s e ogni 6 ore (o "Verifica ora") -> GET
+  `github.com/Giggi-98/drinphone/releases/latest/download/update.json` -> firma,
+  versione, nome -> `available` -> "Installa e riavvia" (non in chiamata) ->
+  download in `updates\` + SHA-256 -> installer `/SILENT /SUPPRESSMSGBOXES
+  /NORESTART` -> `shutdown()` (un-REGISTER, token) -> `exit(0)`; Inno riapre l'app
+  (`[Run]` `skipifnotsilent`). Cartella `updates\` svuotata al controllo successivo.
 - **Avvio**: `AppPaths` -> `SettingsStore.load()` -> `engine.start(dataDir, logDir,
   debug)` -> se c'è un account `engine.register()`.
 - **Registrazione**: Preferenze > Utente -> `saveAccount` (password nello storage
@@ -263,7 +294,8 @@ Flutter 3.47.8 / Dart 3.13.7; `ffi` ^2.2.0; `archive` ^4.5 (bzip2 di OpenH264) e
 `crypto` ^3.0 (SHA-256); ANGLE di Qt 5.15.2 (libEGL/libGLESv2, BSD-3, per il
 video; `tool/fetch_angle.ps1`); `file_selector` ^1.1.0 (scelta del
 file da importare, plugin flutter.dev); `flutter_secure_storage` ^11.2.0
-(Windows: richiede componente VS "C++ ATL"); linphone-sdk-win64 5.5.39 (GPLv3 /
+(Windows: richiede componente VS "C++ ATL"); `cryptography` ^2.9.0 (Ed25519 in Dart
+puro, firma degli aggiornamenti); linphone-sdk-win64 5.5.39 (GPLv3 /
 commerciale, `docs/licenze-e-compliance.md`). Toolchain: VS 2022 Build Tools 17.14
 (C++ + ATL), Windows SDK 10.0.26100.
 
@@ -278,6 +310,10 @@ commerciale, `docs/licenze-e-compliance.md`). Toolchain: VS 2022 Build Tools 17.
 - Nessun STUN/ICE configurato: audio unidirezionale probabile dietro NAT (F2).
 - TLS: CA di `share/linphone/rootca.pem` dell'SDK; nessun pinning.
 - Una sola istanza: due avvii contemporanei condividerebbero DB e log.
+- Nomi di schede audio/webcam non UTF-8 (code page ANSI su alcuni PC): letti in
+  Latin-1 e ripassati al core con gli stessi byte (`_deviceName`/`_deviceNative`).
+- Chiave privata degli aggiornamenti: solo sul PC di chi pubblica; persa = niente
+  più aggiornamenti per i client installati.
 
 ## 7. Architettura target (PROPOSTA, non implementata)
 ```

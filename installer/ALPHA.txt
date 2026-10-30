@@ -1,0 +1,14 @@
+﻿DrinPhone Alpha - versione di prova
+
+Questa è una versione ALPHA di DrinPhone, il softphone di Econnet srl.
+Serve solo per i test interni: può contenere errori, cambiare senza preavviso
+e non va usata come unico telefono per chiamate importanti o di emergenza.
+
+- Le segnalazioni vanno a Econnet indicando la versione (passa il mouse sulla
+  scritta ALPHA in alto a sinistra) e cosa stavi facendo.
+- Account, contatti e impostazioni restano in %APPDATA%\Econnet\DrinPhone
+  anche dopo la disinstallazione.
+- Il codec video H264 non è incluso: DrinPhone lo scarica da Cisco solo se lo
+  chiedi dalle Preferenze.
+
+Non ridistribuire questo installatore fuori dal gruppo di test.

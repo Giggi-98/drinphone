@@ -5,6 +5,7 @@
 // motore; l'account viene ripassato a ogni avvio dallo storage sicuro.
 // Prove e trappole del binding: docs/spikes/F0-A.md.
 import 'dart:async';
+import 'dart:convert';
 import 'dart:ffi';
 import 'dart:io';
 
@@ -215,13 +216,14 @@ class LinphoneFfiEngine implements SipEngine {
   List<SoundDevice> soundDevices() {
     if (_core == nullptr) return const [];
     _reloadSound(_core);
+    _devicesListed = true;
     final list = _soundDevices(_core); // array di char* terminato da NULL
     final out = <SoundDevice>[];
     for (var i = 0; list != nullptr && list[i] != nullptr; i++) {
       final id = list[i];
       out.add(
         SoundDevice(
-          id.toDartString(),
+          _deviceName(id),
           capture: _canCapture(_core, id) != 0,
           playback: _canPlayback(_core, id) != 0,
         ),
@@ -234,10 +236,41 @@ class LinphoneFfiEngine implements SipEngine {
   (String, String, String) audioDevices() => _core == nullptr
       ? ('', '', '')
       : (
-          _str(_getCapture(_core)),
-          _str(_getPlayback(_core)),
-          _str(_getRinger(_core)),
+          _deviceName(_getCapture(_core)),
+          _deviceName(_getPlayback(_core)),
+          _deviceName(_getRinger(_core)),
         );
+
+  /// Nomi letti in ANSI anziché UTF-8 (sotto): si ripassano al core con gli
+  /// stessi byte, o il dispositivo non verrebbe trovato.
+  final _ansiNames = <String>{};
+  var _devicesListed = false;
+
+  /// Nome di scheda audio o webcam. Su alcuni PC Windows arriva nella code
+  /// page ANSI (es. "Microfono (Realtek® Audio)" con ® = 0xAE): `toDartString`
+  /// lancia FormatException e la scheda Audio delle Preferenze restava grigia.
+  /// Latin-1 conserva i byte, così il nome torna identico al core.
+  String _deviceName(Pointer<Utf8> p) {
+    if (p == nullptr) return '';
+    final bytes = p.cast<Uint8>().asTypedList(p.length);
+    try {
+      return utf8.decode(bytes);
+    } on FormatException {
+      final name = latin1.decode(bytes);
+      _ansiNames.add(name);
+      return name;
+    }
+  }
+
+  Pointer<Utf8> _deviceNative(String name, Allocator a) {
+    if (!_ansiNames.contains(name)) return name.toNativeUtf8(allocator: a);
+    final bytes = latin1.encode(name);
+    final p = a<Uint8>(bytes.length + 1);
+    p.asTypedList(bytes.length + 1)
+      ..setAll(0, bytes)
+      ..[bytes.length] = 0;
+    return p.cast();
+  }
 
   @override
   Future<void> setAudioDevices({
@@ -246,15 +279,17 @@ class LinphoneFfiEngine implements SipEngine {
     String? ringer,
   }) async {
     if (_core == nullptr) return;
+    // All'avvio (dispositivi salvati) i nomi ANSI non sono ancora noti.
+    if (!_devicesListed) soundDevices();
     using((a) {
       if (capture != null && capture.isNotEmpty) {
-        _setCapture(_core, capture.toNativeUtf8(allocator: a));
+        _setCapture(_core, _deviceNative(capture, a));
       }
       if (playback != null && playback.isNotEmpty) {
-        _setPlayback(_core, playback.toNativeUtf8(allocator: a));
+        _setPlayback(_core, _deviceNative(playback, a));
       }
       if (ringer != null && ringer.isNotEmpty) {
-        _setRinger(_core, ringer.toNativeUtf8(allocator: a));
+        _setRinger(_core, _deviceNative(ringer, a));
       }
     });
   }
@@ -1174,7 +1209,7 @@ class LinphoneFfiEngine implements SipEngine {
     _setFramerate(_core, 25);
     _setUploadBandwidth(_core, kbps);
     if (o.camera.isNotEmpty) {
-      using((a) => _setVideoDevice(_core, o.camera.toNativeUtf8(allocator: a)));
+      using((a) => _setVideoDevice(_core, _deviceNative(o.camera, a)));
     }
   }
 
@@ -1186,7 +1221,7 @@ class LinphoneFfiEngine implements SipEngine {
   List<String> videoDevices() {
     final list = _getVideoDevices(_core);
     if (list == nullptr) return const [];
-    return [for (var i = 0; list[i] != nullptr; i++) list[i].toDartString()];
+    return [for (var i = 0; list[i] != nullptr; i++) _deviceName(list[i])];
   }
 
   @override

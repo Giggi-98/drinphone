@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../app/brand.dart';
 import '../../app/l10n.dart';
 import '../../app/phone_controller.dart';
 import '../../app/theme.dart';
@@ -116,6 +117,16 @@ class _SetupWizardState extends State<SetupWizard> {
               builder: (context, _) => Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
+                  if (widget.firstRun) ...[
+                    const Row(
+                      children: [
+                        DrinLogo(height: 40),
+                        Spacer(),
+                        ChannelBadge(),
+                      ],
+                    ),
+                    const SizedBox(height: 20),
+                  ],
                   Row(
                     children: [
                       Expanded(

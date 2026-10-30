@@ -17,6 +17,7 @@ class AppPaths {
   String get engineData => '$root${_s}linphone';
   String get logs => '$root${_s}logs';
   String get settingsFile => '$root${_s}settings.json';
+  String get installIdFile => '$root${_s}install-id';
 
   /// Registro chiamate del profilo; `default` = file della versione senza profili.
   String historyFileFor(String profileId) => profileId == 'default'
@@ -34,6 +35,9 @@ class AppPaths {
 
   /// Codec scaricati (OpenH264 di Cisco).
   String get codecs => '$root${_s}codecs';
+
+  /// Installer scaricati dagli aggiornamenti.
+  String get updates => '$root${_s}updates';
 
   /// Cache cifrata (DPAPI) dei dati letti da una connessione PBX.
   String pbxCacheFileFor(String id) => '$root${_s}pbx-cache-$id.dpapi';

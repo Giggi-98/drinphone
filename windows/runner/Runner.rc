@@ -89,13 +89,13 @@ BEGIN
     BEGIN
         BLOCK "040904e4"
         BEGIN
-            VALUE "CompanyName", "it.drin" "\0"
-            VALUE "FileDescription", "drinphone" "\0"
+            VALUE "CompanyName", "Econnet srl" "\0"
+            VALUE "FileDescription", "DrinPhone Alpha" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
             VALUE "InternalName", "drinphone" "\0"
-            VALUE "LegalCopyright", "Copyright (C) 2026 it.drin. All rights reserved." "\0"
+            VALUE "LegalCopyright", "Copyright (C) 2026 Econnet srl. All rights reserved." "\0"
             VALUE "OriginalFilename", "drinphone.exe" "\0"
-            VALUE "ProductName", "drinphone" "\0"
+            VALUE "ProductName", "DrinPhone" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END

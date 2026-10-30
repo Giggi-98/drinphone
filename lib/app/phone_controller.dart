@@ -8,6 +8,7 @@ import '../core/contacts/personal_contacts.dart';
 import 'l10n.dart';
 import '../core/pbx/pbx_cache.dart';
 import '../core/platform/video_surface.dart';
+import '../core/update/updater.dart';
 import '../core/video/openh264.dart';
 import '../core/pbx/pbx_connection.dart';
 import '../core/pbx/yeastar_api.dart';
@@ -23,11 +24,13 @@ class PhoneController extends ChangeNotifier {
     this._store, {
     required this.engineDataDir,
     required this.logDir,
+    this.installId = '',
     this.apiStoreFor,
     this.historyStoreFor,
     this.personalStoreFor,
     this.cacheFor,
     this.openH264,
+    this.updater,
     this.recordingsDir = '',
     this.onIncomingCall,
     YeastarApi Function(ApiCredentials)? apiFactory,
@@ -40,6 +43,9 @@ class PhoneController extends ChangeNotifier {
 
   /// Codec H264 di Cisco, scaricato a richiesta (DECISIONS "Videochiamate").
   final OpenH264? openH264;
+
+  /// Aggiornamenti dalle GitHub Releases (solo installazioni Windows).
+  final Updater? updater;
 
   /// Cartella delle registrazioni locali ('' = registrazione locale non disponibile).
   final String recordingsDir;
@@ -96,6 +102,9 @@ class PhoneController extends ChangeNotifier {
   final SettingsStore _store;
   final String engineDataDir;
   final String logDir;
+
+  /// Codice di questa installazione (`core/install_id.dart`).
+  final String installId;
   final _subs = <StreamSubscription<Object>>[];
 
   /// Deposito credenziali per connessione (null = piattaforma senza DPAPI).

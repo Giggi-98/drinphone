@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../app/brand.dart';
 import '../../app/l10n.dart';
 import '../../app/phone_controller.dart';
 import '../../app/theme.dart';
@@ -96,6 +97,14 @@ class AccountPicker extends StatelessWidget {
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
+                    const Row(
+                      children: [
+                        DrinLogo(height: 40),
+                        Spacer(),
+                        ChannelBadge(),
+                      ],
+                    ),
+                    const SizedBox(height: 20),
                     Text(
                       tr('Scegli l’account'),
                       style: TextStyle(

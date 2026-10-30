@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../app/l10n.dart';
 import '../../app/phone_controller.dart';
@@ -11,6 +12,7 @@ import '../../core/sip/sip_engine.dart';
 import '../account/api_dialog.dart';
 import '../call/native_video_view.dart';
 import '../shell/widgets.dart';
+import '../update/update_panel.dart';
 
 /// Preferenze riorganizzate per ambito (Profilo vs Applicazione) con
 /// transizioni fluide tra le sezioni e indicatori di stato visivi.
@@ -81,6 +83,11 @@ class _PreferencesViewState extends State<PreferencesView> {
           children: [
             _LanguageTab(phone: phone),
             _DiagnosticsTab(phone: phone),
+            if (phone.updater case final u?)
+              _Card(
+                title: tr('Aggiornamenti'),
+                child: UpdatePanel(phone: phone, updater: u),
+              ),
           ],
         ),
       ),
@@ -1877,6 +1884,21 @@ class _DiagnosticsTab extends StatelessWidget {
             }),
             style: TextStyle(color: c.text),
           ),
+          if (phone.installId.isNotEmpty)
+            Row(
+              children: [
+                SelectableText(
+                  tr('ID installazione: {id}', {'id': phone.installId}),
+                  style: TextStyle(color: c.text),
+                ),
+                IconButton(
+                  tooltip: tr('Copia'),
+                  icon: Icon(Icons.copy_rounded, size: 16, color: c.muted),
+                  onPressed: () =>
+                      Clipboard.setData(ClipboardData(text: phone.installId)),
+                ),
+              ],
+            ),
           const SizedBox(height: 10),
           CheckboxListTile(
             contentPadding: EdgeInsets.zero,

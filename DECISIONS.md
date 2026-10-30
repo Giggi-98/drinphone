@@ -6,6 +6,64 @@ aggiungi una voce nuova in cima che cita la vecchia. Il campo chiave è
 
 ---
 
+## 2026-10-30 · ID di installazione: solo locale
+**Scelta:** ogni installazione crea al primo avvio un codice casuale di 16 byte
+(`install-id` nella cartella dati: resta fra aggiornamenti e reinstallazioni
+dello stesso utente), mostrato in Preferenze > Diagnostica e scritto in
+`flutter-errors.log`. Serve a riconoscere il PC nel supporto; **non** viene
+inviato a GitHub e non autentica.
+**Scartato:** credenziali per installazione emesse da GitHub (GitHub non le
+emette; un repo privato richiederebbe un token estraibile nel client);
+mandare l'ID a GitHub nel controllo aggiornamenti (GitHub non ce lo mostra:
+solo un dato in più a terzi).
+**Da rivedere se:** servono conteggi, versioni installate o revoca per
+installazione → endpoint Econnet che riceve il controllo con l'ID.
+
+---
+
+## 2026-10-30 · Aggiornamenti dalle GitHub Releases, manifest firmato (aggiorna "Canale aggiornamenti" del 2026-10-26 e "Installer Windows della Alpha")
+**Scelta:** il client Windows legge `update.json` dall'**ultima release** del
+repo `Giggi-98/drinphone` (`/releases/latest/download/update.json`, niente API
+né token) all'avvio (+30 s) e ogni 6 ore, o con "Verifica ora" (Preferenze >
+Diagnostica). Il manifest è **firmato Ed25519**: chiave pubblica fissata in
+`Updater.publicKey`, privata fuori dal repo (`%USERPROFILE%\.drinphone\update-signing.key`
+di chi pubblica). Accettato solo con firma valida, versione più recente
+(niente rollback) e installer con l'impronta SHA-256 del manifest; URL
+ricavato dal repo fissato, non dal manifest. "Installa e riavvia" (mai in
+chiamata): download in `%APPDATA%\Econnet\DrinPhone\updates`, installer Inno
+`/SILENT`, un-REGISTER, uscita; l'installer riapre l'app. Pubblicazione:
+`tool/build_installer.ps1 -Notes … -Publish` (gh).
+**Scartato:** repo "releases" separato (il repo del codice risulta già pubblico,
+verificato il 2026-10-30: un secondo repo non toglie nulla); solo HTTPS + hash
+(chi ottiene la scrittura sul repo distribuirebbe un eseguibile a tutti);
+API GitHub `releases/latest` (limite 60 richieste/ora per IP: un ufficio dietro
+un NAT lo supera); aggiornamento silenzioso senza conferma (riavvia il telefono
+sotto l'utente); Authenticode (serve un certificato, vedi Installer).
+**Vincolo aperto:** perdita della chiave privata = i client installati non
+accettano più aggiornamenti (reinstallazione a mano con la nuova chiave).
+**Da rivedere se:** servono canali (alpha/beta), rollout graduale, versione
+minima forzata, il repo torna privato (allora → endpoint Econnet), o arriva la
+firma del codice.
+
+---
+
+## 2026-10-29 · Installer Windows della Alpha: Inno Setup per utente
+**Scelta:** `DrinPhone-Alpha-<v>-setup.exe` con Inno Setup 6, installazione
+**per utente** (niente UAC) in `%LOCALAPPDATA%\Programs\DrinPhone`, runtime MSVC
+copiato accanto all'exe, non firmato. "Alpha" nel titolo della finestra, nel
+badge della barra laterale (tooltip con la versione) e nel nome dell'installer.
+Versione da `pubspec.yaml` (ora 0.1.0). Logo: wordmark "Drin!" bianco unico,
+colorato da Flutter (blu DRIN sul chiaro, testo sullo scuro); icona = nuvola DRIN.
+**Scartato:** MSIX (serve un certificato anche per i tester, sideload più
+scomodo); ZIP portabile (niente collegamenti né disinstallazione); redistributable
+VC++ lanciato dall'installer (richiederebbe privilegi di amministratore).
+**Vincolo aperto:** il gate licenze ("Commercializzazione / licensing",
+2026-10-28) resta: la Alpha va solo a tester interni finché non è chiuso.
+**Da rivedere se:** serve auto-aggiornamento desktop, firma del codice o
+installazione per macchina (MDM/GPO), o la distribuzione esce dal gruppo interno.
+
+---
+
 ## 2026-10-29 · Rubrica aziendale ogni 6 ore (di Luigi; aggiorna "Multi-PBX e sincronizzazione dati API")
 **Scelta:** la rubrica aziendale (`company_contact/list`, sul pilota 4469 contatti
 in 9 pagine) non si rilegge più con i reparti ogni 10 min e a ogni accesso, ma

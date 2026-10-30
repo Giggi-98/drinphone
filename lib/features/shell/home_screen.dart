@@ -2,6 +2,7 @@ import 'dart:ui' show AppExitResponse;
 
 import 'package:flutter/material.dart';
 
+import '../../app/brand.dart';
 import '../../app/l10n.dart';
 import '../../app/phone_controller.dart';
 import '../../app/theme.dart';
@@ -15,6 +16,7 @@ import '../preferences/preferences_view.dart';
 import '../setup/account_picker.dart';
 import '../setup/setup_wizard.dart';
 import '../voicemail/voicemail_view.dart';
+import '../update/update_panel.dart';
 import 'search_box.dart';
 import 'widgets.dart';
 
@@ -43,6 +45,7 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     p.addListener(_onPhone);
+    p.updater?.addListener(_onUpdater);
     // Finestre video permanenti, appena esiste la finestra dell'app.
     WidgetsBinding.instance.addPostFrameCallback(
       (_) => p.attachVideoSurfaces(),
@@ -62,6 +65,7 @@ class _HomeScreenState extends State<HomeScreen> {
   void dispose() {
     _lifecycle.dispose();
     p.removeListener(_onPhone);
+    p.updater?.removeListener(_onUpdater);
     super.dispose();
   }
 
@@ -80,6 +84,9 @@ class _HomeScreenState extends State<HomeScreen> {
     }
     setState(() {});
   }
+
+  /// Voce "Aggiorna a …" nella barra laterale.
+  void _onUpdater() => setState(() {});
 
   void _call(String number) => p.dial(number);
 
@@ -146,6 +153,8 @@ class _HomeScreenState extends State<HomeScreen> {
             missed: p.missedUnseen,
             voicemailNew: p.voicemailUnseen,
             showLive: p.hasLiveCalls,
+            update: p.updater?.available?.version,
+            onUpdate: () => showUpdateDialog(context, p, p.updater!),
             onSection: (s) {
               setState(() => _section = s);
               _markSeen();
@@ -431,12 +440,18 @@ class _Sidebar extends StatelessWidget {
     required this.voicemailNew,
     required this.showLive,
     required this.onSection,
+    this.update,
+    this.onUpdate,
   });
   final _Section section;
   final int missed;
   final int voicemailNew;
   final bool showLive;
   final ValueChanged<_Section> onSection;
+
+  /// Versione disponibile (aggiornamento non ancora installato).
+  final String? update;
+  final VoidCallback? onUpdate;
 
   @override
   Widget build(BuildContext context) {
@@ -511,37 +526,28 @@ class _Sidebar extends StatelessWidget {
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(10, 0, 10, 24),
-            child: Row(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Container(
-                  width: 30,
-                  height: 30,
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    color: c.accent.withValues(alpha: 0.14),
-                    border: Border.all(color: c.accent, width: 1.5),
-                    borderRadius: BorderRadius.circular(9),
-                  ),
-                  child: Text(
-                    'D',
-                    style: TextStyle(
-                      color: c.accent,
-                      fontWeight: FontWeight.w800,
+                const DrinLogo(height: 36),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        'DrinPhone',
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: -0.2,
+                          color: c.text,
+                        ),
+                      ),
                     ),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Flexible(
-                  child: Text(
-                    'DrinPhone',
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 19,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: -0.2,
-                      color: c.text,
-                    ),
-                  ),
+                    const SizedBox(width: 8),
+                    const ChannelBadge(),
+                  ],
                 ),
               ],
             ),
@@ -580,6 +586,13 @@ class _Sidebar extends StatelessWidget {
             trailing: CountBadge(voicemailNew, alert: true),
           ),
           const Spacer(),
+          if (update != null)
+            item(
+              Icons.system_update_alt_rounded,
+              tr('Aggiorna a {v}', {'v': update!}),
+              false,
+              onUpdate!,
+            ),
           item(
             Icons.tune_rounded,
             tr('Preferenze'),
