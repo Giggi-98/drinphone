@@ -4,16 +4,19 @@ import 'dart:io';
 
 import 'package:drinphone/app/phone_controller.dart';
 import 'package:drinphone/core/pbx/pbx_cache.dart';
+import 'package:drinphone/core/pbx/pbx_cdr.dart';
 import 'package:drinphone/core/pbx/pbx_connection.dart';
 import 'package:drinphone/core/pbx/pbx_sync.dart';
 import 'package:drinphone/core/pbx/yeastar_api.dart';
 import 'package:drinphone/core/security/api_credential_store.dart';
+import 'package:drinphone/core/security/cdr_db_store.dart';
 import 'package:drinphone/core/security/settings_store.dart';
 import 'package:drinphone/core/sip/sip_engine.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'fake_sip_engine.dart';
+import 'pbx_cdr_test.dart' show FakeCdrDb;
 
 const _id = 'CLIENT-ID-123';
 const _secret = 'CLIENT-SECRET-xyz';
@@ -319,6 +322,7 @@ void main() {
     Map<String, String> pbxUrls, {
     PbxCache Function(String id)? cacheFor,
     Map<String, int> sync = const {},
+    CdrSourceOpener? cdrOpener,
   }) async {
     FlutterSecureStorage.setMockInitialValues({});
     final sep = Platform.pathSeparator;
@@ -357,6 +361,9 @@ void main() {
       logDir: tmp.path,
       apiStoreFor: storeFor,
       cacheFor: cacheFor,
+      cdrStoreFor: (id) =>
+          CdrDbStore('${tmp.path}${Platform.pathSeparator}db-$id.dpapi'),
+      cdrOpener: cdrOpener,
     );
     await phone.init();
     await phone.connectionsStarted;
@@ -829,6 +836,37 @@ void main() {
     skip: !Platform.isWindows,
   );
 
+  // CDR (Database Grant): il proprio interno è quello scelto dall'amministratore;
+  // lo username SIP cambiato non apre il CDR di un collega.
+  test(
+    'CDR: solo il proprio interno, lo username cambiato non legge altro',
+    () async {
+      final db = FakeCdrDb();
+      final phone = await controllerWith(FakeSipEngine(), {
+        'a': pbx.baseUrl,
+      }, cdrOpener: (_) async => db);
+      final conn = phone.connections.single;
+      expect(conn.cdrConfigured, isFalse);
+      await conn.saveCdr(
+        const CdrDbCredentials(host: 'pbx.test', user: 'u', password: 'p'),
+      );
+      expect(conn.cdrConfigured, isTrue);
+      expect((await conn.readCdr()).single.src, '301');
+      expect(db.queries.last.$2, ['305', '305']);
+      await expectLater(conn.readCdr(wholePbx: true), throwsStateError);
+
+      final a = phone.settings.account!;
+      await phone.saveAccount(
+        SipAccount(id: a.id, username: '301', password: 'p', domain: a.domain),
+      );
+      final before = db.queries.length;
+      expect(await conn.readCdr(), isEmpty);
+      expect(db.queries.length, before);
+      await phone.shutdown();
+    },
+    skip: !Platform.isWindows,
+  );
+
   // Audit 2026-10-30 (run-3): dopo il cambio di PBX niente id dal PBX vecchio.
   test(
     'cambio PBX: dati e cache del PBX precedente non guidano le scritture',
@@ -844,6 +882,9 @@ void main() {
       for (var i = 0; i < 50 && !File(path).existsSync(); i++) {
         await Future<void>.delayed(const Duration(milliseconds: 20));
       }
+      await conn.saveCdr(
+        const CdrDbCredentials(host: 'pbx.a', user: 'u', password: 'p'),
+      );
       final edited = phone.ownDetail!.withValues({
         'enb_all_busy_mode_for_endpoints': '0',
       });
@@ -867,6 +908,8 @@ void main() {
       expect(conn.directory, isEmpty);
       expect(phone.ownDetail, isNull);
       expect(await PbxCache(path).load(), isNull);
+      // Il database CDR era del PBX di prima.
+      expect(conn.cdrConfigured, isFalse);
       await expectLater(phone.updateOwnExtension(edited), throwsStateError);
       expect(
         b.requests.where((r) => r.uri.path.endsWith('extension/update')),

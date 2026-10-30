@@ -6,6 +6,31 @@ aggiungi una voce nuova in cima che cita la vecchia. Il campo chiave è
 
 ---
 
+## 2026-10-30 · CDR dal database del PBX (Database Grant)
+**Scelta:** il registro chiamate legge anche il **CDR del PBX** collegandosi
+al suo MySQL con **Database Grant** (Yeastar P-Series: porta 3306, utente e
+password generati dal PBX, IP consentiti), tabella `cdr`, sola lettura, a
+pagine da 50 con statement preparati. Credenziali inserite
+dall'amministratore (dialogo "Database CDR"), cifrate DPAPI per connessione
+(`pbx-db-<id>.dpapi`), mai mostrate. Di default **solo il proprio interno**
+(`voicemailOf`, legato all'interno scelto dall'amministratore); il CDR di
+**tutto il PBX** solo se l'amministratore lo concede (opzione salvata con le
+credenziali), coerente con "Modello di fiducia".
+Libreria: `mysql_client` 0.0.27 (BSD-3, Dart puro, TLS, `caching_sha2`).
+**Rischio accettato:** la libreria cifra con TLS ma **non verifica il
+certificato** del PBX: protegge da ascolto passivo, non da un server falso;
+da usare in LAN/VPN con gli IP consentiti sul PBX. Chi ha le credenziali del
+database può leggere quello che Database Grant concede (non solo `cdr`).
+**Scartato:** `mysql1` (pub.dev dice MIT ma il file `LICENSE` è **GPL v2**:
+copyleft evitabile); API Yeastar per il CDR (non dà il CDR di tutto il PBX
+con le stesse colonne); mostrare all'utente il CDR di tutti senza consenso
+dell'amministratore (dati personali dei colleghi).
+**Da rivedere se:** serve il CDR fuori dalla LAN (→ gateway Econnet o
+verifica del certificato), Yeastar cambia lo schema della tabella `cdr`, o la
+libreria non è più mantenuta.
+
+---
+
 ## 2026-10-30 · Identità visiva "Squillo" (sostituisce la palette della proposta D del 2026-10-28)
 **Scelta:** stile **Squillo** con la densità del **Centralino**: "Drin!" è il
 suono dello squillo, quindi lo squillo è il marchio. Blu DRIN del logo come

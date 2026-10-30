@@ -10,8 +10,10 @@ import 'package:flutter/foundation.dart' show debugPrint;
 
 import '../../app/l10n.dart';
 import '../security/api_credential_store.dart';
+import '../security/cdr_db_store.dart';
 import '../sip/sip_engine.dart' show BlfStatus;
 import 'pbx_cache.dart';
+import 'pbx_cdr.dart';
 import 'pbx_sync.dart';
 import 'yeastar_api.dart';
 
@@ -86,9 +88,69 @@ class PbxConnection {
     required this.apiFactory,
     required this.onUpdate,
     this.cache,
+    this.cdrStore,
+    this.cdrOpener,
   });
 
   final String id;
+
+  /// Credenziali Database Grant per il CDR (null = funzione assente).
+  final CdrDbStore? cdrStore;
+  final CdrSourceOpener? cdrOpener;
+
+  /// CDR configurato (credenziali salvate) e concesso per tutto il PBX.
+  bool get cdrConfigured => cdrStore?.isSet ?? false;
+  bool cdrWholePbx = false;
+
+  /// Righe del CDR: del proprio interno ([voicemailOf], legato all'interno
+  /// scelto dall'amministratore) o di tutto il PBX se concesso.
+  /// Una lettura del CDR alla volta: filtri nuovi o "Riprova" non aprono
+  /// connessioni in parallelo al database del PBX.
+  Future<void> _cdrQueue = Future.value();
+
+  Future<List<CdrRecord>> readCdr({
+    bool wholePbx = false,
+    String search = '',
+    DateTime? from,
+    int offset = 0,
+  }) {
+    final next = _cdrQueue.then(
+      (_) => _readCdr(wholePbx, search, from, offset),
+    );
+    _cdrQueue = next.then((_) {}, onError: (Object _) {});
+    return next;
+  }
+
+  Future<List<CdrRecord>> _readCdr(
+    bool wholePbx,
+    String search,
+    DateTime? from,
+    int offset,
+  ) async {
+    final creds = await cdrStore?.load();
+    if (creds == null) throw StateError('CDR non configurato');
+    cdrWholePbx = creds.wholePbx;
+    return PbxCdr(creds, open: cdrOpener).read(
+      ownExtension: voicemailOf,
+      wholePbx: wholePbx,
+      search: search,
+      from: from,
+      offset: offset,
+    );
+  }
+
+  /// Salva (o sostituisce) le credenziali del database CDR.
+  Future<void> saveCdr(CdrDbCredentials creds) async {
+    await cdrStore?.save(creds);
+    cdrWholePbx = creds.wholePbx;
+    onUpdate(this, false);
+  }
+
+  Future<void> forgetCdr() async {
+    await cdrStore?.clear();
+    cdrWholePbx = false;
+    onUpdate(this, false);
+  }
 
   /// Ultimi dati letti, cifrati su disco: mostrati subito all'avvio.
   final PbxCache? cache;
@@ -267,6 +329,8 @@ class PbxConnection {
     final gen = _gen;
     _stopped = false;
     final creds = await store.load();
+    if (gen != _gen) return;
+    cdrWholePbx = (await cdrStore?.load())?.wholePbx ?? false;
     if (gen != _gen) return;
     if (creds == null) {
       ok = false;
@@ -813,6 +877,11 @@ class PbxConnection {
     final old = _detach();
     try {
       await clearData();
+      // Altro PBX: il database CDR (e il suo permesso) era di quello di prima.
+      if (creds.baseUrl != baseUrl) {
+        await cdrStore?.clear();
+        cdrWholePbx = false;
+      }
       await store.save(creds);
     } finally {
       unawaited(old?.close());
@@ -824,6 +893,7 @@ class PbxConnection {
   Future<void> forget() async {
     await stop();
     await store.clear();
+    await cdrStore?.clear();
     await clearData();
   }
 

@@ -9,6 +9,7 @@ import '../core/contacts/personal_contacts.dart';
 import 'l10n.dart';
 import 'theme.dart' show appThemeMode;
 import '../core/pbx/pbx_cache.dart';
+import '../core/pbx/pbx_cdr.dart';
 import '../core/platform/video_surface.dart';
 import '../core/update/updater.dart';
 import '../core/video/openh264.dart';
@@ -16,6 +17,7 @@ import '../core/pbx/pbx_connection.dart';
 import '../core/pbx/pbx_sync.dart';
 import '../core/pbx/yeastar_api.dart';
 import '../core/security/api_credential_store.dart';
+import '../core/security/cdr_db_store.dart';
 import '../core/security/settings_store.dart';
 import '../core/sip/sip_engine.dart';
 
@@ -32,6 +34,8 @@ class PhoneController extends ChangeNotifier {
     this.historyStoreFor,
     this.personalStoreFor,
     this.cacheFor,
+    this.cdrStoreFor,
+    this.cdrOpener,
     this.openH264,
     this.updater,
     this.recordingsDir = '',
@@ -61,6 +65,12 @@ class PhoneController extends ChangeNotifier {
 
   /// Cache cifrata dei dati di ogni connessione PBX (DECISIONS "Cache dati PBX").
   final PbxCache Function(String connectionId)? cacheFor;
+
+  /// Credenziali Database Grant (CDR) di ogni connessione PBX.
+  final CdrDbStore Function(String connectionId)? cdrStoreFor;
+
+  /// Apertura del database CDR; nei test una finta.
+  final CdrSourceOpener? cdrOpener;
 
   /// Contatti personali per profilo (DECISIONS "Profili").
   final PersonalContactsStore Function(String profileId)? personalStoreFor;
@@ -328,6 +338,8 @@ class PhoneController extends ChangeNotifier {
     apiFactory: _apiFactory,
     onUpdate: _onConnectionUpdate,
     cache: cacheFor?.call(id),
+    cdrStore: cdrStoreFor?.call(id),
+    cdrOpener: cdrOpener,
   );
 
   /// Solo il PBX dell'account SIP legge la casella, quella del proprio interno.
@@ -710,6 +722,7 @@ class PhoneController extends ChangeNotifier {
     for (final c in p.pbx) {
       await apiStoreFor?.call(c.id).clear();
       await cacheFor?.call(c.id).clear();
+      await cdrStoreFor?.call(c.id).clear();
     }
     _blfByProfile.remove(id);
     await historyStoreFor?.call(id).clear();

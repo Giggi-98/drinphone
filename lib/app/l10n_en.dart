@@ -1,6 +1,31 @@
 // Traduzioni inglesi. Chiave = testo italiano esatto usato in tr().
 // Una chiave mancante mostra l'italiano: aggiungerla qui.
 const en = <String, String>{
+  // CDR dal database del PBX (Database Grant).
+  'Database CDR': 'CDR database',
+  'Collegato · {n} chiamate lette': 'Connected · {n} calls read',
+  'Non collegato: {e}': 'Not connected: {e}',
+  'Dal PBX: Integrazioni > Database Grant. Aggiungi lì l’IP di questo PC tra quelli consentiti.': 'On the PBX: Integrations > Database Grant. Add this PC’s IP to the permitted ones there.',
+  'Indirizzo del PBX': 'PBX address',
+  'Porta 3306 (fissa sul PBX)': 'Port 3306 (fixed on the PBX)',
+  'Nome utente': 'User name',
+  'Connessione cifrata (TLS)': 'Encrypted connection (TLS)',
+  'Il certificato del PBX non viene verificato: usare in rete locale o VPN.':
+      'The PBX certificate is not verified: use on the local network or a VPN.',
+  'Mostra il CDR di tutto il PBX': 'Show the whole PBX CDR',
+  'Chi usa questo PC vede le chiamate di tutti gli interni. Spento: solo quelle del proprio interno.': 'Whoever uses this PC sees the calls of every extension. Off: only those of their own extension.',
+  'Accesso al database del PBX: cifrato su questo PC per il tuo utente Windows, mai mostrato né scritto nei log.': 'PBX database access: encrypted on this PC for your Windows user, never shown or written to logs.',
+  'Salva e prova': 'Save and test',
+  'Questo PC': 'This PC',
+  'PBX': 'PBX',
+  'Tutto il PBX': 'Whole PBX',
+  'Risposta': 'Answered',
+  'Non riuscita': 'Failed',
+  'CDR non leggibile: {e}': 'CDR not readable: {e}',
+  'Nessun proprio interno per questo PBX.': 'No own extension on this PBX.',
+  'Riprova': 'Retry',
+  'Carica altre': 'Load more',
+  'Senza cifratura chi è sulla stessa rete vede le chiamate e può ricavare la password del database.': 'Without encryption anyone on the same network sees the calls and can work out the database password.',
   'Eventi in tempo reale: collegamento…': 'Real-time events: connecting…',
   'Eventi non disponibili ({e}), nuovo tentativo':
       'Events unavailable ({e}), retrying',

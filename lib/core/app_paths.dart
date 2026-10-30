@@ -45,6 +45,9 @@ class AppPaths {
   /// Cache cifrata (DPAPI) dei dati letti da una connessione PBX.
   String pbxCacheFileFor(String id) => '$root${_s}pbx-cache-$id.dpapi';
 
+  /// Credenziali Database Grant (CDR) di una connessione PBX, DPAPI.
+  String cdrDbFileFor(String id) => '$root${_s}pbx-db-$id.dpapi';
+
   /// Contatti personali del profilo; `default` come per il registro.
   String contactsFileFor(String profileId) => profileId == 'default'
       ? '$root${_s}contacts.json'

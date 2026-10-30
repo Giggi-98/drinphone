@@ -22,6 +22,7 @@ Liblinphone/linphone-sdk sono disponibili con condizioni open source copyleft (s
 | `libmsopenh264` (plugin SDK) | msopenh264 1.2.1 | come linphone-sdk | ponte verso OpenH264 | incluso nel pacchetto |
 | ANGLE (build Qt 5.15.2) | libEGL `32092de0…96fa`, libGLESv2 `50fad560…58d8` | BSD-3 (ANGLE); binari firmati The Qt Company | visualizzazione video (MSOGL) | dall'installatore Linphone 5.3.4; includere la nota di licenza BSD nel pacchetto |
 | Font Bricolage Grotesque, Onest, Red Hat Mono (variabili) | google/fonts `main` 2026-10-30; SHA-256 `413e7357…c682`, `966c5c29…9f31`, `253377ac…fd14f` | SIL OFL 1.1 (testi in `assets/fonts/*-OFL.txt`) | carattere dell'interfaccia (DESIGN.md) | inclusi nell'app; OFL ammette l'inclusione in software proprietario, non la vendita dei font da soli |
+| `mysql_client` (+ `buffer`, `tuple`) | 0.0.27 (+ 1.2.3, 2.0.2), `pubspec.lock` | BSD-3 (file `LICENSE` verificati) | CDR via Database Grant | 2026-10-30; scartato `mysql1` perché il suo `LICENSE` è GPL v2 (pub.dev indica MIT) |
 | Push provider | TBD | ToS/DPA da verificare | notifiche | TBD |
 | Altre dipendenze e asset | TBD | TBD | varie | TBD |
 

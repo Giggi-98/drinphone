@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 
 import '../../app/l10n.dart';
@@ -6,6 +8,7 @@ import '../../app/theme.dart';
 import '../../core/pbx/pbx_connection.dart';
 import '../../core/pbx/pbx_sync.dart';
 import '../../core/security/api_credential_store.dart';
+import '../../core/security/cdr_db_store.dart';
 
 /// Connessione API al PBX dell'account (al più una), usata in Preferenze >
 /// Integrazione PBX e nella procedura guidata.
@@ -84,104 +87,132 @@ class _ConnectionTile extends StatelessWidget {
         border: Border.all(color: conn.ok ? c.border : c.busy),
         borderRadius: BorderRadius.circular(12),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(Icons.dns_outlined, size: 20, color: c.accent),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  conn.label,
-                  style: TextStyle(fontWeight: FontWeight.w600, color: c.text),
-                ),
-              ),
-              if (primary)
-                Tooltip(
-                  message: tr(
-                    'PBX dell\'account SIP: interni chiamabili e in BLF',
-                  ),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 2,
-                    ),
-                    decoration: BoxDecoration(
-                      color: c.keyBtn,
-                      borderRadius: BorderRadius.circular(999),
-                    ),
-                    child: Text(
-                      tr('Account SIP'),
-                      style: TextStyle(fontSize: 11, color: c.accent),
+      // Le righe (interruttori, sincronizzazione) disegnano l'effetto al clic
+      // su un Material: senza, il fondo della scheda lo nasconderebbe.
+      child: Material(
+        type: MaterialType.transparency,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.dns_outlined, size: 20, color: c.accent),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    conn.label,
+                    style: TextStyle(
+                      fontWeight: FontWeight.w600,
+                      color: c.text,
                     ),
                   ),
                 ),
-            ],
-          ),
-          const SizedBox(height: 6),
-          Text(conn.host, style: TextStyle(fontSize: 12, color: c.muted)),
-          const SizedBox(height: 4),
-          Text(
-            '${conn.status} · ${tr('ultima lettura')} $lastSync',
-            style: TextStyle(
-              fontSize: 12,
-              color: conn.ok ? c.okText : c.busyText,
+                if (primary)
+                  Tooltip(
+                    message: tr(
+                      'PBX dell\'account SIP: interni chiamabili e in BLF',
+                    ),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: c.keyBtn,
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Text(
+                        tr('Account SIP'),
+                        style: TextStyle(fontSize: 11, color: c.accent),
+                      ),
+                    ),
+                  ),
+              ],
             ),
-          ),
-          const SizedBox(height: 4),
-          // Richiede su PBX: Integrations > API > Advanced Settings >
-          // Extension Status Monitor (Call Status, Presence Status).
-          SwitchListTile(
-            contentPadding: EdgeInsets.zero,
-            dense: true,
-            value: conn.realtime,
-            onChanged: (v) => phone.setRealtime(conn, v),
-            secondary: Icon(
-              Icons.bolt_rounded,
-              color: conn.eventsConnected ? c.ok : c.muted,
-            ),
-            title: Text(tr('Eventi in tempo reale (WebSocket)')),
-            subtitle: Text(
-              conn.realtime && conn.eventsStatus.isNotEmpty
-                  ? conn.eventsStatus
-                  : tr('Presenza e stato chiamate istantanei'),
-              style: TextStyle(fontSize: 12, color: c.muted),
-            ),
-          ),
-          _SyncSettings(phone: phone, conn: conn),
-          const SizedBox(height: 6),
-          Wrap(
-            spacing: 8,
-            runSpacing: 6,
-            children: [
-              FilledButton.tonalIcon(
-                onPressed: conn.syncing ? null : () => phone.resync(only: conn),
-                icon: conn.syncing
-                    ? const SizedBox(
-                        width: 14,
-                        height: 14,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.sync, size: 16),
-                label: Text(tr('Sincronizza ora')),
+            const SizedBox(height: 6),
+            Text(conn.host, style: TextStyle(fontSize: 12, color: c.muted)),
+            const SizedBox(height: 4),
+            Text(
+              '${conn.status} · ${tr('ultima lettura')} $lastSync',
+              style: TextStyle(
+                fontSize: 12,
+                color: conn.ok ? c.okText : c.busyText,
               ),
-              OutlinedButton.icon(
-                onPressed: () => showDialog<void>(
-                  context: context,
-                  builder: (_) => _CredentialsDialog(phone: phone, conn: conn),
+            ),
+            const SizedBox(height: 4),
+            // Richiede su PBX: Integrations > API > Advanced Settings >
+            // Extension Status Monitor (Call Status, Presence Status).
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              dense: true,
+              value: conn.realtime,
+              onChanged: (v) => phone.setRealtime(conn, v),
+              secondary: Icon(
+                Icons.bolt_rounded,
+                color: conn.eventsConnected ? c.ok : c.muted,
+              ),
+              title: Text(tr('Eventi in tempo reale (WebSocket)')),
+              subtitle: Text(
+                conn.realtime && conn.eventsStatus.isNotEmpty
+                    ? conn.eventsStatus
+                    : tr('Presenza e stato chiamate istantanei'),
+                style: TextStyle(fontSize: 12, color: c.muted),
+              ),
+            ),
+            _SyncSettings(phone: phone, conn: conn),
+            const SizedBox(height: 6),
+            Wrap(
+              spacing: 8,
+              runSpacing: 6,
+              children: [
+                FilledButton.tonalIcon(
+                  onPressed: conn.syncing
+                      ? null
+                      : () => phone.resync(only: conn),
+                  icon: conn.syncing
+                      ? const SizedBox(
+                          width: 14,
+                          height: 14,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.sync, size: 16),
+                  label: Text(tr('Sincronizza ora')),
                 ),
-                icon: const Icon(Icons.key_outlined, size: 16),
-                label: Text(tr('Credenziali')),
-              ),
-              TextButton.icon(
-                onPressed: () => phone.removeConnection(conn),
-                icon: Icon(Icons.delete_outline, size: 16, color: c.busyText),
-                label: Text(tr('Rimuovi'), style: TextStyle(color: c.busyText)),
-              ),
-            ],
-          ),
-        ],
+                OutlinedButton.icon(
+                  onPressed: () => showDialog<void>(
+                    context: context,
+                    builder: (_) =>
+                        _CredentialsDialog(phone: phone, conn: conn),
+                  ),
+                  icon: const Icon(Icons.key_outlined, size: 16),
+                  label: Text(tr('Credenziali')),
+                ),
+                if (conn.cdrStore != null)
+                  OutlinedButton.icon(
+                    onPressed: () => showDialog<void>(
+                      context: context,
+                      builder: (_) => _CdrDbDialog(conn: conn),
+                    ),
+                    icon: Icon(
+                      conn.cdrConfigured
+                          ? Icons.storage_rounded
+                          : Icons.storage_outlined,
+                      size: 16,
+                    ),
+                    label: Text(tr('Database CDR')),
+                  ),
+                TextButton.icon(
+                  onPressed: () => phone.removeConnection(conn),
+                  icon: Icon(Icons.delete_outline, size: 16, color: c.busyText),
+                  label: Text(
+                    tr('Rimuovi'),
+                    style: TextStyle(color: c.busyText),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -467,6 +498,215 @@ class _CredentialsDialogState extends State<_CredentialsDialog> {
         FilledButton(
           onPressed: _saving ? null : _save,
           child: Text(_saving ? tr('Connessione…') : tr('Salva e connetti')),
+        ),
+      ],
+    );
+  }
+}
+
+/// Credenziali "Database Grant" del PBX per il CDR (Integrations > Database
+/// Grant sul PBX). Sola scrittura come le credenziali API: le inserisce
+/// l'amministratore, che decide anche se concedere il CDR di tutto il PBX.
+class _CdrDbDialog extends StatefulWidget {
+  const _CdrDbDialog({required this.conn});
+  final PbxConnection conn;
+
+  @override
+  State<_CdrDbDialog> createState() => _CdrDbDialogState();
+}
+
+class _CdrDbDialogState extends State<_CdrDbDialog> {
+  final _form = GlobalKey<FormState>();
+  // Precompilato solo se è un indirizzo di rete locale: Database Grant va
+  // usato in LAN/VPN (il certificato non viene verificato).
+  late final _host = TextEditingController(
+    text: _isLocal(widget.conn.host) ? widget.conn.host : '',
+  );
+
+  static bool _isLocal(String h) {
+    final a = InternetAddress.tryParse(h);
+    if (a == null || a.type != InternetAddressType.IPv4) return false;
+    final b = a.rawAddress;
+    return b[0] == 10 ||
+        (b[0] == 172 && b[1] >= 16 && b[1] <= 31) ||
+        (b[0] == 192 && b[1] == 168);
+  }
+
+  final _user = TextEditingController();
+  final _password = TextEditingController();
+  bool _secure = true;
+  late bool _whole = widget.conn.cdrWholePbx;
+  bool _busy = false;
+  String? _result;
+  bool _ok = false;
+
+  @override
+  void dispose() {
+    for (final c in [_host, _user, _password]) {
+      c.dispose();
+    }
+    super.dispose();
+  }
+
+  String? _required(String? v) =>
+      (v == null || v.trim().isEmpty) ? tr('Obbligatorio') : null;
+
+  Future<void> _save() async {
+    if (!_form.currentState!.validate()) return;
+    setState(() {
+      _busy = true;
+      _result = null;
+    });
+    try {
+      await widget.conn.saveCdr(
+        CdrDbCredentials(
+          host: _host.text.trim(),
+          user: _user.text.trim(),
+          password: _password.text,
+          secure: _secure,
+          wholePbx: _whole,
+        ),
+      );
+      _user.clear();
+      _password.clear();
+      // Prova: una pagina del CDR (del proprio interno, o di tutto il PBX).
+      final rows = await widget.conn.readCdr(wholePbx: _whole);
+      _ok = true;
+      _result = tr('Collegato · {n} chiamate lette', {'n': rows.length});
+    } catch (e) {
+      _ok = false;
+      // Solo il tipo d'errore: mai host, utente o password nei messaggi.
+      _result = tr('Non collegato: {e}', {'e': e.runtimeType});
+    }
+    if (mounted) setState(() => _busy = false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.drin;
+    final hint = widget.conn.cdrConfigured
+        ? tr('Impostato · scrivi per sostituire')
+        : null;
+    return AlertDialog(
+      title: Text(tr('Database CDR')),
+      content: SizedBox(
+        width: 460,
+        child: Form(
+          key: _form,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                tr(
+                  'Dal PBX: Integrazioni > Database Grant. Aggiungi lì l’IP di '
+                  'questo PC tra quelli consentiti.',
+                ),
+                style: DrinText.detail.copyWith(color: c.muted),
+              ),
+              const SizedBox(height: DrinSpace.s3),
+              TextFormField(
+                controller: _host,
+                validator: _required,
+                decoration: InputDecoration(
+                  labelText: tr('Indirizzo del PBX'),
+                  helperText: tr('Porta 3306 (fissa sul PBX)'),
+                ),
+              ),
+              const SizedBox(height: DrinSpace.s3),
+              TextFormField(
+                controller: _user,
+                validator: _required,
+                obscureText: true,
+                enableSuggestions: false,
+                autocorrect: false,
+                decoration: InputDecoration(
+                  labelText: tr('Nome utente'),
+                  hintText: hint,
+                ),
+              ),
+              const SizedBox(height: DrinSpace.s3),
+              TextFormField(
+                controller: _password,
+                validator: _required,
+                obscureText: true,
+                enableSuggestions: false,
+                autocorrect: false,
+                decoration: InputDecoration(
+                  labelText: tr('Password'),
+                  hintText: hint,
+                ),
+              ),
+              const SizedBox(height: DrinSpace.s2),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                value: _secure,
+                onChanged: (v) => setState(() => _secure = v),
+                title: Text(tr('Connessione cifrata (TLS)')),
+                subtitle: Text(
+                  _secure
+                      ? tr(
+                          'Il certificato del PBX non viene verificato: usare in rete '
+                          'locale o VPN.',
+                        )
+                      : tr(
+                          'Senza cifratura chi è sulla stessa rete vede le chiamate e '
+                          'può ricavare la password del database.',
+                        ),
+                  style: _secure ? null : TextStyle(color: c.busyText),
+                ),
+              ),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                value: _whole,
+                onChanged: (v) => setState(() => _whole = v),
+                title: Text(tr('Mostra il CDR di tutto il PBX')),
+                subtitle: Text(
+                  tr(
+                    'Chi usa questo PC vede le chiamate di tutti gli interni. '
+                    'Spento: solo quelle del proprio interno.',
+                  ),
+                ),
+              ),
+              if (_result != null) ...[
+                const SizedBox(height: DrinSpace.s2),
+                Text(
+                  _result!,
+                  style: DrinText.body.copyWith(
+                    color: _ok ? c.freeText : c.busyText,
+                  ),
+                ),
+              ],
+              const SizedBox(height: DrinSpace.s2),
+              Text(
+                tr(
+                  'Accesso al database del PBX: cifrato su questo PC per il tuo '
+                  'utente Windows, mai mostrato né scritto nei log.',
+                ),
+                style: DrinText.detail.copyWith(color: c.muted),
+              ),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        if (widget.conn.cdrConfigured)
+          TextButton(
+            onPressed: _busy
+                ? null
+                : () async {
+                    await widget.conn.forgetCdr();
+                    if (context.mounted) Navigator.of(context).pop();
+                  },
+            child: Text(tr('Rimuovi'), style: TextStyle(color: c.busyText)),
+          ),
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: Text(_ok ? tr('Chiudi') : tr('Annulla')),
+        ),
+        FilledButton(
+          onPressed: _busy ? null : _save,
+          child: Text(_busy ? tr('Connessione…') : tr('Salva e prova')),
         ),
       ],
     );

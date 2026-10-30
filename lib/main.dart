@@ -17,6 +17,7 @@ import 'core/pbx/pbx_cache.dart';
 import 'core/video/openh264.dart';
 import 'core/platform/window_attention.dart';
 import 'core/security/api_credential_store.dart';
+import 'core/security/cdr_db_store.dart';
 import 'core/security/settings_store.dart';
 import 'core/sip/linphone_ffi_engine.dart';
 import 'core/update/updater.dart';
@@ -64,6 +65,9 @@ Future<void> main() async {
     recordingsDir: paths.recordings,
     cacheFor: Platform.isWindows
         ? (id) => PbxCache(paths.pbxCacheFileFor(id))
+        : null,
+    cdrStoreFor: Platform.isWindows
+        ? (id) => CdrDbStore(paths.cdrDbFileFor(id))
         : null,
   );
   await phone.init();

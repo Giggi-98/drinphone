@@ -24,6 +24,8 @@ lib/core/app_paths.dart             cartelle dati: %APPDATA%\Econnet\DrinPhone
 lib/core/install_id.dart            ID casuale dell'installazione (supporto, solo locale)
 lib/core/sip/sip_engine.dart        porta astratta SipEngine + tipi neutri
 lib/core/pbx/pbx_sync.dart          registro delle voci sincronizzabili dalle API PBX
+lib/core/pbx/pbx_cdr.dart           CDR dal database del PBX (Database Grant, MySQL)
+lib/core/security/cdr_db_store.dart credenziali Database Grant cifrate (DPAPI)
 lib/core/sip/linphone_ffi_engine.dart  unico adattatore liblinphone (FFI, API C)
 lib/core/security/settings_store.dart  impostazioni JSON + password in storage sicuro
 lib/features/shell/home_screen.dart barra sezioni, barra composizione, griglia interni
@@ -164,6 +166,15 @@ spikes/f0a/                         spike F0-A (non prodotto)
   `history[-<profilo>].json` locale, per profilo, ultime 200 chiamate, salvataggi in coda; persa = entrante
   non risposta. Vista `features/history/` con filtri tipo (tutte/in arrivo/perse/
   in uscita), periodo (oggi/7/30 giorni/tutto) e nome/numero.
+- **CDR dal PBX** (`IMPLEMENTATO`, `DA VALIDARE` sul pilota con Database Grant) —
+  `PbxCdr` (`core/pbx/pbx_cdr.dart`, `mysql_client`) legge la tabella `cdr` del
+  MySQL del PBX (porta 3306, schema trovato in `information_schema`, statement
+  preparati, 50 righe a pagina, timeout). Credenziali `CdrDbCredentials`
+  (`core/security/cdr_db_store.dart`, DPAPI `pbx-db-<id>.dpapi`) dal dialogo
+  "Database CDR" della scheda PBX. Filtro sul proprio interno
+  (`PbxConnection.voicemailOf`); tutto il PBX solo con `wholePbx` deciso
+  dall'amministratore. Vista: Registro chiamate, fonte "Questo PC" / "PBX" /
+  "Tutto il PBX".
 - **Ricerca** — il campo in alto filtra la griglia per nome/numero; Invio chiama
   il numero o l'unico interno trovato.
 - **Attenzione chiamata entrante** (Windows) — `WindowAttention` (user32 via FFI):
@@ -328,7 +339,8 @@ Flutter 3.47.8 / Dart 3.13.7; `ffi` ^2.2.0; `archive` ^4.5 (bzip2 di OpenH264) e
 `crypto` ^3.0 (SHA-256); ANGLE di Qt 5.15.2 (libEGL/libGLESv2, BSD-3, per il
 video; `tool/fetch_angle.ps1`); `file_selector` ^1.1.0 (scelta del
 file da importare, plugin flutter.dev); `flutter_secure_storage` ^11.2.0
-(Windows: richiede componente VS "C++ ATL"); `cryptography` ^2.9.0 (Ed25519 in Dart
+(Windows: richiede componente VS "C++ ATL"); `mysql_client` 0.0.27 (BSD-3, CDR via Database Grant);
+`cryptography` ^2.9.0 (Ed25519 in Dart
 puro, firma degli aggiornamenti); linphone-sdk-win64 5.5.39 (GPLv3 /
 commerciale, `docs/licenze-e-compliance.md`); font Bricolage Grotesque, Onest e Red Hat Mono
 (variabili, OFL, `assets/fonts/`, stile in `DESIGN.md`). Toolchain: VS 2022 Build Tools 17.14
@@ -349,6 +361,9 @@ commerciale, `docs/licenze-e-compliance.md`); font Bricolage Grotesque, Onest e 
   Latin-1 e ripassati al core con gli stessi byte (`_deviceName`/`_deviceNative`).
 - Chiave privata degli aggiornamenti: solo sul PC di chi pubblica; persa = niente
   più aggiornamenti per i client installati.
+- CDR via Database Grant: TLS senza verifica del certificato (limite di
+  `mysql_client`): solo LAN/VPN con IP consentiti sul PBX; le credenziali
+  del database leggono ciò che Database Grant concede, non solo `cdr`.
 - Credenziali API salvate prima del campo "Interno dell'utente" (0.1.1 e
   precedenti): niente proprio interno (presenze, inoltri, casella) finché
   l'amministratore non le reinserisce indicando l'interno.
