@@ -16,6 +16,7 @@ import 'core/contacts/personal_contacts.dart';
 import 'core/pbx/pbx_cache.dart';
 import 'core/video/openh264.dart';
 import 'core/platform/autostart.dart';
+import 'core/platform/call_links.dart';
 import 'core/platform/window_attention.dart';
 import 'core/security/api_credential_store.dart';
 import 'core/security/cdr_db_store.dart';
@@ -76,6 +77,7 @@ Future<void> main(List<String> args) async {
   runApp(DrinPhoneApp(phone: phone));
   // Barra di sistema e notifiche (Windows); avviato con Windows: nascosto.
   await DesktopShell.start(phone);
+  listenForCallLinks(args);
   if (args.contains(Autostart.flag) && phone.settings.closeToTray) {
     WidgetsBinding.instance.addPostFrameCallback(
       (_) => WindowAttention.instance.hide(),

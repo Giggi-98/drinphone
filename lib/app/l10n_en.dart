@@ -2,7 +2,8 @@
 // Una chiave mancante mostra l'italiano: aggiungerla qui.
 const en = <String, String>{
   // Barra di sistema, notifiche, avvio con Windows.
-  'Parte all’accesso a Windows, nella barra di sistema.': 'Starts when you sign in to Windows, in the system tray.',
+  'Parte all’accesso a Windows, nella barra di sistema.':
+      'Starts when you sign in to Windows, in the system tray.',
   'Resta nella barra di sistema': 'Keep running in the system tray',
   'Chiudendo la finestra le chiamate continuano ad arrivare; per uscire: Esci dall’icona vicino all’orologio.': 'Closing the window keeps calls coming in; to quit: Quit from the icon next to the clock.',
   'Apri DrinPhone': 'Open DrinPhone',
@@ -257,6 +258,12 @@ const en = <String, String>{
   'Lato app: per interfono e citofoni':
       'In the app: for intercoms and door phones',
   'Avvio con Windows': 'Start with Windows',
+  'Link telefonici (tel:, sip:)': 'Phone links (tel:, sip:)',
+  'Per chiamare dai link di browser e Outlook, scegliete DrinPhone nelle app predefinite di Windows. Prima di chiamare DrinPhone chiede sempre conferma.': 'To call from browser and Outlook links, choose DrinPhone in the Windows default apps. DrinPhone always asks before calling.',
+  'App predefinite': 'Default apps',
+  'Chiamare {n}?': 'Call {n}?',
+  'Richiesta da un link aperto in un’altra applicazione.':
+      'Requested by a link opened in another application.',
   'Lato app: con il pacchetto di installazione':
       'In the app: with the installer package',
   'Motore SIP: liblinphone {v}': 'SIP engine: liblinphone {v}',

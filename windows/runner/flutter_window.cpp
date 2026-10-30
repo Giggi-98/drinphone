@@ -1,8 +1,12 @@
 #include "flutter_window.h"
 
+#include <flutter/standard_method_codec.h>
+
 #include <optional>
+#include <string>
 
 #include "flutter/generated_plugin_registrant.h"
+#include "utils.h"
 
 FlutterWindow::FlutterWindow(const flutter::DartProject& project)
     : project_(project) {}
@@ -25,6 +29,10 @@ bool FlutterWindow::OnCreate() {
     return false;
   }
   RegisterPlugins(flutter_controller_->engine());
+  instance_channel_ =
+      std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
+          flutter_controller_->engine()->messenger(), "drinphone/instance",
+          &flutter::StandardMethodCodec::GetInstance());
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
 
   flutter_controller_->engine()->SetNextFrameCallback([&]() {
@@ -65,6 +73,27 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
     case WM_FONTCHANGE:
       flutter_controller_->engine()->ReloadSystemFonts();
       break;
+    case WM_COPYDATA: {
+      // Solo il formato della nostra seconda copia, con limite di lunghezza;
+      // il contenuto lo valuta Dart (call_links.dart) e chiede conferma.
+      auto* data = reinterpret_cast<const COPYDATASTRUCT*>(lparam);
+      if (data == nullptr || data->dwData != kInstanceArgs ||
+          data->lpData == nullptr || data->cbData % sizeof(wchar_t) != 0 ||
+          data->cbData > (kInstanceArgsMax + 1) * sizeof(wchar_t)) {
+        break;
+      }
+      std::wstring line(static_cast<const wchar_t*>(data->lpData),
+                        data->cbData / sizeof(wchar_t));
+      line = line.c_str();  // fino al primo terminatore
+      ::ShowWindow(hwnd, ::IsIconic(hwnd) ? SW_RESTORE : SW_SHOW);
+      ::SetForegroundWindow(hwnd);
+      if (instance_channel_) {
+        instance_channel_->InvokeMethod(
+            "open", std::make_unique<flutter::EncodableValue>(
+                        Utf8FromUtf16(line.c_str())));
+      }
+      return TRUE;
+    }
   }
 
   return Win32Window::MessageHandler(hwnd, message, wparam, lparam);

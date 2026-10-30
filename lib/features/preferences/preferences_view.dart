@@ -1083,6 +1083,26 @@ class _FeaturesTabState extends State<_FeaturesTab> {
                 if (mounted) setState(() {});
               },
             ),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(Icons.link_rounded, color: c.muted),
+              title: Text(tr('Link telefonici (tel:, sip:)')),
+              subtitle: Text(
+                tr(
+                  'Per chiamare dai link di browser e Outlook, scegliete '
+                  'DrinPhone nelle app predefinite di Windows. Prima di '
+                  'chiamare DrinPhone chiede sempre conferma.',
+                ),
+              ),
+              trailing: OutlinedButton(
+                // URI fisso; registeredAppUser = RegisteredApplications
+                // scritto dall'installatore.
+                onPressed: () => Process.start('explorer.exe', [
+                  'ms-settings:defaultapps?registeredAppUser=DrinPhone',
+                ]),
+                child: Text(tr('App predefinite')),
+              ),
+            ),
           ],
         ],
       ),

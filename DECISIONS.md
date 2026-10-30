@@ -6,6 +6,22 @@ aggiungi una voce nuova in cima che cita la vecchia. Il campo chiave è
 
 ---
 
+## 2026-10-30 · Link telefonici: sempre con conferma, senza prendersi i link
+**Scelta:** i link `tel:`, `callto:`, `sip:`, `sips:` aprono DrinPhone (istanza
+unica, `WM_COPYDATA`) ma il numero si chiama **solo dopo conferma** nell'app.
+L'installatore registra DrinPhone come **app candidata** (ProgID +
+`RegisteredApplications`); è l'utente a sceglierla nelle app predefinite di
+Windows. Da `sip:utente@dominio` si prende solo la parte prima di `@` e si
+chiama dal proprio PBX; nomi non numerici si scartano.
+**Scartato:** chiamata immediata al click (una pagina web può aprire un link
+verso un numero a pagamento); scrivere `HKCU\Software\Classes\tel` per
+prendersi i link da soli (Windows lo ignora per `tel:` e scavalca la scelta
+dell'utente); chiamare il dominio del link sip: (chiamate verso server
+sconosciuti, fuori dalle regole del PBX); named pipe o socket locale per
+l'istanza unica (`WM_COPYDATA` basta, nessuna porta aperta).
+**Da rivedere se:** serve il click-to-call senza conferma da un CRM fidato
+(-> opzione esplicita), o l'istanza unica va portata su macOS/Linux.
+
 ## 2026-10-30 · CDR dal database del PBX (Database Grant)
 **Scelta:** il registro chiamate legge anche il **CDR del PBX** collegandosi
 al suo MySQL con **Database Grant** (Yeastar P-Series: porta 3306, utente e

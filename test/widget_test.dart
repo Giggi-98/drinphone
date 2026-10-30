@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:drinphone/app/l10n.dart';
 import 'package:drinphone/app/phone_controller.dart';
 import 'package:drinphone/app/theme.dart';
+import 'package:drinphone/core/platform/call_links.dart';
 import 'package:drinphone/core/security/settings_store.dart';
 import 'package:drinphone/core/sip/sip_engine.dart';
 import 'package:drinphone/main.dart';
@@ -204,6 +205,52 @@ void main() {
     expect(two.loggedIn, isFalse);
     expect(find.text('Scegli l’account'), findsOneWidget);
     await tester.runAsync(two.shutdown);
+  });
+
+  testWidgets('link tel: chiama solo dopo conferma', (tester) async {
+    tester.view.physicalSize = const Size(1440, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    addTearDown(() => pendingCallLink.value = null);
+    await tester.runAsync(() => phone.saveAccount(_account));
+    await tester.pumpWidget(DrinPhoneApp(phone: phone));
+    engine.registrationsCtl.add(const RegistrationEvent(RegistrationStatus.ok));
+    await tester.pumpAndSettle();
+    expect(phone.canDial, isTrue);
+
+    pendingCallLink.value = numberFromLink('tel:+39%2002%205550');
+    await tester.pumpAndSettle();
+    expect(find.text('Chiamare +39025550?'), findsOneWidget);
+    await tester.tap(find.text('Annulla'));
+    await tester.pumpAndSettle();
+    expect(engine.log.where((l) => l.startsWith('dial')), isEmpty);
+    expect(pendingCallLink.value, isNull);
+
+    // Chiama si attiva dopo un attimo, e di nuovo a ogni numero cambiato
+    // col dialogo aperto: il click "in corsa" non chiama.
+    final chiama = find.descendant(
+      of: find.byType(AlertDialog),
+      matching: find.text('Chiama'),
+    );
+    pendingCallLink.value = '301';
+    await tester.pumpAndSettle();
+    await tester.tap(chiama);
+    await tester.pump();
+    expect(engine.log.where((l) => l.startsWith('dial')), isEmpty);
+    await tester.pump(const Duration(milliseconds: 1300));
+    pendingCallLink.value = '302';
+    await tester.pump();
+    expect(find.text('Chiamare 302?'), findsOneWidget);
+    await tester.tap(chiama);
+    await tester.pump();
+    expect(engine.log.where((l) => l.startsWith('dial')), isEmpty);
+    await tester.pump(const Duration(milliseconds: 1300));
+    await tester.tap(chiama);
+    await tester.pumpAndSettle();
+    expect(
+      engine.log.where((l) => l.startsWith('dial')).single,
+      contains('302'),
+    );
   });
 
   testWidgets('chiamata in arrivo mostra Rispondi e Rifiuta', (tester) async {

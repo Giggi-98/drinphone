@@ -187,6 +187,19 @@ spikes/f0a/                         spike F0-A (non prodotto)
   squillo). Chiusura finestra = nascosta (`Settings.closeToTray`, default sì);
   "Esci" dalla barra = shutdown e uscita. Avvio con Windows: `Autostart`
   (`core/platform/autostart.dart`, `HKCU…Run`, `--autostart` = parte nascosta).
+- **Istanza unica e link telefonici** (`IMPLEMENTATO` Windows, `DA VALIDARE` con
+  browser/Outlook) — `windows/runner/main.cpp`: mutex
+  `Local\DrinPhone.SingleInstance.<hash exe>`; la seconda copia cerca la finestra
+  con classe, titolo **ed eseguibile** uguali, le manda la riga di comando con
+  `WM_COPYDATA` (`"DRN1"`, max 2048 caratteri) ed esce. `flutter_window.cpp`
+  mostra la finestra e la passa a Dart sul canale `drinphone/instance` (`open`).
+  `core/platform/call_links.dart`: `numberFromLink` (tel:/callto:/sip:/sips: ->
+  cifre e `+`, max 32, niente `*`/`#` = codici di servizio; di sip: si tiene la parte prima di `@`: si chiama
+  dal proprio PBX) -> `pendingCallLink` -> `HomeScreen` chiede **sempre**
+  conferma ("Chiamare X?") prima di `dial`. Installatore: ProgID
+  `DrinPhone.Call` + `Capabilities\URLAssociations` + `RegisteredApplications`
+  (HKCU): l'app si propone, l'utente la sceglie nelle app predefinite
+  (Preferenze > Audio > Funzionalità > App predefinite).
 - **Account** (`IMPLEMENTATO`; logout `DA VALIDARE` sul PBX: un-REGISTER) —
   DECISIONS "Un account vivo alla volta". Nel codice restano `Profile`/`profileId`:
   un profilo = un account, con al più una registrazione (`accounts`) e una
@@ -333,6 +346,9 @@ spikes/f0a/                         spike F0-A (non prodotto)
 - **Uscente**: campo/scheda -> `dial(numero)` -> `linphone_core_invite` (numero
   completato col dominio dell'account) -> eventi -> `CallPanel`.
 - **Entrante**: callback `IncomingReceived` -> `CallPanel` con Rispondi/Rifiuta.
+- **Link telefonico**: browser/Outlook -> `drinphone.exe "tel:…"` -> se l'app è
+  già aperta `WM_COPYDATA` -> canale `drinphone/instance`, altrimenti argomenti
+  di avvio -> `numberFromLink` -> dialogo di conferma -> `dial`.
 - **Live Calls**: sottoscrizione WebSocket OK -> `call/query` (3 tipi) -> eventi
   30011 -> `liveCalls` -> `LiveCallsView` (timer 1 s per le durate).
 - **API PBX**: Preferenze > Integrazione PBX -> `ApiCredentialStore.save` -> `get_token` ->
@@ -365,7 +381,9 @@ commerciale, `docs/licenze-e-compliance.md`); font Bricolage Grotesque, Onest e 
 - Il log su file è bufferizzato: con kill del processo le ultime righe si perdono.
 - Nessun STUN/ICE configurato: audio unidirezionale probabile dietro NAT (F2).
 - TLS: CA di `share/linphone/rootca.pem` dell'SDK; nessun pinning.
-- Una sola istanza: due avvii contemporanei condividerebbero DB e log.
+- Una sola istanza per eseguibile (mutex con nome prevedibile: un processo dello
+  stesso utente può impedire l'avvio, accettato). Una build di sviluppo e quella
+  installata possono girare insieme sugli stessi dati in `%APPDATA%`.
 - Nomi di schede audio/webcam non UTF-8 (code page ANSI su alcuni PC): letti in
   Latin-1 e ripassati al core con gli stessi byte (`_deviceName`/`_deviceNative`).
 - Chiave privata degli aggiornamenti: solo sul PC di chi pubblica; persa = niente

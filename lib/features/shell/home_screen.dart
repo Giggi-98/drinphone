@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:ui' show AppExitResponse;
 
 import 'package:flutter/material.dart';
@@ -6,6 +7,7 @@ import '../../app/brand.dart';
 import '../../app/l10n.dart';
 import '../../app/phone_controller.dart';
 import '../../app/theme.dart';
+import '../../core/platform/call_links.dart';
 import '../../core/platform/window_attention.dart';
 import '../../core/security/settings_store.dart';
 import '../../core/sip/sip_engine.dart';
@@ -54,7 +56,9 @@ class _HomeScreenState extends State<HomeScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       p.attachVideoSurfaces();
       _showNewNotes();
+      _onCallLink();
     });
+    pendingCallLink.addListener(_onCallLink);
     _lifecycle = AppLifecycleListener(
       // Rientro nella finestra: riallinea i dati PBX (saltato se letti da < 10 s).
       onResume: () => p.resync(force: false),
@@ -77,6 +81,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void dispose() {
     _lifecycle.dispose();
+    pendingCallLink.removeListener(_onCallLink);
     p.removeListener(_onPhone);
     p.updater?.removeListener(_onUpdater);
     super.dispose();
@@ -89,6 +94,22 @@ class _HomeScreenState extends State<HomeScreen> {
     // Segnate prima: chiudendo l'app col popup aperto non si ripresenta.
     await u.markNotesSeen();
     if (mounted) await showReleaseNotes(context, notes);
+  }
+
+  bool _linkDialog = false;
+
+  /// Link tel:/sip: da browser o Outlook: si chiama solo dopo conferma (una
+  /// pagina web può aprire un link verso qualunque numero).
+  Future<void> _onCallLink() async {
+    if (_linkDialog || pendingCallLink.value == null || !mounted) return;
+    _linkDialog = true;
+    final number = await showDialog<String>(
+      context: context,
+      builder: (ctx) => const _CallLinkDialog(),
+    );
+    pendingCallLink.value = null;
+    _linkDialog = false;
+    if (number != null && number.isNotEmpty) _call(number);
   }
 
   /// Entrando (o restando) in Registro chiamate / Casella vocale il badge si spegne.
@@ -1511,6 +1532,71 @@ class _GroupsPanelState extends State<_GroupsPanel> {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Conferma di un link telefonico. Il fuoco parte su Annulla e Chiama si
+/// attiva dopo un attimo, anche a ogni numero nuovo arrivato col dialogo
+/// aperto: un Invio pensato per un'altra finestra, o un link cambiato
+/// all'ultimo, non fanno partire la chiamata.
+class _CallLinkDialog extends StatefulWidget {
+  const _CallLinkDialog();
+
+  static const armDelay = Duration(milliseconds: 1200);
+
+  @override
+  State<_CallLinkDialog> createState() => _CallLinkDialogState();
+}
+
+class _CallLinkDialogState extends State<_CallLinkDialog> {
+  String? _number;
+  Timer? _arm;
+
+  @override
+  void initState() {
+    super.initState();
+    pendingCallLink.addListener(_onNumber);
+    _onNumber();
+  }
+
+  void _onNumber() {
+    final n = pendingCallLink.value;
+    if (n == null || n == _number) return;
+    _arm?.cancel();
+    _arm = Timer(_CallLinkDialog.armDelay, () {
+      if (mounted) setState(() => _arm = null);
+    });
+    if (mounted) setState(() => _number = n);
+  }
+
+  @override
+  void dispose() {
+    _arm?.cancel();
+    pendingCallLink.removeListener(_onNumber);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final n = _number ?? '';
+    return AlertDialog(
+      title: Text(tr('Chiamare {n}?', {'n': n})),
+      content: Text(
+        tr('Richiesta da un link aperto in un’altra applicazione.'),
+      ),
+      actions: [
+        TextButton(
+          autofocus: true,
+          onPressed: () => Navigator.pop(context),
+          child: Text(tr('Annulla')),
+        ),
+        FilledButton.icon(
+          onPressed: _arm != null ? null : () => Navigator.pop(context, n),
+          icon: const Icon(Icons.call_rounded),
+          label: Text(tr('Chiama')),
+        ),
+      ],
     );
   }
 }

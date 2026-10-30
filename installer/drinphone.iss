@@ -60,6 +60,21 @@ Name: "{autodesktop}\{#AppName} {#Channel}"; Filename: "{app}\drinphone.exe"; Ta
 ; collegamento delle notifiche (local_notifier): si tolgono con l'app.
 [Registry]
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: none; ValueName: "DrinPhone"; Flags: uninsdeletevalue dontcreatekey
+; Link tel:, callto:, sip:, sips: (click-to-call). Solo la capacità: Windows
+; chiede all'utente quale app usare, DrinPhone non si prende i link da sola.
+Root: HKCU; Subkey: "Software\Classes\DrinPhone.Call"; ValueType: string; ValueName: ""; ValueData: "DrinPhone"; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Classes\DrinPhone.Call\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: "{app}\drinphone.exe,0"
+Root: HKCU; Subkey: "Software\Classes\DrinPhone.Call\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\drinphone.exe"" ""%1"""
+; Disinstallando le voci si tolgono in ordine inverso: prima le chiavi figlie.
+Root: HKCU; Subkey: "Software\Econnet"; Flags: uninsdeletekeyifempty
+Root: HKCU; Subkey: "Software\Econnet\DrinPhone"; Flags: uninsdeletekeyifempty
+Root: HKCU; Subkey: "Software\Econnet\DrinPhone\Capabilities"; ValueType: string; ValueName: "ApplicationName"; ValueData: "{#AppName}"; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Econnet\DrinPhone\Capabilities"; ValueType: string; ValueName: "ApplicationDescription"; ValueData: "Softphone di Econnet"
+Root: HKCU; Subkey: "Software\Econnet\DrinPhone\Capabilities\URLAssociations"; ValueType: string; ValueName: "tel"; ValueData: "DrinPhone.Call"
+Root: HKCU; Subkey: "Software\Econnet\DrinPhone\Capabilities\URLAssociations"; ValueType: string; ValueName: "callto"; ValueData: "DrinPhone.Call"
+Root: HKCU; Subkey: "Software\Econnet\DrinPhone\Capabilities\URLAssociations"; ValueType: string; ValueName: "sip"; ValueData: "DrinPhone.Call"
+Root: HKCU; Subkey: "Software\Econnet\DrinPhone\Capabilities\URLAssociations"; ValueType: string; ValueName: "sips"; ValueData: "DrinPhone.Call"
+Root: HKCU; Subkey: "Software\RegisteredApplications"; ValueType: string; ValueName: "DrinPhone"; ValueData: "Software\Econnet\DrinPhone\Capabilities"; Flags: uninsdeletevalue
 
 [UninstallDelete]
 Type: files; Name: "{userprograms}\DrinPhone.lnk"
