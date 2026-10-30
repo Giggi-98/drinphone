@@ -123,6 +123,14 @@ Yeastar, permessi (microfono, fotocamera, notifiche, rete). Regole:
 - Ogni riscontro `confirmed` si corregge prima del commit, con un test che lo
   riproduce. Nel messaggio finale: cosa è stato rivisto e cosa è emerso (anche
   "niente"). Report datato in `docs/sicurezza/AAAA-MM-GG-<oggetto>.md`.
+- **Fase di security test mirata** (dal 2026-10-30): ogni funzione nuova e ogni
+  modifica strutturale (i casi della tabella §6) chiude con un run della skill
+  `security-audit` ([cloudflare/security-audit-skill](https://github.com/cloudflare/security-audit-skill)),
+  profilo `quick`, *scoped* sui file toccati e sui confini che attraversano.
+  Output fuori dal repo (`~/security-audit-skill/drinphone/run-<N>`, i run sono
+  additivi); la sintesi va nel report datato qui sopra. I validatori `.cjs`
+  della skill girano solo in WSL (`wsl -d Ubuntu node …`): su Windows nativo
+  rifiutano l'input per mancanza di protezione no-follow.
 
 ## 10. Vincoli di piattaforma (conoscili prima di promettere date)
 
