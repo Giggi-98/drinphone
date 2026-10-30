@@ -6,6 +6,20 @@ aggiungi una voce nuova in cima che cita la vecchia. Il campo chiave è
 
 ---
 
+## 2026-10-30 · CDR: `cdr_basic` (CDR Advanced) prima di `cdr`
+Cita "CDR dal database del PBX (Database Grant)". **Scelta:** il registro del
+PBX legge `cdr_basic` quando esiste e ricade su `cdr` solo sui firmware che
+non ce l'hanno. Sul pilota (83.25) `cdr` si è fermata al 29/01/2026 (passaggio
+al CDR Advanced): con "Ultimi 7 giorni" non c'era nulla. Le chiamate del
+proprio interno includono quelle dove l'interno compare solo come gamba
+(`cdr_clip`: squillo di un gruppo o di una coda), come nel CDR del PBX.
+**Scartato:** leggere solo `cdr` (vuota dopo l'aggiornamento); unire `cdr` e
+`cdr_basic` (righe doppie nel periodo di passaggio, formati diversi);
+`cdr_clip` come elenco principale (una riga per gamba: un gruppo da 8 interni
+= 8 righe).
+**Da rivedere se:** Yeastar cambia lo schema di `cdr_basic`/`cdr_clip`, o la
+sottoquery sulle gambe diventa lenta su PBX con molto traffico.
+
 ## 2026-10-30 · Link telefonici: sempre con conferma, senza prendersi i link
 **Scelta:** i link `tel:`, `callto:`, `sip:`, `sips:` aprono DrinPhone (istanza
 unica, `WM_COPYDATA`) ma il numero si chiama **solo dopo conferma** nell'app.

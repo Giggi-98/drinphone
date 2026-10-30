@@ -6,8 +6,11 @@ import 'package:flutter_test/flutter_test.dart';
 
 /// Database finto: registra le query e risponde con righe fisse.
 class FakeCdrDb implements CdrSource {
-  FakeCdrDb({this.schema = 'ysdb'});
+  FakeCdrDb({this.schema = 'ysdb', this.advanced = true});
   final String schema;
+
+  /// Firmware con CDR Advanced (`cdr_basic`) o solo la tabella `cdr`.
+  final bool advanced;
   final queries = <(String, List<Object?>)>[];
   int opened = 0;
   bool closed = false;
@@ -20,20 +23,28 @@ class FakeCdrDb implements CdrSource {
     queries.add((sql, params));
     if (sql.contains('information_schema')) {
       return [
-        {'s': schema},
+        {'s': schema, 't': 'cdr'},
+        if (advanced) ...[
+          {'s': schema, 't': 'cdr_basic'},
+          {'s': schema, 't': 'cdr_clip'},
+        ],
       ];
     }
     return [
       {
-        'datetime': '2026-10-30 14:05:09',
-        'src': '301',
-        'srcname': 'Paolo Guerra',
-        'dst': '305',
-        'dstname': 'Luigi Ruocco',
-        'duration': '75',
-        'talkduration': '61',
+        'datetime': '2026-10-30 15:59:21.864063',
+        'src': '0496369001',
+        'srcname': '',
+        'dst': '6300',
+        'dstname': 'RING_SKILLWORKS',
+        'last_dst': '305',
+        'last_dstname': 'Luigi Ruocco',
+        'call_duration': '51',
+        'routing_duration': '4',
+        'talk_duration': '47',
         'disposition': 'ANSWERED',
-        'calltype': 'Internal',
+        'call_type': 'Inbound',
+        'disconnect_by': 'External',
       },
     ];
   }
@@ -56,16 +67,48 @@ void main() {
 
   setUp(() => db = FakeCdrDb());
 
-  test('proprio interno: filtro con parametri, righe lette', () async {
+  test('CDR Advanced: cdr_basic, anche le gambe del proprio interno', () async {
     final rows = await cdr().read(ownExtension: '305');
     final (sql, params) = db.queries.last;
-    expect(sql, contains('FROM `ysdb`.`cdr`'));
-    expect(sql, contains('WHERE (`src` = ? OR `dst` = ?)'));
-    expect(params, ['305', '305']);
+    expect(sql, contains('FROM `ysdb`.`cdr_basic`'));
+    expect(
+      sql,
+      contains('`uid` IN (SELECT `c`.`uid` FROM `ysdb`.`cdr_clip` `c`'),
+    );
+    expect(sql, contains('ORDER BY `timestamp` DESC'));
+    expect(params, List.filled(6, '305'));
     expect(db.closed, isTrue);
     final r = rows.single;
-    expect(r.time, DateTime(2026, 10, 30, 14, 5, 9));
-    expect((r.src, r.dst, r.talk, r.answered), ('301', '305', 61, true));
+    expect(r.time, DateTime(2026, 10, 30, 15, 59, 21, 864, 63));
+    expect(
+      (r.dstName, r.lastDst, r.lastDstName, r.ring, r.talk, r.answered),
+      ('RING_SKILLWORKS', '305', 'Luigi Ruocco', 4, 47, true),
+    );
+    expect((r.callType, r.disconnectBy), ('Inbound', 'External'));
+  });
+
+  test('firmware senza CDR Advanced: tabella cdr', () async {
+    db = FakeCdrDb(advanced: false);
+    await cdr().read(ownExtension: '305', from: DateTime(2026, 10, 24));
+    final (sql, params) = db.queries.last;
+    expect(sql, contains('FROM `ysdb`.`cdr` WHERE (`src` = ? OR `dst` = ?)'));
+    expect(sql, contains('ORDER BY `datetime` DESC'));
+    expect(params, ['305', '305', '2026-10-24 00:00:00']);
+  });
+
+  test('cdr_basic senza cdr_clip nello stesso schema: tabella cdr', () async {
+    db = FakeCdrDb(advanced: false);
+    final odd = _OddSchemas(db);
+    await PbxCdr(_creds, open: (_) async => odd).read(ownExtension: '305');
+    expect(db.queries.last.$1, contains('FROM `ysdb`.`cdr` '));
+  });
+
+  test('tipo ed esito come filtro', () async {
+    await cdr().read(ownExtension: '305', kind: CdrKind.outbound);
+    expect(db.queries.last.$1, contains('`call_type` = ?'));
+    expect(db.queries.last.$2.last, 'Outbound');
+    await cdr().read(ownExtension: '305', kind: CdrKind.unanswered);
+    expect(db.queries.last.$1, contains("`disposition` <> 'ANSWERED'"));
   });
 
   test(
@@ -94,16 +137,17 @@ void main() {
   });
 
   test('ricerca e periodo come parametri, caratteri jolly protetti', () async {
+    final from = DateTime(2026, 10, 24);
     await cdr().read(
       ownExtension: '305',
       search: r"a%_b'\",
-      from: DateTime(2026, 10, 24),
+      from: from,
       offset: 50,
     );
     final (sql, params) = db.queries.last;
     expect(sql, isNot(contains("a%")));
-    expect(params.sublist(2, 6), everyElement(r"%a\%\_b'\\%"));
-    expect(params.last, '2026-10-24 00:00:00');
+    expect(params.sublist(6, 12), everyElement(r"%a\%\_b'\\%"));
+    expect(params.last, from.microsecondsSinceEpoch);
     expect(sql, endsWith('LIMIT 50 OFFSET 50'));
   });
 
@@ -137,4 +181,25 @@ void main() {
     );
     expect('$back', isNot(contains('S3greta!')));
   }, skip: !Platform.isWindows);
+}
+
+/// `cdr_basic` in un altro schema, senza le gambe: non va scelto.
+class _OddSchemas implements CdrSource {
+  _OddSchemas(this.inner);
+  final FakeCdrDb inner;
+
+  @override
+  Future<List<Map<String, String?>>> query(String sql, List<Object?> p) async {
+    if (sql.contains('information_schema')) {
+      inner.queries.add((sql, p));
+      return [
+        {'s': 'altro', 't': 'cdr_basic'},
+        {'s': 'ysdb', 't': 'cdr'},
+      ];
+    }
+    return inner.query(sql, p);
+  }
+
+  @override
+  Future<void> close() => inner.close();
 }

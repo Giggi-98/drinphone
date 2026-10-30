@@ -122,6 +122,16 @@ Regole:
 - **Controlli di chiamata**: tasti rotondi `panel`, attivo = `primary`;
   Termina `busy` sempre a destra (desktop) o al centro in basso (telefono).
 - **Badge**: pillola `label`; non letti in `busy`, "nuovo" in `primary`.
+- **Tabella chiamate** (registro di questo PC e CDR del PBX): intestazione
+  `label` in `muted` su riga da 36 con bordo `line`; righe da 52 separate da
+  `line`, hover `raised` con raggio riga; Ora in `number` con il giorno sotto
+  in `detail`; nomi `heading` con numero sotto in `number`; "risposto da" di
+  gruppi e code in `detail` con freccia `primary`; esito come pillola `label`
+  con spia (risposta `freeText`, persa/abbandonata/non riuscita `busyText`,
+  casella vocale `primary`, occupato e altro `away`, fondo al 14%); durate
+  allineate a destra in `number` (`m:ss`, `h:mm:ss`, "—" se zero); Richiama
+  all'hover. Sotto una certa larghezza spariscono prima Durata e Tipo, poi
+  Conversazione; i filtri vanno a capo sotto il titolo.
 
 ## 7. Struttura adattiva
 

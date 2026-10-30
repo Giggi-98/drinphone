@@ -851,8 +851,8 @@ void main() {
         const CdrDbCredentials(host: 'pbx.test', user: 'u', password: 'p'),
       );
       expect(conn.cdrConfigured, isTrue);
-      expect((await conn.readCdr()).single.src, '301');
-      expect(db.queries.last.$2, ['305', '305']);
+      expect((await conn.readCdr()).single.src, '0496369001');
+      expect(db.queries.last.$2, List.filled(6, '305'));
       await expectLater(conn.readCdr(wholePbx: true), throwsStateError);
 
       final a = phone.settings.account!;

@@ -112,10 +112,11 @@ class PbxConnection {
     bool wholePbx = false,
     String search = '',
     DateTime? from,
+    CdrKind kind = CdrKind.all,
     int offset = 0,
   }) {
     final next = _cdrQueue.then(
-      (_) => _readCdr(wholePbx, search, from, offset),
+      (_) => _readCdr(wholePbx, search, from, kind, offset),
     );
     _cdrQueue = next.then((_) {}, onError: (Object _) {});
     return next;
@@ -125,6 +126,7 @@ class PbxConnection {
     bool wholePbx,
     String search,
     DateTime? from,
+    CdrKind kind,
     int offset,
   ) async {
     final creds = await cdrStore?.load();
@@ -135,6 +137,7 @@ class PbxConnection {
       wholePbx: wholePbx,
       search: search,
       from: from,
+      kind: kind,
       offset: offset,
     );
   }

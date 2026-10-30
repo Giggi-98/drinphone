@@ -166,15 +166,21 @@ spikes/f0a/                         spike F0-A (non prodotto)
   `history[-<profilo>].json` locale, per profilo, ultime 200 chiamate, salvataggi in coda; persa = entrante
   non risposta. Vista `features/history/` con filtri tipo (tutte/in arrivo/perse/
   in uscita), periodo (oggi/7/30 giorni/tutto) e nome/numero.
-- **CDR dal PBX** (`IMPLEMENTATO`, `DA VALIDARE` sul pilota con Database Grant) —
-  `PbxCdr` (`core/pbx/pbx_cdr.dart`, `mysql_client`) legge la tabella `cdr` del
-  MySQL del PBX (porta 3306, schema trovato in `information_schema`, statement
-  preparati, 50 righe a pagina, timeout). Credenziali `CdrDbCredentials`
+- **CDR dal PBX** (`IMPLEMENTATO`; letto dal vivo sul pilota 83.25 con Database
+  Grant) — `PbxCdr` (`core/pbx/pbx_cdr.dart`, `mysql_client`) legge dal MySQL
+  del PBX (porta 3306, statement preparati, 50 righe a pagina, timeout) la
+  tabella **`cdr_basic`** (CDR Advanced: una riga per chiamata, ordinata per
+  `timestamp` in microsecondi); sui firmware senza CDR Advanced la tabella
+  storica `cdr` (che dopo l'aggiornamento resta ma non cresce più). Schema
+  trovato in `information_schema`. Credenziali `CdrDbCredentials`
   (`core/security/cdr_db_store.dart`, DPAPI `pbx-db-<id>.dpapi`) dal dialogo
   "Database CDR" della scheda PBX. Filtro sul proprio interno
-  (`PbxConnection.voicemailOf`); tutto il PBX solo con `wholePbx` deciso
-  dall'amministratore. Vista: Registro chiamate, fonte "Questo PC" / "PBX" /
-  "Tutto il PBX".
+  (`PbxConnection.voicemailOf`): chiamante, chiamato, secondo/ultimo
+  partecipante o una gamba in `cdr_clip` (gruppi di squillo e code); tutto il
+  PBX solo con `wholePbx` deciso dall'amministratore. Filtri tipo/esito
+  (`CdrKind`) e periodo. Vista: Registro chiamate, fonte "Questo PC" / "PBX" /
+  "Tutto il PBX", tabella `CallTable` (`features/history/call_table.dart`,
+  DESIGN.md "Tabella chiamate").
 - **Ricerca** — il campo in alto filtra la griglia per nome/numero; Invio chiama
   il numero o l'unico interno trovato.
 - **Attenzione chiamata entrante** (Windows) — `WindowAttention` (user32 via FFI):

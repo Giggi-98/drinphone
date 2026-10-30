@@ -10,6 +10,7 @@ import '../../core/pbx/pbx_cdr.dart';
 import '../../core/pbx/pbx_connection.dart';
 import '../../core/sip/sip_engine.dart';
 import '../shell/widgets.dart';
+import 'call_table.dart';
 
 enum _Kind { all, incoming, missed, outgoing }
 
@@ -19,7 +20,7 @@ enum _Period { today, week, month, all }
 /// interno, il CDR di tutto il PBX (se l'amministratore lo concede).
 enum _Source { local, pbx, wholePbx }
 
-/// Registro chiamate locale (CallHistoryStore), a pagine.
+/// Registro chiamate: locale (CallHistoryStore, a pagine) o CDR del PBX.
 class HistoryView extends StatefulWidget {
   const HistoryView({super.key, required this.phone, required this.onCall});
   final PhoneController phone;
@@ -32,6 +33,7 @@ class HistoryView extends StatefulWidget {
 class _HistoryViewState extends State<HistoryView> {
   /// Filtri come in Linkus: tipo, periodo, nome/numero.
   _Kind _kind = _Kind.all;
+  CdrKind _cdrKind = CdrKind.all;
   _Period _period = _Period.week;
   _Source _source = _Source.local;
   final _filter = TextEditingController();
@@ -60,48 +62,21 @@ class _HistoryViewState extends State<HistoryView> {
       _Kind.missed => r.missed,
       _Kind.outgoing => r.direction == CallDirection.outgoing,
     };
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final from = switch (_period) {
-      _Period.today => today,
-      _Period.week => today.subtract(const Duration(days: 6)),
-      _Period.month => today.subtract(const Duration(days: 29)),
-      _Period.all => DateTime(2000),
-    };
+    final from = _from;
     final q = _filter.text.trim().toLowerCase();
     return kindOk &&
-        !r.start.isBefore(from) &&
+        (from == null || !r.start.isBefore(from)) &&
         (q.isEmpty || r.number.contains(q) || r.name.toLowerCase().contains(q));
   }
 
   int _page = 0;
   static const pageSize = 50;
 
-  static String _two(int n) => n.toString().padLeft(2, '0');
-
-  String _when(DateTime t) {
-    final now = DateTime.now();
-    final time = '${_two(t.hour)}:${_two(t.minute)}';
-    final day = DateTime(t.year, t.month, t.day);
-    final today = DateTime(now.year, now.month, now.day);
-    final diff = today.difference(day).inDays;
-    if (diff == 0) return tr('Oggi {t}', {'t': time});
-    if (diff == 1) return tr('Ieri {t}', {'t': time});
-    return '${_two(t.day)}/${_two(t.month)}/${t.year} $time';
-  }
-
-  String _duration(CallRecord r) {
-    if (!r.answered) return r.missed ? tr('Persa') : tr('Non risposta');
-    final m = r.seconds ~/ 60;
-    return m > 0
-        ? tr('{m} min {s} s', {'m': m, 's': _two(r.seconds % 60)})
-        : tr('{s} s', {'s': r.seconds});
-  }
-
   Widget _menu<T>(T value, Map<T, String> items, ValueChanged<T> onPick) =>
       DropdownButton<T>(
         value: value,
         underline: const SizedBox.shrink(),
+        borderRadius: BorderRadius.circular(DrinRadius.control),
         items: [
           for (final e in items.entries)
             DropdownMenuItem(value: e.key, child: Text(e.value)),
@@ -110,6 +85,49 @@ class _HistoryViewState extends State<HistoryView> {
           if (v != null) onPick(v);
         },
       );
+
+  /// Colonne del registro di questo PC.
+  static List<CallColumn> get _localColumns => [
+    CallColumn(tr('Ora'), width: 112),
+    CallColumn(tr('Tipo'), width: 116, hideBelow: 640),
+    CallColumn(tr('Contatto'), flex: 1),
+    CallColumn(tr('Esito'), width: 124),
+    CallColumn(tr('Conversazione'), width: 112, end: true, hideBelow: 480),
+  ];
+
+  CallRow _localRow(CallRecord r, DrinColors c, bool canDial) {
+    final (icon, color, kind) = r.missed
+        ? (Icons.call_missed_rounded, c.busyText, tr('In arrivo'))
+        : r.direction == CallDirection.incoming
+        ? (Icons.call_received_rounded, c.freeText, tr('In arrivo'))
+        : (Icons.call_made_rounded, c.primary, tr('In uscita'));
+    final (outcome, outcomeColor) = r.answered
+        ? (tr('Risposta'), c.freeText)
+        : r.missed
+        ? (tr('Persa'), c.busyText)
+        : (tr('Non risposta'), c.away);
+    return CallRow(
+      cells: [
+        WhenCell(r.start),
+        KindCell(icon, kind, color: color),
+        party(
+          r.name,
+          r.number,
+          color: r.missed ? c.busyText : null,
+          // Nota scritta durante la chiamata.
+          extra: r.note.isEmpty
+              ? null
+              : SubLine(Icons.sticky_note_2_outlined, r.note),
+        ),
+        OutcomePill(outcome, outcomeColor),
+        DurationCell(r.seconds, strong: true),
+      ],
+      callTooltip: tr('Richiama {n}', {'n': r.number}),
+      call: canDial && r.number.isNotEmpty
+          ? () => widget.onCall(r.number)
+          : null,
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -127,226 +145,173 @@ class _HistoryViewState extends State<HistoryView> {
     if (!cdr) _source = _Source.local;
     final local = _source == _Source.local;
     return Container(
-      margin: const EdgeInsets.all(16),
-      padding: const EdgeInsets.all(16),
+      margin: const EdgeInsets.all(DrinSpace.s4),
+      padding: const EdgeInsets.all(DrinSpace.s4),
       decoration: BoxDecoration(
         color: c.surface,
-        border: Border.all(color: c.border),
-        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: c.line),
+        borderRadius: BorderRadius.circular(DrinRadius.panel),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Row(
-            children: [
-              Text(
+          // Una riga sola se c'è spazio; altrimenti titolo e ricerca sopra,
+          // fonte e filtri sotto (vanno a capo se non entrano).
+          LayoutBuilder(
+            builder: (context, box) {
+              final title = Text(
                 tr('Registro chiamate'),
                 style: DrinText.title.copyWith(color: c.ink),
-              ),
-              const SizedBox(width: DrinSpace.s4),
-              if (cdr) ...[
-                SegmentedButton<_Source>(
-                  showSelectedIcon: false,
-                  segments: [
-                    ButtonSegment(
-                      value: _Source.local,
-                      icon: const Icon(Icons.computer_rounded, size: 16),
-                      label: Text(tr('Questo PC')),
-                    ),
-                    ButtonSegment(
-                      value: _Source.pbx,
-                      icon: const Icon(Icons.dns_outlined, size: 16),
-                      label: Text(tr('PBX')),
-                    ),
-                    if (conn.cdrWholePbx)
+              );
+              final filters = <Widget>[
+                if (cdr) ...[
+                  SegmentedButton<_Source>(
+                    showSelectedIcon: false,
+                    segments: [
                       ButtonSegment(
-                        value: _Source.wholePbx,
-                        icon: const Icon(Icons.hub_outlined, size: 16),
-                        label: Text(tr('Tutto il PBX')),
+                        value: _Source.local,
+                        icon: const Icon(Icons.computer_rounded, size: 16),
+                        label: Text(tr('Questo PC')),
                       ),
-                  ],
-                  selected: {_source},
-                  onSelectionChanged: (s) => setState(() {
-                    _source = s.first;
-                    _page = 0;
-                  }),
-                ),
+                      ButtonSegment(
+                        value: _Source.pbx,
+                        icon: const Icon(Icons.dns_outlined, size: 16),
+                        label: Text(tr('PBX')),
+                      ),
+                      if (conn.cdrWholePbx)
+                        ButtonSegment(
+                          value: _Source.wholePbx,
+                          icon: const Icon(Icons.hub_outlined, size: 16),
+                          label: Text(tr('Tutto il PBX')),
+                        ),
+                    ],
+                    selected: {_source},
+                    onSelectionChanged: (s) => setState(() {
+                      _source = s.first;
+                      _page = 0;
+                    }),
+                  ),
+                  const SizedBox(width: DrinSpace.s3),
+                ],
+                if (local)
+                  _menu(
+                    _kind,
+                    {
+                      _Kind.all: tr('Tutte'),
+                      _Kind.incoming: tr('In arrivo'),
+                      _Kind.missed: tr('Perse'),
+                      _Kind.outgoing: tr('In uscita'),
+                    },
+                    (v) => setState(() {
+                      _kind = v;
+                      _page = 0;
+                    }),
+                  )
+                else
+                  _menu(_cdrKind, {
+                    CdrKind.all: tr('Tutte'),
+                    CdrKind.inbound: tr('In arrivo'),
+                    CdrKind.outbound: tr('In uscita'),
+                    CdrKind.internal: tr('Interne'),
+                    CdrKind.unanswered: tr('Non risposte'),
+                  }, (v) => setState(() => _cdrKind = v)),
                 const SizedBox(width: DrinSpace.s3),
-              ],
-              if (local)
                 _menu(
-                  _kind,
+                  _period,
                   {
-                    _Kind.all: tr('Tutte'),
-                    _Kind.incoming: tr('In arrivo'),
-                    _Kind.missed: tr('Perse'),
-                    _Kind.outgoing: tr('In uscita'),
+                    _Period.today: tr('Oggi'),
+                    _Period.week: tr('Ultimi 7 giorni'),
+                    _Period.month: tr('Ultimi 30 giorni'),
+                    _Period.all: tr('Tutto'),
                   },
                   (v) => setState(() {
-                    _kind = v;
+                    _period = v;
                     _page = 0;
                   }),
                 ),
-              const SizedBox(width: 12),
-              _menu(
-                _period,
-                {
-                  _Period.today: tr('Oggi'),
-                  _Period.week: tr('Ultimi 7 giorni'),
-                  _Period.month: tr('Ultimi 30 giorni'),
-                  _Period.all: tr('Tutto'),
-                },
-                (v) => setState(() {
-                  _period = v;
-                  _page = 0;
-                }),
-              ),
-              const Spacer(),
-              SizedBox(
-                width: 240,
-                child: TextField(
-                  controller: _filter,
-                  onChanged: (_) => setState(() => _page = 0),
-                  decoration: InputDecoration(
-                    prefixIcon: const Icon(Icons.search_rounded, size: 18),
-                    hintText: tr('Nome o numero'),
-                    hintStyle: TextStyle(fontSize: 13, color: c.muted),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 6),
-              if (local && p.history.isNotEmpty)
-                IconButton(
-                  tooltip: tr('Svuota registro'),
-                  onPressed: p.clearHistory,
-                  icon: Icon(Icons.delete_sweep_outlined, color: c.muted),
-                ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Expanded(
-            child: !local
-                ? _CdrList(
-                    key: ValueKey('$_source|$_period|${_filter.text.trim()}'),
-                    conn: conn!,
-                    wholePbx: _source == _Source.wholePbx,
-                    search: _filter.text.trim(),
-                    from: _from,
-                    canDial: p.canDial,
-                    onCall: widget.onCall,
-                    when: _when,
-                  )
-                : list.isEmpty
-                ? Center(
-                    child: Text(
-                      _kind == _Kind.missed
-                          ? tr('Nessuna chiamata persa.')
-                          : tr('Nessuna chiamata.'),
-                      style: TextStyle(color: c.muted),
+              ];
+              final search = <Widget>[
+                SizedBox(
+                  width: 240,
+                  child: TextField(
+                    controller: _filter,
+                    onChanged: (_) => setState(() => _page = 0),
+                    decoration: InputDecoration(
+                      prefixIcon: const Icon(Icons.search_rounded, size: 18),
+                      hintText: tr('Nome o numero'),
+                      hintStyle: DrinText.body.copyWith(color: c.muted),
                     ),
-                  )
-                : ListView.separated(
-                    itemCount: slice.length,
-                    separatorBuilder: (_, _) =>
-                        Divider(color: c.border, height: 1),
-                    itemBuilder: (_, i) {
-                      final r = slice[i];
-                      final (icon, color, kind) = r.missed
-                          ? (Icons.call_missed_rounded, c.busyText, tr('Persa'))
-                          : r.direction == CallDirection.incoming
-                          ? (
-                              Icons.call_received_rounded,
-                              c.okText,
-                              tr('In arrivo'),
-                            )
-                          : (
-                              Icons.call_made_rounded,
-                              c.accent,
-                              tr('In uscita'),
-                            );
-                      return SizedBox(
-                        // Una riga in più se c'è la nota.
-                        height: r.note.isEmpty ? 56 : 72,
-                        child: Row(
-                          children: [
-                            const SizedBox(width: 4),
-                            Tooltip(
-                              message: kind,
-                              child: Icon(icon, size: 20, color: color),
-                            ),
-                            const SizedBox(width: 14),
-                            Expanded(
-                              child: Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    r.name.isNotEmpty ? r.name : r.number,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.w600,
-                                      color: r.missed ? c.busyText : c.text,
-                                    ),
-                                  ),
-                                  if (r.name.isNotEmpty)
-                                    Text(
-                                      r.number,
-                                      style: mono(c.muted, size: 12),
-                                    ),
-                                  // Nota scritta durante la chiamata.
-                                  if (r.note.isNotEmpty)
-                                    Row(
-                                      children: [
-                                        Icon(
-                                          Icons.sticky_note_2_outlined,
-                                          size: 13,
-                                          color: c.accent,
-                                        ),
-                                        const SizedBox(width: 4),
-                                        Expanded(
-                                          child: Text(
-                                            r.note,
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: TextStyle(
-                                              fontSize: 12,
-                                              color: c.muted,
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                ],
-                              ),
-                            ),
-                            SizedBox(
-                              width: 150,
-                              child: Text(
-                                _when(r.start),
-                                style: TextStyle(fontSize: 13, color: c.muted),
-                              ),
-                            ),
-                            SizedBox(
-                              width: 110,
-                              child: Text(
-                                _duration(r),
-                                style: TextStyle(fontSize: 13, color: c.muted),
-                              ),
-                            ),
-                            CallIconButton(
-                              tooltip: tr('Richiama {n}', {'n': r.number}),
-                              onPressed: p.canDial && r.number.isNotEmpty
-                                  ? () => widget.onCall(r.number)
-                                  : null,
-                            ),
-                          ],
-                        ),
-                      );
-                    },
                   ),
+                ),
+                const SizedBox(width: 6),
+                if (local && p.history.isNotEmpty)
+                  IconButton(
+                    tooltip: tr('Svuota registro'),
+                    onPressed: p.clearHistory,
+                    icon: Icon(Icons.delete_sweep_outlined, color: c.muted),
+                  ),
+              ];
+              if (box.maxWidth >= 1120) {
+                return Row(
+                  children: [
+                    title,
+                    const SizedBox(width: DrinSpace.s4),
+                    ...filters,
+                    const Spacer(),
+                    ...search,
+                  ],
+                );
+              }
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(children: [title, const Spacer(), ...search]),
+                  const SizedBox(height: DrinSpace.s3),
+                  Wrap(
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    runSpacing: DrinSpace.s2,
+                    children: filters,
+                  ),
+                ],
+              );
+            },
+          ),
+          const SizedBox(height: DrinSpace.s3),
+          Expanded(
+            child: AnimatedSwitcher(
+              duration: DrinMotion.of(context, DrinMotion.base),
+              child: !local
+                  ? _CdrList(
+                      key: ValueKey(
+                        '$_source|$_period|$_cdrKind|${_filter.text.trim()}',
+                      ),
+                      conn: conn!,
+                      wholePbx: _source == _Source.wholePbx,
+                      search: _filter.text.trim(),
+                      from: _from,
+                      kind: _cdrKind,
+                      canDial: p.canDial,
+                      onCall: widget.onCall,
+                    )
+                  : list.isEmpty
+                  ? Center(
+                      key: const ValueKey('empty'),
+                      child: Text(
+                        _kind == _Kind.missed
+                            ? tr('Nessuna chiamata persa.')
+                            : tr('Nessuna chiamata.'),
+                        style: DrinText.body.copyWith(color: c.muted),
+                      ),
+                    )
+                  : CallTable(
+                      key: const ValueKey('local'),
+                      columns: _localColumns,
+                      rows: [for (final r in slice) _localRow(r, c, p.canDial)],
+                    ),
+            ),
           ),
           if (local) ...[
-            const SizedBox(height: 8),
+            const SizedBox(height: DrinSpace.s2),
             Pager(
               total: list.length,
               page: _page,
@@ -368,17 +333,17 @@ class _CdrList extends StatefulWidget {
     required this.wholePbx,
     required this.search,
     required this.from,
+    required this.kind,
     required this.canDial,
     required this.onCall,
-    required this.when,
   });
   final PbxConnection conn;
   final bool wholePbx;
   final String search;
   final DateTime? from;
+  final CdrKind kind;
   final bool canDial;
   final ValueChanged<String> onCall;
-  final String Function(DateTime) when;
 
   @override
   State<_CdrList> createState() => _CdrListState();
@@ -415,6 +380,7 @@ class _CdrListState extends State<_CdrList> {
         wholePbx: widget.wholePbx,
         search: widget.search,
         from: widget.from,
+        kind: widget.kind,
         offset: _rows.length,
       );
       if (!mounted) return;
@@ -427,25 +393,72 @@ class _CdrListState extends State<_CdrList> {
     if (mounted) setState(() => _loading = false);
   }
 
-  String _talk(CdrRecord r) {
-    final m = r.talk ~/ 60;
-    return m > 0
-        ? tr('{m} min {s} s', {
-            'm': m,
-            's': (r.talk % 60).toString().padLeft(2, '0'),
-          })
-        : tr('{s} s', {'s': r.talk});
-  }
+  /// Esito come lo scrive il PBX, a parole e col suo colore.
+  static (String, Color) _outcome(String d, DrinColors c) =>
+      switch (d.toUpperCase()) {
+        'ANSWERED' => (tr('Risposta'), c.freeText),
+        'NO ANSWER' => (tr('Non risposta'), c.busyText),
+        'ABANDONED' => (tr('Abbandonata'), c.busyText),
+        'BUSY' => (tr('Occupato'), c.away),
+        'FAILED' => (tr('Non riuscita'), c.busyText),
+        'VOICEMAIL' => (tr('Casella vocale'), c.primary),
+        _ => (d, c.away),
+      };
 
-  /// Esito come lo scrive il PBX, a parole.
-  static String _disposition(String d) => switch (d.toUpperCase()) {
-    'ANSWERED' => tr('Risposta'),
-    'NO ANSWER' => tr('Non risposta'),
-    'BUSY' => tr('Occupato'),
-    'FAILED' => tr('Non riuscita'),
-    'VOICEMAIL' => tr('Casella vocale'),
-    _ => d,
-  };
+  static List<CallColumn> get _columns => [
+    CallColumn(tr('Ora'), width: 112),
+    CallColumn(tr('Tipo'), width: 116, hideBelow: 900),
+    CallColumn(tr('Da'), flex: 1),
+    CallColumn(tr('A'), flex: 1),
+    CallColumn(tr('Esito'), width: 132),
+    CallColumn(tr('Durata'), width: 80, end: true, hideBelow: 1000),
+    CallColumn(tr('Conversazione'), width: 112, end: true, hideBelow: 680),
+  ];
+
+  CallRow _row(CdrRecord r, DrinColors c, String? own) {
+    final (icon, kind) = switch (r.callType) {
+      'Inbound' => (Icons.call_received_rounded, tr('In arrivo')),
+      'Outbound' => (Icons.call_made_rounded, tr('In uscita')),
+      'Internal' => (Icons.swap_horiz_rounded, tr('Interna')),
+      final t => (Icons.call_rounded, t),
+    };
+    final (outcome, outcomeColor) = _outcome(r.disposition, c);
+    // Chi richiamare: l'altro capo rispetto al proprio interno; nel CDR di
+    // tutto il PBX chi ha chiamato.
+    final other = own != null && r.src == own ? r.dst : r.src;
+    final missedByMe = !r.answered && own != null && r.src != own;
+    // Gruppo di squillo, coda, IVR: chi ha risposto (o l'ultimo squillo).
+    final via = r.lastDst.isNotEmpty && r.lastDst != r.dst;
+    final last = r.lastDstName.isNotEmpty
+        ? '${r.lastDstName} · ${r.lastDst}'
+        : r.lastDst;
+    return CallRow(
+      cells: [
+        WhenCell(r.time),
+        KindCell(icon, kind),
+        party(r.srcName, r.src, color: missedByMe ? c.busyText : null),
+        party(
+          r.dstName,
+          r.dst,
+          extra: via
+              ? SubLine(
+                  Icons.subdirectory_arrow_right_rounded,
+                  r.answered
+                      ? tr('Risposto da {n}', {'n': last})
+                      : tr('Ultimo squillo: {n}', {'n': last}),
+                )
+              : null,
+        ),
+        OutcomePill(outcome, outcomeColor),
+        DurationCell(r.duration),
+        DurationCell(r.talk, strong: true),
+      ],
+      callTooltip: tr('Richiama {n}', {'n': other}),
+      call: widget.canDial && other.isNotEmpty
+          ? () => widget.onCall(other)
+          : null,
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -468,87 +481,28 @@ class _CdrListState extends State<_CdrList> {
         ),
       );
     }
-    return ListView.separated(
-      itemCount: _rows.length + (_more || _error != null ? 1 : 0),
-      separatorBuilder: (_, _) => Divider(color: c.line, height: 1),
-      itemBuilder: (_, i) {
-        if (i == _rows.length) {
-          return Padding(
-            padding: const EdgeInsets.all(DrinSpace.s3),
-            child: Center(
-              child: _loading
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : OutlinedButton(
-                      onPressed: _load,
-                      child: Text(
-                        _error != null ? tr('Riprova') : tr('Carica altre'),
+    return CallTable(
+      columns: _columns,
+      rows: [for (final r in _rows) _row(r, c, own)],
+      footer: _more || _error != null
+          ? Padding(
+              padding: const EdgeInsets.all(DrinSpace.s3),
+              child: Center(
+                child: _loading
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : OutlinedButton(
+                        onPressed: _load,
+                        child: Text(
+                          _error != null ? tr('Riprova') : tr('Carica altre'),
+                        ),
                       ),
-                    ),
-            ),
-          );
-        }
-        final r = _rows[i];
-        // Dal punto di vista del proprio interno: entrante se chiamato.
-        final incoming = own != null ? r.dst == own : r.callType == 'Inbound';
-        final missed = !r.answered && incoming;
-        final (icon, color) = missed
-            ? (Icons.call_missed_rounded, c.busyText)
-            : incoming
-            ? (Icons.call_received_rounded, c.freeText)
-            : (Icons.call_made_rounded, c.primary);
-        String who(String name, String number) =>
-            name.isNotEmpty && name != number ? '$name ($number)' : number;
-        final other = incoming ? r.src : r.dst;
-        final title = widget.wholePbx
-            ? '${who(r.srcName, r.src)}  →  ${who(r.dstName, r.dst)}'
-            : who(incoming ? r.srcName : r.dstName, other);
-        return SizedBox(
-          height: 52,
-          child: Row(
-            children: [
-              const SizedBox(width: DrinSpace.s1),
-              Tooltip(
-                message: r.callType,
-                child: Icon(icon, size: 20, color: color),
               ),
-              const SizedBox(width: DrinSpace.s3),
-              Expanded(
-                child: Text(
-                  title,
-                  overflow: TextOverflow.ellipsis,
-                  style: DrinText.heading.copyWith(
-                    color: missed ? c.busyText : c.ink,
-                  ),
-                ),
-              ),
-              SizedBox(
-                width: 150,
-                child: Text(
-                  r.time == null ? '' : widget.when(r.time!),
-                  style: DrinText.detail.copyWith(color: c.muted),
-                ),
-              ),
-              SizedBox(
-                width: 130,
-                child: Text(
-                  r.answered ? _talk(r) : _disposition(r.disposition),
-                  style: DrinText.detail.copyWith(color: c.muted),
-                ),
-              ),
-              CallIconButton(
-                tooltip: tr('Richiama {n}', {'n': other}),
-                onPressed: widget.canDial && other.isNotEmpty
-                    ? () => widget.onCall(other)
-                    : null,
-              ),
-            ],
-          ),
-        );
-      },
+            )
+          : null,
     );
   }
 }

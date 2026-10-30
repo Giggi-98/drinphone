@@ -231,6 +231,25 @@ code { font-family: var(--f-num); font-size: 12.5px; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
+/* Tabella chiamate (registro di questo PC e CDR del PBX) */
+.calls { overflow-x: auto; }
+.calls table { width: 100%; border-collapse: collapse; min-width: 640px; }
+.calls th { font: 600 12px/16px var(--f-ui); color: var(--muted); text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--line); }
+.calls td { padding: 8px 12px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+.calls tr:last-child td { border-bottom: 0; }
+.calls tbody tr:hover td { background: var(--raised); }
+.calls .end { text-align: right; }
+.calls .num { font: 500 13px/18px var(--f-num); font-variant-numeric: tabular-nums; }
+.calls .sub { display: block; font: 500 13px/18px var(--f-num); color: var(--muted); }
+.calls .via { display: block; font: 400 12.5px/16px var(--f-ui); color: var(--muted); }
+.calls .name { font: 600 15px/20px var(--f-ui); }
+.calls .missed { color: var(--busy); }
+.pill { display: inline-flex; align-items: center; gap: 6px; padding: 2px 8px; border-radius: 999px; font: 600 12px/16px var(--f-ui); }
+.pill::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.pill.ok { color: var(--free); background: color-mix(in srgb, var(--free) 14%, transparent); }
+.pill.ko { color: var(--busy); background: color-mix(in srgb, var(--busy) 14%, transparent); }
+.pill.vm { color: var(--primary); background: color-mix(in srgb, var(--primary) 14%, transparent); }
+.pill.na { color: var(--away); background: color-mix(in srgb, var(--away) 14%, transparent); }
 </style>
 
 <div class="page">
@@ -335,6 +354,18 @@ code { font-family: var(--f-num); font-size: 12.5px; }
     <div class="box badges">
       <span class="badge unread">3 perse</span><span class="badge new">Nuovo</span><span class="badge ring">Squilla</span><span class="badge neutral">Commerciale</span>
       <button class="btn primary" type="button">Salva sul PBX</button><button class="btn" type="button">Annulla</button>
+    </div>
+    <div class="box calls" aria-label="Tabella chiamate">
+      <h3>Tabella chiamate · registro e CDR del PBX</h3>
+      <table>
+        <thead><tr><th>Ora</th><th>Tipo</th><th>Da</th><th>A</th><th>Esito</th><th class="end">Durata</th><th class="end">Conversazione</th></tr></thead>
+        <tbody>
+          <tr><td><span class="num">15:59:21</span><span class="via">Oggi</span></td><td>In arrivo</td><td><span class="name">0496369001</span></td><td><span class="name">RING_SKILLWORKS</span><span class="via">↳ Risposto da Margherita Talenti · 200</span></td><td><span class="pill ok">Risposta</span></td><td class="end num">0:51</td><td class="end num">0:47</td></tr>
+          <tr><td><span class="num">15:53:55</span><span class="via">Oggi</span></td><td>In arrivo</td><td><span class="name missed">Enrico Paterlini</span><span class="sub">3480012345</span></td><td><span class="name">RING_SKILLWORKS</span><span class="via">↳ Ultimo squillo: Luigi Ruocco · 305</span></td><td><span class="pill ko">Abbandonata</span></td><td class="end num">0:02</td><td class="end num">—</td></tr>
+          <tr><td><span class="num">11:40:12</span><span class="via">Ieri</span></td><td>Interna</td><td><span class="name missed">Ernesto Papa</span><span class="sub">309</span></td><td><span class="name">Luigi Ruocco</span><span class="sub">305</span></td><td><span class="pill vm">Casella vocale</span></td><td class="end num">0:25</td><td class="end num">—</td></tr>
+          <tr><td><span class="num">09:12:40</span><span class="via">28/10/2026</span></td><td>Interna</td><td><span class="name">Luigi Ruocco</span><span class="sub">305</span></td><td><span class="name">Sandro Zanardi</span><span class="sub">303</span></td><td><span class="pill na">Occupato</span></td><td class="end num">0:03</td><td class="end num">—</td></tr>
+        </tbody>
+      </table>
     </div>
   </section>
 
