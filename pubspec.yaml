@@ -66,6 +66,7 @@ flutter:
   assets:
     - assets/brand/
     - release-notes/
+    - assets/fonts/
 
   # To add assets to your application, add an assets section, like this:
   # assets:
@@ -77,6 +78,18 @@ flutter:
 
   # For details regarding adding assets from package dependencies, see
   # https://flutter.dev/to/asset-from-package
+
+  # Font dello stile Squillo (DESIGN.md §2), variabili, licenza OFL.
+  fonts:
+    - family: Onest
+      fonts:
+        - asset: assets/fonts/Onest.ttf
+    - family: Bricolage Grotesque
+      fonts:
+        - asset: assets/fonts/BricolageGrotesque.ttf
+    - family: Red Hat Mono
+      fonts:
+        - asset: assets/fonts/RedHatMono.ttf
 
   # To add custom fonts to your application, add a fonts section here,
   # in this "flutter" section. Each entry in this list should have a

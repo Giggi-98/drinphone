@@ -250,12 +250,12 @@ class _HomeScreenState extends State<HomeScreen> {
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
         decoration: BoxDecoration(
           color: c.surface,
-          border: Border.all(color: c.ringing),
+          border: Border.all(color: c.line),
           borderRadius: BorderRadius.circular(10),
         ),
         child: Row(
           children: [
-            Icon(Icons.info_outline_rounded, size: 18, color: c.ringing),
+            Icon(Icons.info_outline_rounded, size: 18, color: c.primary),
             const SizedBox(width: 10),
             Expanded(
               child: Text(text, style: TextStyle(color: c.text)),
@@ -270,7 +270,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final reg = p.registration;
     final (dot, label) = switch (reg.status) {
       RegistrationStatus.ok => (c.ok, tr('Registrato')),
-      RegistrationStatus.progress => (c.ringing, tr('Registrazione…')),
+      RegistrationStatus.progress => (c.away, tr('Registrazione…')),
       RegistrationStatus.failed => (c.busy, tr('Errore registrazione')),
       _ => (c.muted, tr('Non registrato')),
     };
@@ -881,7 +881,7 @@ class _ExtensionsViewState extends State<_ExtensionsView> {
                         : PhoneController.favoritesGroup,
                   ),
                   icon: Icon(Icons.star_border_rounded, color: c.muted),
-                  selectedIcon: Icon(Icons.star_rounded, color: c.ringing),
+                  selectedIcon: Icon(Icons.star_rounded, color: c.brand),
                 ),
               // Aggiunta manuale solo nel contesto "Tutti gli interni".
               if (phone.selectedGroup == null)
@@ -915,7 +915,7 @@ class _ExtensionsViewState extends State<_ExtensionsView> {
                           const SliverGridDelegateWithMaxCrossAxisExtent(
                             maxCrossAxisExtent: 300,
                             // Due righe: identità e stato, poi i pulsanti.
-                            mainAxisExtent: 112,
+                            mainAxisExtent: 114,
                             crossAxisSpacing: 10,
                             mainAxisSpacing: 10,
                           ),
@@ -1102,7 +1102,7 @@ class _ExtensionTileState extends State<_ExtensionTile> {
                               ? Icons.star_rounded
                               : Icons.star_border_rounded,
                           size: 20,
-                          color: favorite ? c.ringing : c.muted,
+                          color: favorite ? c.brand : c.muted,
                         ),
                       ),
                   ],
@@ -1345,7 +1345,7 @@ class _GroupsPanelState extends State<_GroupsPanel> {
               Icon(
                 on ? Icons.star_rounded : Icons.star_border_rounded,
                 size: 18,
-                color: c.ringing,
+                color: c.brand,
               ),
               const SizedBox(width: 10),
               Expanded(

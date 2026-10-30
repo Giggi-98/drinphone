@@ -404,7 +404,7 @@ class _AccountTile extends StatelessWidget {
     final a = account;
     final (dot, state) = switch (phone.registrations[a.id]?.status) {
       RegistrationStatus.ok => (c.ok, tr('Registrato')),
-      RegistrationStatus.progress => (c.ringing, tr('Registrazione…')),
+      RegistrationStatus.progress => (c.away, tr('Registrazione…')),
       RegistrationStatus.failed => (c.busy, tr('Errore registrazione')),
       _ => (c.muted, tr('Non registrato')),
     };

@@ -15,7 +15,7 @@ provato contro un PBX reale con audio nei due versi (CLAUDE.md §5).
 ```
 lib/main.dart                       bootstrap: AppPaths -> PhoneController -> HomeScreen
 lib/app/phone_controller.dart       stato UI (registrazione, chiamata, impostazioni)
-lib/app/theme.dart                  palette D chiaro/scuro (DrinColors)
+lib/app/theme.dart                  token dello stile Squillo (DrinColors/Text/Space/Radius/Motion, DESIGN.md)
 lib/app/brand.dart                  logo DRIN per tema, badge canale (Alpha) e versione
 lib/core/update/updater.dart        aggiornamenti dalle GitHub Releases (manifest firmato)
 lib/features/update/                pannello e finestra "Aggiornamento"
@@ -325,7 +325,8 @@ video; `tool/fetch_angle.ps1`); `file_selector` ^1.1.0 (scelta del
 file da importare, plugin flutter.dev); `flutter_secure_storage` ^11.2.0
 (Windows: richiede componente VS "C++ ATL"); `cryptography` ^2.9.0 (Ed25519 in Dart
 puro, firma degli aggiornamenti); linphone-sdk-win64 5.5.39 (GPLv3 /
-commerciale, `docs/licenze-e-compliance.md`). Toolchain: VS 2022 Build Tools 17.14
+commerciale, `docs/licenze-e-compliance.md`); font Bricolage Grotesque, Onest e Red Hat Mono
+(variabili, OFL, `assets/fonts/`, stile in `DESIGN.md`). Toolchain: VS 2022 Build Tools 17.14
 (C++ + ATL), Windows SDK 10.0.26100.
 
 ## 6. Punti di attenzione

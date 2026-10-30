@@ -1,0 +1,409 @@
+<title>Squillo Design System</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,700;12..96,800&family=Onest:wght@400;600&family=Red+Hat+Mono:wght@500;600&display=swap">
+<style>
+/* Riferimento grafico di DESIGN.md (DrinPhone "Squillo"): stessi valori, stessi nomi.
+   Layout: colonna unica a sezioni; palette chiara e scura sempre affiancate. */
+@font-face { font-family: "Bricolage Grotesque"; src: url("../../assets/fonts/BricolageGrotesque.ttf"); font-weight: 200 800; }
+@font-face { font-family: "Onest"; src: url("../../assets/fonts/Onest.ttf"); font-weight: 100 900; }
+@font-face { font-family: "Red Hat Mono"; src: url("../../assets/fonts/RedHatMono.ttf"); font-weight: 300 700; }
+
+:root {
+  /* Palette chiara (DESIGN.md §1) */
+  --l-brand: #1380C6; --l-primary: #0E6BA8; --l-onPrimary: #FFFFFF; --l-ink: #0B2A43; --l-muted: #4F6478;
+  --l-ground: #EEF3F7; --l-surface: #FFFFFF; --l-raised: #F6F9FC; --l-panel: #E3EAF0; --l-line: #D3DFE8;
+  --l-squillo: #FFB800; --l-onSquillo: #3D2C00; --l-squilloLine: #B88300; --l-free: #1A9E68; --l-onFree: #FFFFFF;
+  --l-busy: #DC3E43; --l-onBusy: #FFFFFF; --l-away: #7C8B99;
+  /* Palette scura */
+  --d-brand: #4BA9EC; --d-primary: #4BA9EC; --d-onPrimary: #06182A; --d-ink: #E8F2FA; --d-muted: #93AABD;
+  --d-ground: #0A1825; --d-surface: #0F2233; --d-raised: #14293C; --d-panel: #1A3045; --d-line: #1E3A52;
+  --d-squillo: #FFC53D; --d-onSquillo: #2B1F00; --d-squilloLine: #FFC53D; --d-free: #3CCB8C; --d-onFree: #06182A;
+  --d-busy: #FF6B6F; --d-onBusy: #06182A; --d-away: #7F93A6;
+
+  /* Token attivi della pagina (tema chiaro) */
+  --brand: var(--l-brand); --primary: var(--l-primary); --onPrimary: var(--l-onPrimary); --ink: var(--l-ink); --muted: var(--l-muted);
+  --ground: var(--l-ground); --surface: var(--l-surface); --raised: var(--l-raised); --panel: var(--l-panel); --line: var(--l-line);
+  --squillo: var(--l-squillo); --onSquillo: var(--l-onSquillo); --squilloLine: var(--l-squilloLine); --free: var(--l-free); --onFree: var(--l-onFree);
+  --busy: var(--l-busy); --onBusy: var(--l-onBusy); --away: var(--l-away);
+
+  --f-display: "Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+  --f-ui: "Onest", "Segoe UI", system-ui, sans-serif;
+  --f-num: "Red Hat Mono", ui-monospace, Consolas, monospace;
+  --fast: 120ms; --base: 200ms; --wide: 320ms;
+  --ease: cubic-bezier(.33, 1, .68, 1); --ease-emph: cubic-bezier(.2, 0, 0, 1);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --brand: var(--d-brand); --primary: var(--d-primary); --onPrimary: var(--d-onPrimary); --ink: var(--d-ink); --muted: var(--d-muted);
+    --ground: var(--d-ground); --surface: var(--d-surface); --raised: var(--d-raised); --panel: var(--d-panel); --line: var(--d-line);
+    --squillo: var(--d-squillo); --onSquillo: var(--d-onSquillo); --squilloLine: var(--d-squilloLine); --free: var(--d-free); --onFree: var(--d-onFree);
+    --busy: var(--d-busy); --onBusy: var(--d-onBusy); --away: var(--d-away);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --brand: var(--d-brand); --primary: var(--d-primary); --onPrimary: var(--d-onPrimary); --ink: var(--d-ink); --muted: var(--d-muted);
+  --ground: var(--d-ground); --surface: var(--d-surface); --raised: var(--d-raised); --panel: var(--d-panel); --line: var(--d-line);
+  --squillo: var(--d-squillo); --onSquillo: var(--d-onSquillo); --squilloLine: var(--d-squilloLine); --free: var(--d-free); --onFree: var(--d-onFree);
+  --busy: var(--d-busy); --onBusy: var(--d-onBusy); --away: var(--d-away);
+  color-scheme: dark;
+}
+/* Pannelli che mostrano sempre un tema preciso */
+.force-light {
+  --brand: var(--l-brand); --primary: var(--l-primary); --onPrimary: var(--l-onPrimary); --ink: var(--l-ink); --muted: var(--l-muted);
+  --ground: var(--l-ground); --surface: var(--l-surface); --raised: var(--l-raised); --panel: var(--l-panel); --line: var(--l-line);
+  --squillo: var(--l-squillo); --onSquillo: var(--l-onSquillo); --squilloLine: var(--l-squilloLine); --free: var(--l-free); --onFree: var(--l-onFree);
+  --busy: var(--l-busy); --onBusy: var(--l-onBusy); --away: var(--l-away); color-scheme: light;
+}
+.force-dark {
+  --brand: var(--d-brand); --primary: var(--d-primary); --onPrimary: var(--d-onPrimary); --ink: var(--d-ink); --muted: var(--d-muted);
+  --ground: var(--d-ground); --surface: var(--d-surface); --raised: var(--d-raised); --panel: var(--d-panel); --line: var(--d-line);
+  --squillo: var(--d-squillo); --onSquillo: var(--d-onSquillo); --squilloLine: var(--d-squilloLine); --free: var(--d-free); --onFree: var(--d-onFree);
+  --busy: var(--d-busy); --onBusy: var(--d-onBusy); --away: var(--d-away); color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+body { background: var(--ground); color: var(--ink); font: 400 14px/20px var(--f-ui); }
+.page { max-width: 1120px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 40px 72px; display: grid; gap: 56px; }
+h1, h2, h3 { margin: 0; text-wrap: balance; }
+p { margin: 0; }
+section { display: grid; gap: 20px; min-width: 0; }
+.sec-head { display: grid; gap: 6px; max-width: 70ch; }
+.sec-head h2 { font: 700 26px/32px var(--f-display); }
+.sec-head p { color: var(--muted); }
+.box { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 20px; min-width: 0; }
+code { font-family: var(--f-num); font-size: 12.5px; }
+
+/* Intestazione */
+.hero { display: grid; gap: 14px; }
+.wordmark { font: 800 clamp(44px, 8vw, 76px)/0.95 var(--f-display); letter-spacing: -0.03em; }
+.wordmark .bang { color: var(--squilloLine); display: inline-block; transform-origin: 50% 90%; }
+.hero p { color: var(--muted); font-size: 16px; line-height: 24px; max-width: 64ch; }
+.hero .src { font-size: 13px; }
+
+/* Colori */
+.palettes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+@media (max-width: 760px) { .palettes { grid-template-columns: minmax(0, 1fr); } }
+.palette { background: var(--ground); color: var(--ink); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 12px; min-width: 0; }
+.palette h3 { font: 600 15px/20px var(--f-ui); }
+.chips { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 8px; }
+.chip { display: grid; gap: 2px; min-width: 0; }
+.chip i { height: 40px; border-radius: 8px; border: 1px solid var(--line); display: block; }
+.chip b { font: 600 12px/16px var(--f-ui); }
+.chip span { font: 500 11.5px/14px var(--f-num); color: var(--muted); }
+
+/* Carattere */
+.types { display: grid; gap: 0; }
+.type { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 16px; align-items: baseline; padding-block: 12px; border-bottom: 1px solid var(--line); }
+.type:last-child { border-bottom: 0; }
+.type .meta { display: grid; gap: 2px; color: var(--muted); font-size: 12.5px; line-height: 16px; }
+.type .meta b { color: var(--ink); font-weight: 600; }
+@media (max-width: 560px) { .type { grid-template-columns: minmax(0, 1fr); gap: 4px; } }
+.t-display { font: 800 28px/34px var(--f-display); }
+.t-title { font: 700 20px/26px var(--f-display); }
+.t-heading { font: 600 15px/20px var(--f-ui); }
+.t-body { font: 400 14px/20px var(--f-ui); }
+.t-detail { font: 400 12.5px/16px var(--f-ui); color: var(--muted); }
+.t-label { font: 600 12px/16px var(--f-ui); }
+.t-number { font: 500 13px/18px var(--f-num); font-variant-numeric: tabular-nums; }
+.t-numberLarge { font: 600 22px/28px var(--f-num); font-variant-numeric: tabular-nums; }
+
+/* Spazio e forme */
+.grid2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+@media (max-width: 760px) { .grid2 { grid-template-columns: minmax(0, 1fr); } }
+.spaces { display: grid; gap: 8px; }
+.space { display: grid; grid-template-columns: 54px 1fr; align-items: center; gap: 12px; font: 500 12px var(--f-num); color: var(--muted); }
+.space i { height: 12px; background: var(--brand); border-radius: 3px; display: block; }
+.radii { display: flex; flex-wrap: wrap; gap: 14px; }
+.radius { display: grid; gap: 6px; justify-items: center; font-size: 12px; color: var(--muted); }
+.radius i { width: 64px; height: 48px; background: var(--raised); border: 2px solid var(--brand); display: block; }
+
+/* Densità e righe */
+.density { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+@media (max-width: 760px) { .density { grid-template-columns: minmax(0, 1fr); } }
+.list { display: grid; gap: 4px; }
+.list h3 { font: 600 13px/18px var(--f-ui); color: var(--muted); margin-bottom: 4px; }
+.row { display: flex; align-items: center; gap: 10px; padding-inline: 10px; border-radius: 10px; background: var(--raised); border: 1px solid var(--line); min-width: 0; transition: background-color var(--fast) var(--ease); }
+.row:hover { background: var(--panel); }
+.row.dense { height: 40px; }
+.row.touch { height: 52px; }
+.row .name { flex: 1; min-width: 0; display: grid; }
+.row .name b { font: 600 15px/20px var(--f-ui); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.row.dense .name b { font-size: 14px; }
+.row .name small { font: 400 12.5px/16px var(--f-ui); color: var(--muted); }
+.row .ext { font: 500 13px/18px var(--f-num); color: var(--muted); }
+.row .call { width: 30px; height: 30px; border-radius: 8px; border: 0; background: var(--panel); color: var(--ink); display: grid; place-items: center; opacity: 0; transition: opacity var(--fast) var(--ease); cursor: pointer; }
+.row:hover .call, .row:focus-within .call, .row.touch .call { opacity: 1; }
+.row.touch .call { width: 44px; height: 44px; border-radius: 10px; }
+.call svg { width: 16px; height: 16px; }
+.row.touch .call svg { width: 20px; height: 20px; }
+
+/* Spie */
+.leds { display: flex; flex-wrap: wrap; gap: 18px; }
+.ledlabel { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; }
+.led { width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--c); box-shadow: 0 0 0 3px color-mix(in srgb, var(--c) 22%, transparent); }
+.led.off { box-shadow: none; }
+.led.pulse { animation: pulse 1.6s ease-out infinite; }
+@keyframes pulse { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--c) 60%, transparent); } 100% { box-shadow: 0 0 0 9px color-mix(in srgb, var(--c) 0%, transparent); } }
+
+/* Movimento */
+.motion { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
+.mot { display: grid; gap: 10px; padding: 16px; background: var(--raised); border: 1px solid var(--line); border-radius: 10px; }
+.mot b { font: 600 15px/20px var(--f-ui); }
+.mot span { font-size: 12.5px; color: var(--muted); line-height: 16px; }
+.track { height: 28px; border-radius: 999px; background: var(--panel); position: relative; overflow: hidden; }
+.track i { position: absolute; top: 4px; left: 4px; width: 20px; height: 20px; border-radius: 50%; background: var(--brand); transition-property: transform; transition-timing-function: var(--ease); }
+.track.go i { transform: translateX(calc(var(--w, 160px) - 28px)); }
+.mot[data-d="fast"] i { transition-duration: var(--fast); }
+.mot[data-d="base"] i { transition-duration: var(--base); }
+.mot[data-d="wide"] i { transition-duration: var(--wide); transition-timing-function: var(--ease-emph); }
+.btn { font: 600 13px/18px var(--f-ui); border-radius: 8px; padding: 8px 14px; border: 0; cursor: pointer; background: var(--panel); color: var(--ink); transition: transform var(--fast) var(--ease), background-color var(--fast) var(--ease); }
+.btn:active { transform: scale(.96); }
+.btn.primary { background: var(--primary); color: var(--onPrimary); }
+.btn:focus-visible, button:focus-visible { outline: 3px solid var(--brand); outline-offset: 2px; }
+
+/* Chiamata in arrivo */
+.incoming-wrap { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+@media (max-width: 760px) { .incoming-wrap { grid-template-columns: minmax(0, 1fr); } }
+.incoming { background: var(--surface); color: var(--ink); border: 1px solid var(--line); border-radius: 20px; padding: 28px 16px 22px; display: grid; justify-items: center; gap: 6px; text-align: center; position: relative; transition: box-shadow var(--base) var(--ease); }
+.incoming .bang { position: absolute; top: 14px; right: 18px; font: 800 32px/1 var(--f-display); color: var(--squilloLine); opacity: 0; }
+.avatar { width: 80px; height: 80px; border-radius: 50%; background: var(--brand); color: var(--onPrimary); display: grid; place-items: center; font: 700 26px var(--f-display); position: relative; margin-bottom: 8px; }
+.avatar .wave { position: absolute; inset: 0; border-radius: 50%; border: 3px solid var(--squilloLine); opacity: 0; }
+.incoming .who { font: 800 28px/34px var(--f-display); }
+.incoming .num { font: 600 22px/28px var(--f-num); color: var(--muted); }
+.incoming .sub { font: 400 12.5px/16px var(--f-ui); color: var(--muted); }
+.answer { display: flex; gap: 28px; margin-top: 14px; }
+.round { width: 56px; height: 56px; border-radius: 50%; border: 0; display: grid; place-items: center; cursor: pointer; transition: transform var(--fast) var(--ease); }
+.round:active { transform: scale(.92); }
+.round svg { width: 24px; height: 24px; }
+.round.ok { background: var(--free); color: var(--onFree); }
+.round.end { background: var(--busy); color: var(--onBusy); }
+.ringing .incoming { box-shadow: 0 0 0 3px var(--squilloLine); }
+.ringing .avatar { animation: bell 900ms cubic-bezier(.36,.07,.19,.97) infinite; }
+.ringing .wave { animation: wave 1600ms ease-out infinite; }
+.ringing .wave.w2 { animation-delay: 800ms; }
+.ringing .incoming .bang { animation: bang 900ms ease-in-out infinite; }
+@keyframes bell { 0%,50%,100% { transform: rotate(0); } 10% { transform: rotate(-9deg); } 20% { transform: rotate(8deg); } 30% { transform: rotate(-6deg); } 40% { transform: rotate(4deg); } }
+@keyframes wave { from { transform: scale(1); opacity: .9; } to { transform: scale(1.9); opacity: 0; } }
+@keyframes bang { 0%,100% { opacity: 0; transform: translateY(4px) scale(.8); } 30%,60% { opacity: 1; transform: none; } }
+
+/* Controlli di chiamata */
+.controls { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 14px; padding: 16px; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; }
+.ctl { display: grid; justify-items: center; gap: 6px; font: 400 12.5px/16px var(--f-ui); color: var(--muted); }
+.ctl button { width: 48px; height: 48px; border-radius: 50%; border: 0; background: var(--panel); color: var(--ink); display: grid; place-items: center; cursor: pointer; transition: background-color var(--fast) var(--ease), transform var(--fast) var(--ease); }
+.ctl button:active { transform: scale(.92); }
+.ctl button[aria-pressed="true"] { background: var(--primary); color: var(--onPrimary); }
+.ctl button svg { width: 22px; height: 22px; }
+.ctl.end { margin-left: auto; }
+.ctl.end button { background: var(--busy); color: var(--onBusy); }
+.badges { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.badge { font: 600 12px/16px var(--f-ui); padding: 2px 8px; border-radius: 999px; }
+.badge.unread { background: var(--busy); color: var(--onBusy); }
+.badge.new { background: var(--primary); color: var(--onPrimary); }
+.badge.ring { background: var(--squillo); color: var(--onSquillo); }
+.badge.neutral { background: var(--panel); color: var(--ink); }
+
+/* Sì / no */
+.rules { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
+.rule { display: grid; gap: 8px; padding: 16px; border-radius: 10px; background: var(--surface); border: 1px solid var(--line); border-left: 4px solid var(--k); }
+.rule.yes { --k: var(--free); } .rule.no { --k: var(--busy); }
+.rule b { font: 600 13px/18px var(--f-ui); color: var(--k); }
+
+/* Struttura adattiva */
+.shells { display: grid; grid-template-columns: 1.6fr 1.1fr 0.6fr; gap: 16px; align-items: end; }
+@media (max-width: 760px) { .shells { grid-template-columns: minmax(0, 1fr); } }
+.shell { display: grid; gap: 8px; min-width: 0; }
+.shell .frame { border: 1px solid var(--line); border-radius: 12px; background: var(--ground); height: 170px; display: grid; overflow: hidden; }
+.shell span { font-size: 12.5px; color: var(--muted); }
+.f-desk { grid-template-columns: 60px 1fr; }
+.f-tab { grid-template-columns: 34px 1fr; }
+.f-phone { grid-template-rows: 1fr 30px; max-width: 110px; height: 200px !important; }
+.nav { background: var(--surface); border-right: 1px solid var(--line); display: grid; align-content: start; gap: 6px; padding: 8px 6px; }
+.f-phone .nav { border-right: 0; border-top: 1px solid var(--line); grid-auto-flow: column; align-content: center; justify-content: space-around; padding: 0; order: 2; }
+.nav i { height: 8px; border-radius: 4px; background: var(--panel); display: block; }
+.nav i.on { background: var(--brand); }
+.f-phone .nav i { width: 14px; }
+.content { padding: 8px; display: grid; gap: 5px; align-content: start; }
+.content i { height: 12px; border-radius: 4px; background: var(--raised); border: 1px solid var(--line); display: block; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
+</style>
+
+<div class="page">
+  <header class="hero">
+    <div class="wordmark">Squillo<span class="bang" id="bang">!</span></div>
+    <p>Il riferimento grafico di DrinPhone. “Drin!” è il suono dello squillo, e lo squillo è il marchio: blu DRIN ovunque, giallo solo per ciò che squilla, con la densità di un centralino. Ogni funzione nuova usa questi colori, questi caratteri e questi movimenti.</p>
+    <p class="src">Valori e regole: <code>DESIGN.md</code> · Codice: <code>lib/app/theme.dart</code> · Font: <code>assets/fonts/</code></p>
+  </header>
+
+  <section aria-labelledby="col">
+    <div class="sec-head"><h2 id="col">Colore</h2><p>Ogni stato ha un colore e un solo significato. Il giallo pieno è per i riempimenti; per bordi e onde sul chiaro si usa <code>squilloLine</code>.</p></div>
+    <div class="palettes">
+      <div class="palette force-light" id="pal-light"><h3>Tema chiaro</h3><div class="chips"></div></div>
+      <div class="palette force-dark" id="pal-dark"><h3>Tema scuro</h3><div class="chips"></div></div>
+    </div>
+  </section>
+
+  <section aria-labelledby="typ">
+    <div class="sec-head"><h2 id="typ">Carattere</h2><p>Otto stili, nessun altro. Bricolage Grotesque è la voce del marchio e si usa solo per nomi grandi e titoli; Onest per l'interfaccia; Red Hat Mono per ogni numero.</p></div>
+    <div class="box types">
+      <div class="type"><div class="meta"><b>display</b>Bricolage 28/34 · 800</div><div class="t-display">Paolo Guerra</div></div>
+      <div class="type"><div class="meta"><b>title</b>Bricolage 20/26 · 700</div><div class="t-title">Interni del commerciale</div></div>
+      <div class="type"><div class="meta"><b>heading</b>Onest 15/20 · 600</div><div class="t-heading">Marta Bianchi</div></div>
+      <div class="type"><div class="meta"><b>body</b>Onest 14/20 · 400</div><div class="t-body">Le chiamate perse restano nel registro finché non le apri.</div></div>
+      <div class="type"><div class="meta"><b>detail</b>Onest 12.5/16 · 400</div><div class="t-detail">In chiamata da 4 minuti</div></div>
+      <div class="type"><div class="meta"><b>label</b>Onest 12/16 · 600</div><div class="t-label">Trasferisci</div></div>
+      <div class="type"><div class="meta"><b>number</b>Red Hat Mono 13/18 · 500</div><div class="t-number">301 · 02 5550 1234 · 04:12</div></div>
+      <div class="type"><div class="meta"><b>numberLarge</b>Red Hat Mono 22/28 · 600</div><div class="t-numberLarge">+39 02 5550 1234</div></div>
+    </div>
+  </section>
+
+  <section aria-labelledby="spa">
+    <div class="sec-head"><h2 id="spa">Spazio, forme, densità</h2><p>Griglia da 4. Righe da 40 col puntatore, da 52 al tocco. Raggi diversi per ruolo; ombra solo per ciò che sta sopra.</p></div>
+    <div class="grid2">
+      <div class="box spaces">
+        <div class="space">s1 · 4<i style="width: 4px"></i></div>
+        <div class="space">s2 · 8<i style="width: 8px"></i></div>
+        <div class="space">s3 · 12<i style="width: 12px"></i></div>
+        <div class="space">s4 · 16<i style="width: 16px"></i></div>
+        <div class="space">s5 · 24<i style="width: 24px"></i></div>
+        <div class="space">s6 · 32<i style="width: 32px"></i></div>
+      </div>
+      <div class="box radii">
+        <div class="radius"><i style="border-radius: 8px"></i>controllo 8</div>
+        <div class="radius"><i style="border-radius: 10px"></i>riga 10</div>
+        <div class="radius"><i style="border-radius: 14px"></i>pannello 14</div>
+        <div class="radius"><i style="border-radius: 20px"></i>dialogo 20</div>
+        <div class="radius"><i style="border-radius: 999px"></i>pillola</div>
+      </div>
+    </div>
+    <div class="density">
+      <div class="box list" id="rows-dense"><h3>Puntatore · righe da 40 · azioni all'hover</h3></div>
+      <div class="box list" id="rows-touch"><h3>Tocco · righe da 52 · azioni sempre visibili</h3></div>
+    </div>
+  </section>
+
+  <section aria-labelledby="led">
+    <div class="sec-head"><h2 id="led">Spie di presenza</h2><p>Pallino da 8 con alone quando lo stato è vivo. Chi squilla pulsa piano, senza lampeggiare.</p></div>
+    <div class="box leds">
+      <span class="ledlabel"><span class="led" style="--c: var(--free)"></span>Libero</span>
+      <span class="ledlabel"><span class="led pulse" style="--c: var(--squilloLine)"></span>Squilla</span>
+      <span class="ledlabel"><span class="led" style="--c: var(--busy)"></span>In chiamata</span>
+      <span class="ledlabel"><span class="led off" style="--c: var(--away)"></span>Non raggiungibile</span>
+    </div>
+  </section>
+
+  <section aria-labelledby="mov">
+    <div class="sec-head"><h2 id="mov">Movimento</h2><p>Tre velocità, sempre in risposta a un'azione o a uno squillo. Con “riduci movimento” del sistema tutto diventa immediato.</p></div>
+    <div class="motion" id="motion">
+      <div class="mot" data-d="fast"><b>fast · 120 ms</b><span>Stati, spie, hover, pressione</span><div class="track"><i></i></div></div>
+      <div class="mot" data-d="base"><b>base · 200 ms</b><span>Pannelli, liste, chip, comparse</span><div class="track"><i></i></div></div>
+      <div class="mot" data-d="wide"><b>wide · 320 ms</b><span>Cambio schermata, finestra di chiamata</span><div class="track"><i></i></div></div>
+    </div>
+    <button class="btn primary" id="play" type="button" style="justify-self: start">Riproduci</button>
+  </section>
+
+  <section aria-labelledby="cmp">
+    <div class="sec-head"><h2 id="cmp">Componenti chiave</h2><p>La chiamata in arrivo è il momento del marchio: avatar che oscilla come un campanello, onde gialle, il “!” del logo.</p></div>
+    <div class="incoming-wrap" id="incoming">
+      <div class="force-light" style="display: grid"><div class="incoming">
+        <span class="bang" aria-hidden="true">!</span>
+        <div class="avatar"><span class="wave"></span><span class="wave w2"></span>PG</div>
+        <div class="who">Paolo Guerra</div><div class="num">301</div><div class="sub">Commerciale</div>
+        <div class="answer"><button class="round end" type="button" aria-label="Rifiuta"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 9c-1.6 0-3.15.25-4.6.72v3.1c0 .39-.23.74-.56.9-.98.49-1.87 1.12-2.66 1.85a1 1 0 0 1-1.4-.02L.29 13.08a1 1 0 0 1 0-1.41C3.34 8.78 7.46 7 12 7s8.66 1.78 11.71 4.67a1 1 0 0 1 0 1.41l-2.48 2.48a1 1 0 0 1-1.4.02 11.3 11.3 0 0 0-2.67-1.85 1 1 0 0 1-.56-.9v-3.1C15.15 9.25 13.6 9 12 9z"/></svg></button><button class="round ok" type="button" aria-label="Rispondi"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M6.6 10.8a15.1 15.1 0 0 0 6.6 6.6l2.2-2.2a1 1 0 0 1 1-.25c1.1.37 2.3.57 3.6.57a1 1 0 0 1 1 1V20a1 1 0 0 1-1 1A17 17 0 0 1 3 4a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1c0 1.25.2 2.45.57 3.57a1 1 0 0 1-.25 1z"/></svg></button></div>
+      </div></div>
+      <div class="force-dark" style="display: grid"><div class="incoming">
+        <span class="bang" aria-hidden="true">!</span>
+        <div class="avatar"><span class="wave"></span><span class="wave w2"></span>PG</div>
+        <div class="who">Paolo Guerra</div><div class="num">301</div><div class="sub">Commerciale</div>
+        <div class="answer"><button class="round end" type="button" aria-label="Rifiuta"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 9c-1.6 0-3.15.25-4.6.72v3.1c0 .39-.23.74-.56.9-.98.49-1.87 1.12-2.66 1.85a1 1 0 0 1-1.4-.02L.29 13.08a1 1 0 0 1 0-1.41C3.34 8.78 7.46 7 12 7s8.66 1.78 11.71 4.67a1 1 0 0 1 0 1.41l-2.48 2.48a1 1 0 0 1-1.4.02 11.3 11.3 0 0 0-2.67-1.85 1 1 0 0 1-.56-.9v-3.1C15.15 9.25 13.6 9 12 9z"/></svg></button><button class="round ok" type="button" aria-label="Rispondi"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M6.6 10.8a15.1 15.1 0 0 0 6.6 6.6l2.2-2.2a1 1 0 0 1 1-.25c1.1.37 2.3.57 3.6.57a1 1 0 0 1 1 1V20a1 1 0 0 1-1 1A17 17 0 0 1 3 4a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1c0 1.25.2 2.45.57 3.57a1 1 0 0 1-.25 1z"/></svg></button></div>
+      </div></div>
+    </div>
+    <button class="btn primary" id="ring" type="button" aria-pressed="false" style="justify-self: start">Fai squillare</button>
+
+    <div class="controls" aria-label="Controlli di chiamata">
+      <div class="ctl"><button type="button" aria-pressed="true" aria-label="Muto"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11z"/></svg></button>Muto</div>
+      <div class="ctl"><button type="button" aria-pressed="false" aria-label="Attesa"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5h3v14H8zm5 0h3v14h-3z"/></svg></button>Attesa</div>
+      <div class="ctl"><button type="button" aria-pressed="false" aria-label="Tastiera"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 4a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm6 0a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm6 0a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM6 10a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm6 0a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm6 0a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM12 16a2 2 0 1 0 0 4 2 2 0 0 0 0-4z"/></svg></button>Tastiera</div>
+      <div class="ctl"><button type="button" aria-pressed="false" aria-label="Trasferisci"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M16 3l4 4-4 4V8h-6V6h6zM6.6 10.8a15.1 15.1 0 0 0 6.6 6.6l2.2-2.2a1 1 0 0 1 1-.25c1.1.37 2.3.57 3.6.57a1 1 0 0 1 1 1V20a1 1 0 0 1-1 1A17 17 0 0 1 3 4a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1c0 1.25.2 2.45.57 3.57a1 1 0 0 1-.25 1z"/></svg></button>Trasferisci</div>
+      <div class="ctl end"><button type="button" aria-label="Termina"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 9c-1.6 0-3.15.25-4.6.72v3.1c0 .39-.23.74-.56.9-.98.49-1.87 1.12-2.66 1.85a1 1 0 0 1-1.4-.02L.29 13.08a1 1 0 0 1 0-1.41C3.34 8.78 7.46 7 12 7s8.66 1.78 11.71 4.67a1 1 0 0 1 0 1.41l-2.48 2.48a1 1 0 0 1-1.4.02 11.3 11.3 0 0 0-2.67-1.85 1 1 0 0 1-.56-.9v-3.1C15.15 9.25 13.6 9 12 9z"/></svg></button>Termina</div>
+    </div>
+    <div class="box badges">
+      <span class="badge unread">3 perse</span><span class="badge new">Nuovo</span><span class="badge ring">Squilla</span><span class="badge neutral">Commerciale</span>
+      <button class="btn primary" type="button">Salva sul PBX</button><button class="btn" type="button">Annulla</button>
+    </div>
+  </section>
+
+  <section aria-labelledby="rul">
+    <div class="sec-head"><h2 id="rul">Sì e no</h2><p>Le regole che tengono lo stile coerente quando arrivano funzioni nuove.</p></div>
+    <div class="rules">
+      <div class="rule yes"><b>Sì</b>Giallo solo per ciò che squilla: chiamata in arrivo, interno che squilla.</div>
+      <div class="rule no"><b>No</b>Giallo per avvisi, novità o per “dare colore” a una sezione.</div>
+      <div class="rule yes"><b>Sì</b>Numeri, interni e durate sempre in Red Hat Mono, allineati.</div>
+      <div class="rule no"><b>No</b>Dimensioni di testo scritte nel widget: si usa uno degli otto stili.</div>
+      <div class="rule yes"><b>Sì</b>Righe separate da bordo e fondo; ombra solo per ciò che sta sopra.</div>
+      <div class="rule no"><b>No</b>Stesso raggio e stessa ombra su ogni scheda.</div>
+      <div class="rule yes"><b>Sì</b>Animazione quando l'utente fa qualcosa o quando squilla.</div>
+      <div class="rule no"><b>No</b>Animazioni in loop decorative o entrate a cascata delle sezioni.</div>
+    </div>
+  </section>
+
+  <section aria-labelledby="ada">
+    <div class="sec-head"><h2 id="ada">Struttura adattiva</h2><p>Stessi token ovunque; cambia solo la navigazione. Su telefono la chiamata in corso occupa lo schermo intero.</p></div>
+    <div class="shells">
+      <div class="shell"><div class="frame f-desk"><div class="nav"><i class="on"></i><i></i><i></i><i></i></div><div class="content"><i></i><i></i><i></i><i></i><i></i><i></i></div></div><span>Desktop ≥ 1024: barra laterale</span></div>
+      <div class="shell"><div class="frame f-tab"><div class="nav"><i class="on"></i><i></i><i></i><i></i></div><div class="content"><i></i><i></i><i></i><i></i><i></i></div></div><span>Tablet 600–1023: binario di icone</span></div>
+      <div class="shell"><div class="frame f-phone"><div class="content"><i></i><i></i><i></i><i></i><i></i><i></i></div><div class="nav"><i class="on"></i><i></i><i></i><i></i></div></div><span>Telefono &lt; 600: barra in basso</span></div>
+    </div>
+  </section>
+</div>
+
+<script>
+(function () {
+  var tokens = [
+    ["brand", "Marchio"], ["primary", "Azione"], ["ink", "Testo"], ["muted", "Secondario"],
+    ["ground", "Fondo"], ["surface", "Pannello"], ["raised", "Riga"], ["panel", "Tasto"], ["line", "Bordo"],
+    ["squillo", "Squillo"], ["squilloLine", "Bordo squillo"], ["free", "Libero"], ["busy", "Occupato"], ["away", "Assente"]
+  ];
+  var root = getComputedStyle(document.documentElement);
+  [["pal-light", "l"], ["pal-dark", "d"]].forEach(function (p) {
+    var box = document.querySelector("#" + p[0] + " .chips");
+    tokens.forEach(function (t) {
+      var hex = root.getPropertyValue("--" + p[1] + "-" + t[0]).trim();
+      var el = document.createElement("div");
+      el.className = "chip";
+      el.innerHTML = '<i style="background:' + hex + '"></i><b>' + t[1] + '</b><span>' + t[0] + " " + hex + "</span>";
+      box.appendChild(el);
+    });
+  });
+  var people = [["free", "Marta Bianchi", "Disponibile", "302"], ["squilloLine", "Paolo Guerra", "Squilla", "301"], ["busy", "Centralino", "In chiamata da 4 min", "300"], ["away", "Luca Neri", "Non raggiungibile", "315"]];
+  var phone = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M6.6 10.8a15.1 15.1 0 0 0 6.6 6.6l2.2-2.2a1 1 0 0 1 1-.25c1.1.37 2.3.57 3.6.57a1 1 0 0 1 1 1V20a1 1 0 0 1-1 1A17 17 0 0 1 3 4a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1c0 1.25.2 2.45.57 3.57a1 1 0 0 1-.25 1z"/></svg>';
+  [["rows-dense", "dense"], ["rows-touch", "touch"]].forEach(function (l) {
+    var box = document.getElementById(l[0]);
+    people.forEach(function (p) {
+      var r = document.createElement("div");
+      r.className = "row " + l[1];
+      r.innerHTML = '<span class="led' + (p[0] === "squilloLine" ? " pulse" : p[0] === "away" ? " off" : "") + '" style="--c: var(--' + p[0] + ')"></span><span class="name"><b>' + p[1] + "</b>" + (l[1] === "touch" ? "<small>" + p[2] + "</small>" : "") + '</span><span class="ext">' + p[3] + '</span><button class="call" type="button" aria-label="Chiama ' + p[1] + '">' + phone + "</button>";
+      box.appendChild(r);
+    });
+  });
+  var play = document.getElementById("play");
+  play.addEventListener("click", function () {
+    document.querySelectorAll("#motion .track").forEach(function (t) {
+      t.style.setProperty("--w", t.clientWidth + "px");
+      t.classList.toggle("go");
+    });
+  });
+  var ring = document.getElementById("ring"), inc = document.getElementById("incoming"), on = false;
+  function setRing(v) { on = v; inc.classList.toggle("ringing", on); ring.setAttribute("aria-pressed", on); ring.textContent = on ? "Ferma lo squillo" : "Fai squillare"; }
+  ring.addEventListener("click", function () { setRing(!on); });
+  inc.querySelectorAll(".round").forEach(function (b) { b.addEventListener("click", function () { setRing(false); }); });
+  document.querySelectorAll(".ctl button[aria-pressed]").forEach(function (b) {
+    b.addEventListener("click", function () { b.setAttribute("aria-pressed", b.getAttribute("aria-pressed") !== "true"); });
+  });
+})();
+</script>

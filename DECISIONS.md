@@ -6,6 +6,23 @@ aggiungi una voce nuova in cima che cita la vecchia. Il campo chiave è
 
 ---
 
+## 2026-10-30 · Identità visiva "Squillo" (sostituisce la palette della proposta D del 2026-10-28)
+**Scelta:** stile **Squillo** con la densità del **Centralino**: "Drin!" è il
+suono dello squillo, quindi lo squillo è il marchio. Blu DRIN del logo come
+colore principale (prima l'accento era verde acqua, scollegato dal logo);
+giallo riservato a ciò che squilla; presenze come spie; righe dense col
+puntatore e larghe al tocco. Font inclusi nell'app (Bricolage Grotesque,
+Onest, Red Hat Mono, OFL) invece di quelli di sistema, per avere lo stesso
+aspetto su Windows, Android, iOS e macOS. Token e regole in `DESIGN.md`,
+riferimento grafico `docs/design/drin-design-system.html`.
+**Scartato:** direzione "Centralino" pura (precisa ma fredda) e "Voce"
+(accogliente ma mostra pochi interni); font di sistema (Segoe esiste solo su
+Windows); un pacchetto di componenti esterno (lo stile deve restare nostro).
+**Da rivedere se:** il marchio DRIN cambia, test con utenti mostrano che la
+densità al tocco non basta, o un font non copre una lingua da supportare.
+
+---
+
 ## 2026-10-30 · Modello di fiducia: utente finale meno fidato dell'amministratore (precisa "Scrittura sul proprio interno" 2026-10-30)
 **Scelta:** chi inserisce le credenziali API Yeastar (amministratore, che il
 client non mostra più dopo il salvataggio) è **più fidato** dell'utente

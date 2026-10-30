@@ -26,14 +26,14 @@ String blfLabel(BlfStatus? s) => switch (s) {
 (IconData, Color, String)? presenceOf(DrinColors c, String presence) =>
     switch (presence) {
       'available' => (Icons.check_circle_rounded, c.ok, tr('Disponibile')),
-      'away' => (Icons.schedule_rounded, c.ringing, tr('Assente')),
+      'away' => (Icons.schedule_rounded, c.away, tr('Assente')),
       'business_trip' => (Icons.flight_rounded, c.accent, tr('In trasferta')),
       'do_not_disturb' => (
         Icons.do_not_disturb_on_rounded,
         c.busy,
         tr('Non disturbare'),
       ),
-      'lunch' => (Icons.restaurant_rounded, c.ringing, tr('Pausa pranzo')),
+      'lunch' => (Icons.restaurant_rounded, c.away, tr('Pausa pranzo')),
       'off_work' => (Icons.bedtime_rounded, c.muted, tr('Fuori ufficio')),
       _ => null,
     };

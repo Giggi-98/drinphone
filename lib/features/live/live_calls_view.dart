@@ -154,12 +154,12 @@ class _LiveCallsViewState extends State<LiveCallsView> {
     margin: const EdgeInsets.only(top: 12),
     padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
     decoration: BoxDecoration(
-      border: Border.all(color: c.ringing),
+      border: Border.all(color: c.line),
       borderRadius: BorderRadius.circular(10),
     ),
     child: Row(
       children: [
-        Icon(Icons.info_outline_rounded, size: 18, color: c.ringing),
+        Icon(Icons.info_outline_rounded, size: 18, color: c.primary),
         const SizedBox(width: 10),
         Expanded(
           child: Text(
@@ -519,7 +519,7 @@ class _BlfColumnState extends State<_BlfColumn> {
                               Icon(
                                 Icons.star_rounded,
                                 size: 16,
-                                color: c.ringing,
+                                color: c.brand,
                               ),
                             if (fav) const SizedBox(width: 6),
                             Expanded(

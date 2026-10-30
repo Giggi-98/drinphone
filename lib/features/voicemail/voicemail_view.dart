@@ -88,8 +88,8 @@ class VoicemailView extends StatelessWidget {
           const SizedBox(height: 24),
           FilledButton.icon(
             style: FilledButton.styleFrom(
-              backgroundColor: DrinColors.callGreen,
-              foregroundColor: Colors.white,
+              backgroundColor: context.drin.free,
+              foregroundColor: context.drin.onFree,
               minimumSize: const Size(240, 48),
             ),
             onPressed: phone.canDial ? phone.callVoicemail : null,

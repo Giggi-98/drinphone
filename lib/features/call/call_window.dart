@@ -105,73 +105,88 @@ class _CallWindowState extends State<CallWindow> {
   Widget _incoming(CallEvent call) {
     final c = context.drin;
     final name = _nameOf(call);
-    return Material(
-      color: c.surface,
-      elevation: 12,
-      shadowColor: Colors.black54,
-      borderRadius: BorderRadius.circular(16),
-      child: Container(
-        width: 380,
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: c.ringing),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              call.remoteVideo
-                  ? tr('Videochiamata in arrivo')
-                  : tr('Chiamata in arrivo'),
-              style: TextStyle(color: c.ringing, fontWeight: FontWeight.w600),
-            ),
-            const SizedBox(height: 16),
-            // Niente anteprima durante lo squillo: liblinphone avvia la webcam
-            // solo con lo stream della chiamata, cioè dopo la risposta.
-            _Avatar(name: name.isNotEmpty ? name : call.remoteNumber, size: 72),
-            const SizedBox(height: 12),
-            Text(
-              name.isNotEmpty ? name : call.remoteNumber,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.w600,
-                color: c.text,
-              ),
-            ),
-            if (name.isNotEmpty)
-              Text(call.remoteNumber, style: mono(c.muted, size: 13)),
-            const SizedBox(height: 20),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: [
-                _RoundButton(
-                  icon: Icons.call_end_rounded,
-                  label: tr('Rifiuta'),
-                  color: DrinColors.hangupRed,
-                  onTap: () => p.hangup(call.id),
-                ),
-                if (call.remoteVideo && p.videoEnabled)
-                  _RoundButton(
-                    icon: Icons.videocam_rounded,
-                    label: tr('Rispondi in video'),
-                    color: DrinColors.callGreen,
-                    onTap: () => p.answer(call.id, true),
+    // Il momento del marchio (DESIGN.md §6): avatar che oscilla come un
+    // campanello, onde e "!" del logo in squilloLine.
+    return _Entrance(
+      child: Material(
+        color: c.surface,
+        elevation: 12,
+        shadowColor: Colors.black54,
+        borderRadius: BorderRadius.circular(DrinRadius.sheet),
+        child: Container(
+          width: 380,
+          padding: const EdgeInsets.fromLTRB(
+            DrinSpace.s5,
+            DrinSpace.s4,
+            DrinSpace.s5,
+            DrinSpace.s5,
+          ),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(DrinRadius.sheet),
+            border: Border.all(color: c.squilloLine, width: 2),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      call.remoteVideo
+                          ? tr('Videochiamata in arrivo')
+                          : tr('Chiamata in arrivo'),
+                      style: DrinText.label.copyWith(color: c.muted),
+                    ),
                   ),
-                _RoundButton(
-                  icon: Icons.call_rounded,
-                  label: tr('Rispondi'),
-                  color: DrinColors.callGreen,
-                  onTap: () => p.answer(call.id),
+                  _Bang(color: c.squilloLine),
+                ],
+              ),
+              const SizedBox(height: DrinSpace.s3),
+              // Niente anteprima durante lo squillo: liblinphone avvia la webcam
+              // solo con lo stream della chiamata, cioè dopo la risposta.
+              _RingingAvatar(name: name.isNotEmpty ? name : call.remoteNumber),
+              const SizedBox(height: DrinSpace.s3),
+              Text(
+                name.isNotEmpty ? name : call.remoteNumber,
+                overflow: TextOverflow.ellipsis,
+                style: DrinText.displayStyle.copyWith(color: c.ink),
+              ),
+              if (name.isNotEmpty)
+                Text(
+                  call.remoteNumber,
+                  style: DrinText.numberLarge.copyWith(color: c.muted),
                 ),
+              const SizedBox(height: DrinSpace.s5),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  _RoundButton(
+                    icon: Icons.call_end_rounded,
+                    label: tr('Rifiuta'),
+                    color: context.drin.busy,
+                    onTap: () => p.hangup(call.id),
+                  ),
+                  if (call.remoteVideo && p.videoEnabled)
+                    _RoundButton(
+                      icon: Icons.videocam_rounded,
+                      label: tr('Rispondi in video'),
+                      color: context.drin.free,
+                      onTap: () => p.answer(call.id, true),
+                    ),
+                  _RoundButton(
+                    icon: Icons.call_rounded,
+                    label: tr('Rispondi'),
+                    color: context.drin.free,
+                    onTap: () => p.answer(call.id),
+                  ),
+                ],
+              ),
+              for (final other in p.otherCalls) ...[
+                const SizedBox(height: 12),
+                _OtherCall(phone: p, call: other),
               ],
-            ),
-            for (final other in p.otherCalls) ...[
-              const SizedBox(height: 12),
-              _OtherCall(phone: p, call: other),
             ],
-          ],
+          ),
         ),
       ),
     );
@@ -242,8 +257,8 @@ class _CallWindowState extends State<CallWindow> {
             IconButton.filled(
               tooltip: tr('Riaggancia'),
               style: IconButton.styleFrom(
-                backgroundColor: DrinColors.hangupRed,
-                foregroundColor: Colors.white,
+                backgroundColor: context.drin.busy,
+                foregroundColor: context.drin.onBusy,
               ),
               onPressed: () => p.hangup(call.id),
               icon: const Icon(Icons.call_end_rounded, size: 20),
@@ -536,7 +551,7 @@ class _CallWindowState extends State<CallWindow> {
             icon: Icons.call_end_rounded,
             label: tr('Termina'),
             on: true,
-            onColor: DrinColors.hangupRed,
+            onColor: context.drin.busy,
             onTap: () => p.hangup(call.id),
           ),
         ],
@@ -788,9 +803,9 @@ class _OtherCall extends StatelessWidget {
             IconButton(
               tooltip: tr('Rispondi (la chiamata attuale va in attesa)'),
               onPressed: () => phone.answer(call.id),
-              icon: const Icon(
+              icon: Icon(
                 Icons.call_rounded,
-                color: DrinColors.callGreen,
+                color: context.drin.free,
                 size: 18,
               ),
             )
@@ -803,9 +818,9 @@ class _OtherCall extends StatelessWidget {
           IconButton(
             tooltip: incoming ? tr('Rifiuta') : tr('Riaggancia'),
             onPressed: () => phone.hangup(call.id),
-            icon: const Icon(
+            icon: Icon(
               Icons.call_end_rounded,
-              color: DrinColors.hangupRed,
+              color: context.drin.busy,
               size: 18,
             ),
           ),
@@ -863,7 +878,7 @@ class _ToolButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = context.drin;
     final bg = on ? (onColor ?? c.accent) : c.keyBtn;
-    final fg = on ? Colors.white : c.text;
+    final fg = on ? (onColor == c.busy ? c.onBusy : c.onPrimary) : c.text;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 4),
       child: InkWell(
@@ -899,7 +914,7 @@ class _ToolButton extends StatelessWidget {
   }
 }
 
-class _RoundButton extends StatelessWidget {
+class _RoundButton extends StatefulWidget {
   const _RoundButton({
     required this.icon,
     required this.label,
@@ -912,30 +927,228 @@ class _RoundButton extends StatelessWidget {
   final VoidCallback onTap;
 
   @override
+  State<_RoundButton> createState() => _RoundButtonState();
+}
+
+class _RoundButtonState extends State<_RoundButton> {
+  bool _down = false;
+
+  @override
   Widget build(BuildContext context) {
     final c = context.drin;
-    // Tutto il pulsante (cerchio ed etichetta) è cliccabile.
+    // Icona col suo "on" (DESIGN.md §1): nel tema scuro scura su verde/rosso.
+    final fg = widget.color == c.busy
+        ? c.onBusy
+        : widget.color == c.free
+        ? c.onFree
+        : c.onPrimary;
+    // Tutto il pulsante (cerchio ed etichetta) è cliccabile; alla pressione
+    // il cerchio si stringe e torna con una piccola molla.
     return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
+      onTap: widget.onTap,
+      onHighlightChanged: (v) => setState(() => _down = v),
+      borderRadius: BorderRadius.circular(DrinRadius.panel),
       child: Padding(
-        padding: const EdgeInsets.all(6),
+        padding: const EdgeInsets.all(DrinSpace.s1 + 2),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Container(
-              width: 56,
-              height: 56,
-              decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-              child: Icon(icon, color: Colors.white, size: 26),
+            AnimatedScale(
+              scale: _down ? 0.9 : 1,
+              duration: DrinMotion.of(context, DrinMotion.fast),
+              curve: _down ? DrinMotion.curve : Curves.elasticOut,
+              child: Container(
+                width: 56,
+                height: 56,
+                decoration: BoxDecoration(
+                  color: widget.color,
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(widget.icon, color: fg, size: 26),
+              ),
             ),
-            const SizedBox(height: 6),
-            Text(label, style: TextStyle(fontSize: 12, color: c.text)),
+            const SizedBox(height: DrinSpace.s1 + 2),
+            Text(widget.label, style: DrinText.label.copyWith(color: c.ink)),
           ],
         ),
       ),
     );
   }
+}
+
+/// Comparsa della scheda in arrivo: dissolvenza e 4 px di salita ([DrinMotion.wide]).
+class _Entrance extends StatelessWidget {
+  const _Entrance({required this.child});
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => TweenAnimationBuilder<double>(
+    tween: Tween(begin: 0, end: 1),
+    duration: DrinMotion.of(context, DrinMotion.wide),
+    curve: DrinMotion.emphasized,
+    builder: (context, t, child) => Opacity(
+      opacity: t,
+      child: Transform.translate(offset: Offset(0, 4 * (1 - t)), child: child),
+    ),
+    child: child,
+  );
+}
+
+/// Avatar che squilla: oscillazione da campanello e due onde (DESIGN.md §5).
+class _RingingAvatar extends StatefulWidget {
+  const _RingingAvatar({required this.name});
+  final String name;
+
+  @override
+  State<_RingingAvatar> createState() => _RingingAvatarState();
+}
+
+class _RingingAvatarState extends State<_RingingAvatar>
+    with TickerProviderStateMixin {
+  late final _bell = AnimationController(
+    vsync: this,
+    duration: DrinMotion.ring,
+  );
+  late final _wave = AnimationController(
+    vsync: this,
+    duration: DrinMotion.wave,
+  );
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (DrinMotion.reduced(context)) {
+      _bell.stop();
+      _wave.stop();
+    } else {
+      if (!_bell.isAnimating) _bell.repeat();
+      if (!_wave.isAnimating) _wave.repeat();
+    }
+  }
+
+  @override
+  void dispose() {
+    _bell.dispose();
+    _wave.dispose();
+    super.dispose();
+  }
+
+  /// Colpi del campanello nella prima metà del ciclo, smorzati; poi fermo.
+  static double _angle(double t) {
+    if (t >= 0.5) return 0;
+    const peaks = [-9.0, 8.0, -6.0, 4.0, 0.0];
+    final x = t / 0.1;
+    final i = x.floor().clamp(0, 4);
+    final from = i == 0 ? 0.0 : peaks[i - 1];
+    final k = Curves.easeInOut.transform(x - i);
+    return (from + (peaks[i] - from) * k) * 3.14159265 / 180;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.drin;
+    const size = 80.0;
+    return SizedBox(
+      width: size * 1.9,
+      height: size * 1.9,
+      child: AnimatedBuilder(
+        animation: Listenable.merge([_bell, _wave]),
+        builder: (context, child) => Stack(
+          alignment: Alignment.center,
+          children: [
+            for (final shift in const [0.0, 0.5])
+              if (_wave.isAnimating)
+                Builder(
+                  builder: (context) {
+                    final t = (_wave.value + shift) % 1;
+                    final k = Curves.easeOut.transform(t);
+                    return Container(
+                      width: size * (1 + 0.9 * k),
+                      height: size * (1 + 0.9 * k),
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: c.squilloLine.withValues(alpha: 0.9 * (1 - k)),
+                          width: 3,
+                        ),
+                      ),
+                    );
+                  },
+                ),
+            Transform.rotate(angle: _angle(_bell.value), child: child),
+          ],
+        ),
+        child: Container(
+          width: size,
+          height: size,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(color: c.brand, shape: BoxShape.circle),
+          child: Text(
+            initialsOf(widget.name),
+            style: DrinText.displayStyle.copyWith(
+              fontSize: 26,
+              color: c.onPrimary,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Il "!" del logo che compare a ritmo di squillo.
+class _Bang extends StatefulWidget {
+  const _Bang({required this.color});
+  final Color color;
+
+  @override
+  State<_Bang> createState() => _BangState();
+}
+
+class _BangState extends State<_Bang> with SingleTickerProviderStateMixin {
+  late final _c = AnimationController(vsync: this, duration: DrinMotion.ring);
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (DrinMotion.reduced(context)) {
+      _c.value = 0.45;
+      _c.stop();
+    } else if (!_c.isAnimating) {
+      _c.repeat();
+    }
+  }
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AnimatedBuilder(
+    animation: _c,
+    builder: (context, child) {
+      final t = _c.value;
+      // Su 0.3-0.6, giù altrove.
+      final v = t < 0.3
+          ? Curves.easeOut.transform(t / 0.3)
+          : t < 0.6
+          ? 1.0
+          : 1 - Curves.easeIn.transform((t - 0.6) / 0.4);
+      return Opacity(
+        opacity: v,
+        child: Transform.translate(
+          offset: Offset(0, 4 * (1 - v)),
+          child: Transform.scale(scale: 0.8 + 0.2 * v, child: child),
+        ),
+      );
+    },
+    child: Text(
+      '!',
+      style: DrinText.displayStyle.copyWith(fontSize: 30, color: widget.color),
+    ),
+  );
 }
 
 /// Qualità della chiamata (0–5 da liblinphone) come tacche del segnale.
@@ -955,7 +1168,7 @@ class _SignalBars extends StatelessWidget {
         : quality >= 1
         ? 1
         : 0;
-    final color = bars >= 3 ? c.ok : (bars == 2 ? c.ringing : c.busy);
+    final color = bars >= 3 ? c.ok : (bars == 2 ? c.away : c.busy);
     return Tooltip(
       message: tr('Qualità {q}/5', {'q': quality.toStringAsFixed(1)}),
       child: Row(

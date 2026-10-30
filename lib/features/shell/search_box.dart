@@ -301,12 +301,7 @@ class _SearchBoxState extends State<SearchBox> {
                         decoration: InputDecoration(
                           hintText: tr('Numero, interno o nome'),
                           // Il segnaposto non eredita il monospazio del testo digitato.
-                          hintStyle: TextStyle(
-                            fontFamily: 'Segoe UI Variable Text',
-                            fontFamilyFallback: const ['Segoe UI'],
-                            fontSize: 14,
-                            color: c.muted,
-                          ),
+                          hintStyle: DrinText.body.copyWith(color: c.muted),
                           border: InputBorder.none,
                           enabledBorder: InputBorder.none,
                           focusedBorder: InputBorder.none,
@@ -328,8 +323,8 @@ class _SearchBoxState extends State<SearchBox> {
                   IconButton(
                     tooltip: tr('Chiama'),
                     style: IconButton.styleFrom(
-                      backgroundColor: DrinColors.callGreen,
-                      foregroundColor: Colors.white,
+                      backgroundColor: context.drin.free,
+                      foregroundColor: context.drin.onFree,
                       disabledBackgroundColor: c.keyBtn,
                     ),
                     onPressed: p.canDial && _rows > 0

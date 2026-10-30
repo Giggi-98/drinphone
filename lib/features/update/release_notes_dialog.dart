@@ -133,7 +133,7 @@ class _Section extends StatelessWidget {
       return (Icons.build_rounded, c.accent);
     }
     if (t.startsWith('da fare') || t.startsWith('action')) {
-      return (Icons.checklist_rounded, c.ringing);
+      return (Icons.checklist_rounded, c.primary);
     }
     if (t.startsWith('sicur') || t.startsWith('secur')) {
       return (Icons.shield_rounded, c.busy);

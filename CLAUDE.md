@@ -103,6 +103,13 @@ rimando.
 
 ## 8. Lavoro di interfaccia — rendi, guarda (su ogni piattaforma)
 
+**Stile unico: `DESIGN.md`** ("Squillo"). Ogni schermata, componente o
+funzione nuova usa i suoi token (`DrinColors`, `DrinText`, `DrinSpace`,
+`DrinRadius`, `DrinMotion` in `lib/app/theme.dart`): niente colori, misure di
+testo o durate scritti a mano. Si confronta con il riferimento grafico
+`docs/design/drin-design-system.html`; se serve qualcosa che non c'è, si
+aggiunge prima a `DESIGN.md` (e al riferimento) nello stesso commit.
+
 Una modifica alla UI non è verificata finché non l'hai resa e **guardata**, su
 ogni target rilevante (emulatore Android, Linux/Windows desktop; iOS solo con un
 Mac). Fotografa gli **stati**, non la pagina: a riposo, in chiamata, chiamata in

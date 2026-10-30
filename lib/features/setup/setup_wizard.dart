@@ -365,7 +365,7 @@ class _SetupWizardState extends State<SetupWizard> {
               size: 12,
               color: switch (reg?.status) {
                 RegistrationStatus.ok => c.ok,
-                RegistrationStatus.progress => c.ringing,
+                RegistrationStatus.progress => c.away,
                 RegistrationStatus.failed => c.busy,
                 _ => c.muted,
               },

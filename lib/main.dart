@@ -1,7 +1,10 @@
 import 'dart:io';
 import 'dart:ui' show PlatformDispatcher;
 
+import 'package:flutter/foundation.dart'
+    show LicenseEntryWithLineBreaks, LicenseRegistry;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show rootBundle;
 
 import 'app/l10n.dart';
 import 'app/phone_controller.dart';
@@ -22,6 +25,18 @@ import 'features/shell/home_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Font inclusi nell'app (OFL): licenze nella pagina delle licenze.
+  LicenseRegistry.addLicense(() async* {
+    for (final (pkg, file) in const [
+      ('Bricolage Grotesque', 'Bricolage-OFL.txt'),
+      ('Onest', 'Onest-OFL.txt'),
+      ('Red Hat Mono', 'RedHatMono-OFL.txt'),
+    ]) {
+      yield LicenseEntryWithLineBreaks([
+        pkg,
+      ], await rootBundle.loadString('assets/fonts/$file'));
+    }
+  });
   final paths = AppPaths.forPlatform();
   final installId = loadInstallId(paths.installIdFile);
   _logErrors(paths.logs, installId);
