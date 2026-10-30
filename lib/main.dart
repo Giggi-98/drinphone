@@ -40,8 +40,11 @@ Future<void> main() async {
         : null,
     openH264: Platform.isWindows ? OpenH264(paths.codecs) : null,
     updater: Platform.isWindows
-        ? (Updater(current: buildVersion, downloadDir: paths.updates)
-            ..startPeriodic())
+        ? (Updater(
+            current: buildVersion,
+            downloadDir: paths.updates,
+            notesSeenFile: paths.notesSeenFile,
+          )..startPeriodic())
         : null,
     recordingsDir: paths.recordings,
     cacheFor: Platform.isWindows

@@ -6,6 +6,8 @@ import 'package:crypto/crypto.dart';
 import 'package:cryptography/cryptography.dart' as ed;
 import 'package:flutter/foundation.dart';
 
+import 'release_notes.dart';
+
 /// Una versione pubblicata, letta dal manifest firmato.
 class UpdateInfo {
   const UpdateInfo(this.version, this.file, this.sha256, this.notes);
@@ -14,7 +16,11 @@ class UpdateInfo {
   /// Nome dell'installer fra gli asset della release `v<version>`.
   final String file;
   final String sha256;
+
+  /// Note di rilascio (`release-notes/<versione>.md`), firmate col payload.
   final String notes;
+
+  ReleaseNotes get releaseNotes => ReleaseNotes.parse(version, notes);
 
   Uri get url => Uri.parse(
     'https://github.com/${Updater.repo}/releases/download/v$version/$file',
@@ -30,12 +36,19 @@ class UpdateInfo {
 /// del payload. HTTPS da solo non basta: chi controlla il repo non può
 /// distribuire un installer senza la chiave privata, che non sta nel repo.
 class Updater extends ChangeNotifier {
-  Updater({required this.current, required this.downloadDir});
+  Updater({
+    required this.current,
+    required this.downloadDir,
+    this.notesSeenFile,
+  });
 
   /// Versione installata (`DRIN_VERSION`); `dev` = build locale, niente
   /// controlli periodici.
   final String current;
   final String downloadDir;
+
+  /// Ultima versione di cui si sono mostrate le novità.
+  final String? notesSeenFile;
 
   static const repo = 'Giggi-98/drinphone';
   static final manifestUrl = Uri.parse(
@@ -78,6 +91,29 @@ class Updater extends ChangeNotifier {
   void dispose() {
     _timer?.cancel();
     super.dispose();
+  }
+
+  /// Novità della versione installata, se non ancora mostrate (primo avvio
+  /// dopo un aggiornamento o dopo l'installazione).
+  Future<ReleaseNotes?> unseenNotes() async {
+    final f = notesSeenFile;
+    if (isDevBuild || f == null) return null;
+    try {
+      if (File(f).existsSync() &&
+          File(f).readAsStringSync().trim() == current) {
+        return null;
+      }
+    } catch (_) {}
+    return ReleaseNotes.bundled(current);
+  }
+
+  Future<void> markNotesSeen() async {
+    final f = notesSeenFile;
+    if (f == null) return;
+    try {
+      await File(f).parent.create(recursive: true);
+      await File(f).writeAsString(current);
+    } catch (_) {}
   }
 
   Future<void> check() async {

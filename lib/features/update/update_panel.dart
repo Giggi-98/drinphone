@@ -4,6 +4,7 @@ import '../../app/l10n.dart';
 import '../../app/phone_controller.dart';
 import '../../app/theme.dart';
 import '../../core/update/updater.dart';
+import 'release_notes_dialog.dart';
 
 /// Stato degli aggiornamenti, "Verifica ora" e "Installa e riavvia"
 /// (Preferenze > Diagnostica e finestra dalla barra laterale).
@@ -52,10 +53,6 @@ class UpdatePanel extends StatelessWidget {
                 color: u.error != null ? c.busyText : c.muted,
               ),
             ),
-            if (next != null && next.notes.isNotEmpty) ...[
-              const SizedBox(height: 8),
-              Text(next.notes, style: TextStyle(color: c.text)),
-            ],
             if (busy) ...[
               const SizedBox(height: 10),
               SizedBox(
@@ -73,6 +70,16 @@ class UpdatePanel extends StatelessWidget {
                   icon: const Icon(Icons.refresh_rounded, size: 18),
                   label: Text(tr('Verifica ora')),
                 ),
+                if (next != null && !next.releaseNotes.isEmpty)
+                  OutlinedButton.icon(
+                    onPressed: () => showReleaseNotes(
+                      context,
+                      next.releaseNotes,
+                      title: tr('Cosa cambia nella {v}', {'v': next.version}),
+                    ),
+                    icon: const Icon(Icons.celebration_rounded, size: 18),
+                    label: Text(tr('Cosa cambia')),
+                  ),
                 if (next != null)
                   FilledButton.icon(
                     onPressed: busy

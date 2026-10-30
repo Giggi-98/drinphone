@@ -16,6 +16,7 @@ import '../preferences/preferences_view.dart';
 import '../setup/account_picker.dart';
 import '../setup/setup_wizard.dart';
 import '../voicemail/voicemail_view.dart';
+import '../update/release_notes_dialog.dart';
 import '../update/update_panel.dart';
 import 'search_box.dart';
 import 'widgets.dart';
@@ -46,10 +47,12 @@ class _HomeScreenState extends State<HomeScreen> {
     super.initState();
     p.addListener(_onPhone);
     p.updater?.addListener(_onUpdater);
-    // Finestre video permanenti, appena esiste la finestra dell'app.
-    WidgetsBinding.instance.addPostFrameCallback(
-      (_) => p.attachVideoSurfaces(),
-    );
+    // Finestre video permanenti, appena esiste la finestra dell'app; poi le
+    // novità della versione, una volta sola dopo l'aggiornamento.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      p.attachVideoSurfaces();
+      _showNewNotes();
+    });
     _lifecycle = AppLifecycleListener(
       // Rientro nella finestra: riallinea i dati PBX (saltato se letti da < 10 s).
       onResume: () => p.resync(force: false),
@@ -67,6 +70,15 @@ class _HomeScreenState extends State<HomeScreen> {
     p.removeListener(_onPhone);
     p.updater?.removeListener(_onUpdater);
     super.dispose();
+  }
+
+  Future<void> _showNewNotes() async {
+    final u = p.updater;
+    final notes = await u?.unseenNotes();
+    if (u == null || notes == null || !mounted) return;
+    // Segnate prima: chiudendo l'app col popup aperto non si ripresenta.
+    await u.markNotesSeen();
+    if (mounted) await showReleaseNotes(context, notes);
   }
 
   /// Entrando (o restando) in Registro chiamate / Casella vocale il badge si spegne.

@@ -141,6 +141,10 @@ Yeastar, permessi (microfono, fotocamera, notifiche, rete). Regole:
   **mobile no** — iOS/Android passano dagli store (o da MDM aziendale). Il client
   legge comunque un *manifest* e, su mobile, rimanda allo store. Dettagli in
   `docs/aggiornamenti-e-distribuzione.md`.
+- **Note di rilascio**: ogni versione buildata ha `release-notes/<versione>.md`,
+  scritte per l'utente finale (sezioni `## Novità`, `## Miglioramenti`,
+  `## Correzioni`, `## Sicurezza`, `## Da fare dopo l'aggiornamento`; voci
+  `- …`). Senza, la build e i test falliscono; l'app le mostra in un popup.
 - **Push VoIP**: iOS = PushKit + entitlement (serve Apple Developer); Android =
   FCM ad alta priorità + ConnectionService.
 - **Firma**: code signing Windows (certificato), notarization su macOS,

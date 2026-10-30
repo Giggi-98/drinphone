@@ -1,26 +1,29 @@
 # Installatore Windows della Alpha: build release + Inno Setup + update.json
 # firmato (aggiornamenti dalle GitHub Releases, lib/core/update/updater.dart).
-#   powershell -File tool/build_installer.ps1 -Notes "Cosa cambia"
-#   powershell -File tool/build_installer.ps1 -Notes "Cosa cambia" -Publish
+#   powershell -File tool/build_installer.ps1
+#   powershell -File tool/build_installer.ps1 -Publish
 # Prerequisiti: Flutter, Visual Studio Build Tools (C++), linphone-sdk e ANGLE
 # (tool/fetch_linphone_sdk.ps1, tool/fetch_angle.ps1), Inno Setup 6
 # (winget install JRSoftware.InnoSetup). Versione letta da pubspec.yaml: alzarla
 # prima di ogni pubblicazione, i client accettano solo versioni più recenti.
+# Note di rilascio obbligatorie: release-notes/<versione>.md (sezioni "## …" e
+# voci "- …"); firmate in update.json, incluse nell'app e usate per la release.
 # Chiave di firma: %USERPROFILE%\.drinphone\update-signing.key (o $env:DRIN_UPDATE_KEY),
 # creata una volta con `dart run tool/sign_update.dart keygen <file>`. Mai nel repo.
 # -Publish crea la release v<versione> su GitHub con installer e update.json:
 # i client la vedono come "latest" (serve gh: winget install GitHub.cli; gh auth login).
 # Uscita: build/installer/DrinPhone-Alpha-<versione>-setup.exe (non firmato:
 # SmartScreen avvisa al primo avvio) e build/installer/update.json.
-param([string]$Notes = "", [switch]$Publish)
+param([switch]$Publish)
 $ErrorActionPreference = "Stop"
 $Root = Resolve-Path (Join-Path $PSScriptRoot "..")
 
 $Line = Select-String -Path (Join-Path $Root "pubspec.yaml") -Pattern '^version:\s*(\S+)' | Select-Object -First 1
 if (-not $Line) { throw "version: non trovata in pubspec.yaml" }
 $Version = $Line.Matches[0].Groups[1].Value.Split('+')[0]
-# PowerShell 5.1 non passa gli argomenti vuoti agli eseguibili.
-if (-not $Notes) { $Notes = "DrinPhone Alpha $Version" }
+$Notes = "release-notes\$Version.md"
+if (-not (Test-Path (Join-Path $Root $Notes))) { throw "Note di rilascio mancanti: $Notes" }
+if (-not (Select-String -Path (Join-Path $Root $Notes) -Pattern '^\s*[-*] ' -Quiet)) { throw "Note di rilascio senza voci: $Notes" }
 
 $Iscc = @(
     "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe",
@@ -49,7 +52,7 @@ try {
     dart run tool/sign_update.dart sign $Key $Setup $Version $Notes $Manifest
     if ($LASTEXITCODE -ne 0) { throw "firma di update.json fallita" }
     if ($Publish) {
-        gh release create "v$Version" $Setup $Manifest --title "DrinPhone Alpha $Version" --notes $Notes
+        gh release create "v$Version" $Setup $Manifest --title "DrinPhone Alpha $Version" --notes-file $Notes
         if ($LASTEXITCODE -ne 0) { throw "gh release create fallito" }
     }
 } finally {

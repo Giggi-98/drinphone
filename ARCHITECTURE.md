@@ -39,6 +39,7 @@ windows/                            runner Flutter; CMake installa l'SDK accanto
 tool/fetch_linphone_sdk.ps1         scarica SDK in third_party/ (non versionato)
 tool/build_installer.ps1            build release + installer Inno Setup + update.json firmato (-Publish: release GitHub)
 tool/sign_update.dart               chiave e firma Ed25519 di update.json
+release-notes/<versione>.md         note di rilascio (popup "Novità", manifest, release GitHub)
 installer/                          script Inno Setup e nota Alpha per i tester
 spikes/f0a/                         spike F0-A (non prodotto)
 ```
@@ -273,6 +274,14 @@ spikes/f0a/                         spike F0-A (non prodotto)
   (build `dev`: nessun controllo automatico), nome file validato, impronta SHA-256
   dell'installer. Voce "Aggiorna a x.y.z" nella barra laterale, pannello in
   Preferenze > Diagnostica.
+- **Note di rilascio** (`IMPLEMENTATO`) — `release-notes/<versione>.md` (sezioni
+  `## …`, voci `- …`; obbligatorio per la versione di `pubspec.yaml`, controllato
+  da un test e da `build_installer.ps1`): firmato nel campo `notes` di
+  `update.json` e incluso nell'app come asset. `ReleaseNotes`
+  (`core/update/release_notes.dart`, solo testo) → popup a sezioni
+  `features/update/release_notes_dialog.dart`: "Cosa cambia" nel pannello
+  aggiornamenti (note firmate del manifest) e al primo avvio di una versione
+  (note incluse; `Updater.unseenNotes`, file `notes-seen` in `%APPDATA%`).
 - **Errori non gestiti** — `main.dart`: `FlutterError.onError` e
   `PlatformDispatcher.onError` in `logs/flutter-errors.log` (token/password negli
   URL oscurati) con versione e ID di installazione; `ErrorWidget` mostra il messaggio al posto del riquadro grigio.
@@ -284,8 +293,9 @@ spikes/f0a/                         spike F0-A (non prodotto)
   -> `ISCC installer/drinphone.iss` (Release + runtime MSVC app-local) ->
   `DrinPhone-Alpha-<v>-setup.exe`, per utente in `%LOCALAPPDATA%\Programs\DrinPhone`,
   non firmato. Disinstallando restano i dati in `%APPDATA%\Econnet\DrinPhone`.
-  Poi `dart run tool/sign_update.dart sign` -> `build/installer/update.json`;
-  con `-Publish` `gh release create v<v>` con installer e manifest.
+  Poi `dart run tool/sign_update.dart sign` (note da `release-notes/<v>.md`) ->
+  `build/installer/update.json`; con `-Publish` `gh release create v<v>` con
+  installer, manifest e le stesse note (`--notes-file`).
 - **Aggiornamento**: avvio +30 s e ogni 6 ore (o "Verifica ora") -> GET
   `github.com/Giggi-98/drinphone/releases/latest/download/update.json` -> firma,
   versione, nome -> `available` -> "Installa e riavvia" (non in chiamata) ->

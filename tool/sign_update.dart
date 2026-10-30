@@ -2,7 +2,7 @@
 //   dart run tool/sign_update.dart keygen <file-chiave>
 //     crea la chiave privata (FUORI dal repo) e stampa la pubblica da mettere
 //     in Updater.publicKey.
-//   dart run tool/sign_update.dart sign <file-chiave> <installer.exe> <versione> <note> <update.json>
+//   dart run tool/sign_update.dart sign <file-chiave> <installer.exe> <versione> <note.md> <update.json>
 //     lo usa tool/build_installer.ps1.
 import 'dart:convert';
 import 'dart:io';
@@ -44,7 +44,8 @@ Future<void> main(List<String> args) async {
       'version': args[3],
       'file': installer.uri.pathSegments.last,
       'sha256': sha256.convert(installer.readAsBytesSync()).toString(),
-      'notes': args[4],
+      // release-notes/<versione>.md: sezioni e voci, firmate col resto.
+      'notes': File(args[4]).readAsStringSync().trim(),
     });
     final pair = await algo.newKeyPairFromSeed(seed);
     final sig = await algo.sign(utf8.encode(payload), keyPair: pair);
@@ -56,7 +57,7 @@ Future<void> main(List<String> args) async {
   }
   stderr.writeln(
     'uso: keygen <file-chiave> | '
-    'sign <file-chiave> <installer.exe> <versione> <note> <update.json>',
+    'sign <file-chiave> <installer.exe> <versione> <note.md> <update.json>',
   );
   exit(64);
 }
