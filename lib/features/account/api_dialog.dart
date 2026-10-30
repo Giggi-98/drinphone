@@ -346,14 +346,30 @@ class _CredentialsDialogState extends State<_CredentialsDialog> {
       ownExtension: _ownExtension.text.trim(),
     );
     final conn = widget.conn;
-    if (conn == null) {
-      await widget.phone.addConnection(_label.text.trim(), creds);
-    } else {
-      await widget.phone.updateConnection(
-        conn,
-        label: _label.text.trim(),
-        creds: creds,
-      );
+    try {
+      if (conn == null) {
+        await widget.phone.addConnection(_label.text.trim(), creds);
+      } else {
+        await widget.phone.updateConnection(
+          conn,
+          label: _label.text.trim(),
+          creds: creds,
+        );
+      }
+    } catch (e) {
+      // Salvataggio locale non riuscito (es. cifratura): il pulsante torna
+      // attivo e si dice cosa è successo, senza dettagli delle credenziali.
+      if (mounted) {
+        setState(() => _saving = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              tr('Credenziali non salvate: {e}', {'e': e.runtimeType}),
+            ),
+          ),
+        );
+      }
+      return;
     }
     _clientId.clear();
     _clientSecret.clear();

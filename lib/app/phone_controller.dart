@@ -381,7 +381,8 @@ class PhoneController extends ChangeNotifier {
     connections.add(c);
     _assignVoicemail();
     await _saveConnectionList();
-    await c.start();
+    // Prima lettura in sottofondo: lo stato si vede nel pannello del PBX.
+    unawaited(c.start());
     return c;
   }
 
@@ -392,13 +393,8 @@ class PhoneController extends ChangeNotifier {
   }) async {
     if (label != null) c.label = label;
     await _saveConnectionList();
-    if (creds != null) {
-      // Forse un altro PBX: niente dati né cache di quello di prima.
-      await c.stop();
-      await c.clearData();
-      await c.store.save(creds);
-      await c.start();
-    }
+    // Forse un altro PBX: niente dati né cache di quello di prima.
+    if (creds != null) await c.replaceCredentials(creds);
     notifyListeners();
   }
 

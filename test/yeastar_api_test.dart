@@ -856,6 +856,14 @@ void main() {
           ownExtension: '305',
         ),
       );
+      // Prima lettura sul PBX nuovo (in sottofondo): elenco negato.
+      for (var i = 0; i < 100; i++) {
+        final asked = b.requests.any(
+          (r) => r.uri.path.endsWith('extension/list'),
+        );
+        if (asked && !conn.syncing) break;
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+      }
       expect(conn.directory, isEmpty);
       expect(phone.ownDetail, isNull);
       expect(await PbxCache(path).load(), isNull);
@@ -866,6 +874,75 @@ void main() {
       );
       await phone.shutdown();
       await b.server.close(force: true);
+    },
+    skip: !Platform.isWindows,
+  );
+
+  // Bug 0.1.2: "Salva e connetti" restava su "Connessione…" finché la prima
+  // lettura (rubrica compresa) non finiva. Il salvataggio non aspetta la rete.
+  test(
+    'nuove credenziali: il salvataggio non aspetta la sincronizzazione',
+    () async {
+      final phone = await controllerWith(FakeSipEngine(), {'a': pbx.baseUrl});
+      final conn = phone.connections.single;
+      pbx.holdPath = '/openapi/v1.0/company_contact/list';
+      await phone
+          .updateConnection(
+            conn,
+            creds: ApiCredentials(
+              baseUrl: pbx.baseUrl,
+              clientId: _id,
+              clientSecret: _secret,
+              ownExtension: '305',
+            ),
+          )
+          .timeout(const Duration(seconds: 2));
+      await pbx.holdArrived.future.timeout(const Duration(seconds: 5));
+      expect(conn.syncing, isTrue);
+      pbx.release.complete();
+      for (var i = 0; i < 100 && (conn.syncing || !conn.ok); i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+      }
+      expect(conn.ok, isTrue);
+      expect(phone.ownDetail?.id, 15);
+      await phone.shutdown();
+    },
+    skip: !Platform.isWindows,
+  );
+
+  // Security test 0.1.3: credenziali non salvate = token vecchio revocato
+  // comunque (niente sessione amministrativa orfana) e connessione ripartita.
+  test(
+    'nuove credenziali non salvabili: token vecchio revocato, si riparte',
+    () async {
+      final phone = await controllerWith(FakeSipEngine(), {'a': pbx.baseUrl});
+      final conn = phone.connections.single;
+      expect(conn.ok, isTrue);
+      // Il file temporaneo è una cartella: la scrittura fallisce.
+      Directory('${tmp.path}${Platform.pathSeparator}api-a.dpapi.tmp')
+          .createSync();
+      bool revoked() =>
+          pbx.requests.any((r) => r.uri.path.endsWith('del_token'));
+      expect(revoked(), isFalse);
+      await expectLater(
+        phone.updateConnection(
+          conn,
+          creds: ApiCredentials(
+            baseUrl: pbx.baseUrl,
+            clientId: _id,
+            clientSecret: 'altro',
+            ownExtension: '305',
+          ),
+        ),
+        throwsA(isA<FileSystemException>()),
+      );
+      for (var i = 0; i < 100 && !(revoked() && conn.ok); i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+      }
+      expect(revoked(), isTrue);
+      // Ripartita con le credenziali rimaste (quelle buone).
+      expect(conn.ok, isTrue);
+      await phone.shutdown();
     },
     skip: !Platform.isWindows,
   );
@@ -904,7 +981,10 @@ void main() {
       );
       pbx.release.complete();
       await running;
-      for (var i = 0; i < 50 && conn.syncing; i++) {
+      // Prima lettura sul PBX nuovo in sottofondo: si aspetta che arrivi.
+      bool askedB() =>
+          b.requests.any((r) => r.uri.path.endsWith('extension/list'));
+      for (var i = 0; i < 100 && (conn.syncing || !askedB()); i++) {
         await Future<void>.delayed(const Duration(milliseconds: 20));
       }
       await PbxCache(path).saved;

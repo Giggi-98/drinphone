@@ -262,8 +262,12 @@ class PbxConnection {
 
   Future<void> start() async {
     await stop();
+    // Un avvio superato da uno più recente (o da credenziali nuove) si ferma
+    // dopo ogni attesa senza toccare dati né client.
+    final gen = _gen;
     _stopped = false;
     final creds = await store.load();
+    if (gen != _gen) return;
     if (creds == null) {
       ok = false;
       status = store.isSet
@@ -277,13 +281,15 @@ class PbxConnection {
     final api = apiFactory(creds);
     // Token rinnovato: il WebSocket si ricollega con quello nuovo.
     api.onTokens = () {
-      if (_ws != null) _ws!.close();
+      if (identical(api, _api) && _ws != null) _ws!.close();
     };
     _api = api;
     // Dati della volta scorsa subito a schermo; la sync li aggiorna.
     final cached = directory.isEmpty ? await cache?.load() : null;
+    // Staccato nel frattempo: chi l'ha staccato chiude anche questo client.
+    if (gen != _gen) return;
     _readAt.clear();
-    if (cached != null && !_stopped) {
+    if (cached != null) {
       if (cached.contactsAt case final at?) _readAt[PbxSync.contacts] = at;
       directory = cached.directory;
       orgs = cached.orgs;
@@ -514,6 +520,11 @@ class PbxConnection {
         api.eventsUri().toString(),
         headers: {HttpHeaders.userAgentHeader: YeastarApi.userAgent},
       ).timeout(const Duration(seconds: 15));
+      // Client cambiato durante la connessione: socket del PBX di prima.
+      if (!identical(api, _api) || _stopped) {
+        unawaited(ws.close());
+        return;
+      }
       _ws = ws;
       ws.add(jsonEncode({'topic_list': eventTopics}));
       // Senza traffico il PBX chiude dopo 60 s.
@@ -775,13 +786,38 @@ class PbxConnection {
     for (final c in contacts) '${c.id}|${c.name}|${c.numbers}',
   ].join('\n');
 
-  Future<void> stop() async {
+  Future<void> stop() async => _detach()?.close();
+
+  /// Generazione dell'avvio: cambia a ogni [_detach].
+  int _gen = 0;
+
+  /// Ferma subito, senza rete: il client lasciato va chiuso (revoca token).
+  YeastarApi? _detach() {
+    _gen++;
     _stopped = true;
     _timer?.cancel();
     _resyncSoon?.cancel();
     _closeEvents();
-    await _api?.close();
+    final api = _api;
     _api = null;
+    return api;
+  }
+
+  /// Credenziali nuove (forse un altro PBX). Subito e in locale: fermo, dati e
+  /// cache buttati, poi credenziali salvate (in quest'ordine: un'uscita a metà
+  /// non lascia credenziali nuove con la cache vecchia). Revoca del token
+  /// vecchio e prima lettura in sottofondo: chi salva non aspetta la rete.
+  /// Se il salvataggio fallisce, il client vecchio si chiude comunque e la
+  /// connessione riparte con le credenziali rimaste; l'errore torna a chi salva.
+  Future<void> replaceCredentials(ApiCredentials creds) async {
+    final old = _detach();
+    try {
+      await clearData();
+      await store.save(creds);
+    } finally {
+      unawaited(old?.close());
+      unawaited(start());
+    }
   }
 
   /// Ferma e cancella le credenziali di questa connessione.

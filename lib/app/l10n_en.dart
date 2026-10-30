@@ -44,6 +44,7 @@ const en = <String, String>{
   'Credenziali': 'Credentials',
   'Credenziali PBX': 'PBX credentials',
   'Credenziali mancanti': 'Missing credentials',
+  'Credenziali non salvate: {e}': 'Credentials not saved: {e}',
   'Credenziali non leggibili su questo PC':
       'Credentials cannot be read on this PC',
   'Da Integrations > API sul PBX': 'From Integrations > API on the PBX',

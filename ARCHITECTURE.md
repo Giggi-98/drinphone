@@ -102,8 +102,11 @@ spikes/f0a/                         spike F0-A (non prodotto)
   **solo se coincide** con `ApiCredentials.ownExtension`, scelto con le
   credenziali dall'amministratore (DECISIONS "Modello di fiducia"); altrimenti
   niente dettaglio, casella né scritture (`PbxConnection.voicemailOf` = null).
-  Nuove credenziali di una connessione = dati e cache buttati
-  (`PbxConnection.clearData`): gli id di un altro PBX non guidano le scritture.
+  Nuove credenziali di una connessione (`PbxConnection.replaceCredentials`):
+  subito e in locale stop, dati e cache buttati (`clearData`), credenziali
+  salvate; revoca del token vecchio e prima lettura in sottofondo (il dialogo
+  non aspetta la rete). Avvii superati si fermano (`_gen`): gli id di un altro
+  PBX non guidano le scritture.
   UI `features/preferences/own_extension.dart`
   (part di `preferences_view.dart`): bozza + "Salva sul PBX"; Presenza (stato
   attuale, inoltri, squillo, cambio per orario, più dispositivi, info in sola
