@@ -243,9 +243,8 @@ void main() {
       password: 'p',
       wholePbx: true,
     );
-    await cdr(
-      whole,
-    ).read(ownExtension: '305', q: const CdrQuery(wholePbx: true));
+    await cdr(whole)
+        .read(ownExtension: '305', q: const CdrQuery(wholePbx: true));
     expect(db.page.$1, isNot(contains('`src` = ?')));
   });
 
@@ -318,9 +317,8 @@ void main() {
         wholePbx: true,
       ),
     );
-    final raw = await File(
-      '${tmp.path}${Platform.pathSeparator}db.dpapi',
-    ).readAsString();
+    final raw = await File('${tmp.path}${Platform.pathSeparator}db.dpapi')
+        .readAsString();
     expect(raw, isNot(contains('S3greta!')));
     expect(raw, isNot(contains('cdr_user')));
     final back = (await store.load())!;

@@ -330,34 +330,22 @@ class _HistoryViewState extends State<HistoryView> {
                     }),
                   )
                 else ...[
-                  _menu(
-                    tr('Tipo'),
-                    _cdrKind,
-                    CdrKind.all,
-                    {
-                      CdrKind.all: tr('Tutte'),
-                      CdrKind.inbound: tr('In arrivo'),
-                      CdrKind.outbound: tr('In uscita'),
-                      CdrKind.internal: tr('Interne'),
-                    },
-                    (v) => setState(() => _cdrKind = v),
-                  ),
-                  _menu(
-                    tr('Esito'),
-                    _cdrOutcome,
-                    CdrOutcome.all,
-                    {
-                      CdrOutcome.all: tr('Tutti'),
-                      CdrOutcome.answered: tr('Risposta'),
-                      CdrOutcome.unanswered: tr('Non risposte (tutte)'),
-                      CdrOutcome.noAnswer: tr('Non risposta'),
-                      CdrOutcome.abandoned: tr('Abbandonata'),
-                      CdrOutcome.busy: tr('Occupato'),
-                      CdrOutcome.failed: tr('Non riuscita'),
-                      CdrOutcome.voicemail: tr('Casella vocale'),
-                    },
-                    (v) => setState(() => _cdrOutcome = v),
-                  ),
+                  _menu(tr('Tipo'), _cdrKind, CdrKind.all, {
+                    CdrKind.all: tr('Tutte'),
+                    CdrKind.inbound: tr('In arrivo'),
+                    CdrKind.outbound: tr('In uscita'),
+                    CdrKind.internal: tr('Interne'),
+                  }, (v) => setState(() => _cdrKind = v)),
+                  _menu(tr('Esito'), _cdrOutcome, CdrOutcome.all, {
+                    CdrOutcome.all: tr('Tutti'),
+                    CdrOutcome.answered: tr('Risposta'),
+                    CdrOutcome.unanswered: tr('Non risposte (tutte)'),
+                    CdrOutcome.noAnswer: tr('Non risposta'),
+                    CdrOutcome.abandoned: tr('Abbandonata'),
+                    CdrOutcome.busy: tr('Occupato'),
+                    CdrOutcome.failed: tr('Non riuscita'),
+                    CdrOutcome.voicemail: tr('Casella vocale'),
+                  }, (v) => setState(() => _cdrOutcome = v)),
                   _partyField(_callFrom, tr('Da')),
                   Padding(
                     padding: const EdgeInsets.only(right: DrinSpace.s2),
