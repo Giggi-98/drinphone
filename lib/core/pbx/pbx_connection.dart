@@ -12,6 +12,7 @@ import '../../app/l10n.dart';
 import '../security/api_credential_store.dart';
 import '../sip/sip_engine.dart' show BlfStatus;
 import 'pbx_cache.dart';
+import 'pbx_sync.dart';
 import 'yeastar_api.dart';
 
 /// Chiamata in corso sul PBX (Live Calls).
@@ -194,20 +195,59 @@ class PbxConnection {
 
   Timer? _timer;
   int _failures = 0;
-  DateTime? _orgsAt;
-  DateTime? _contactsAt;
+
+  /// Ultima lettura riuscita (o tentata, per le facoltative) di ogni voce; la
+  /// rubrica viene dalla cache, così vale anche fra un accesso e l'altro.
+  final _readAt = <PbxSync, DateTime>{};
   String _fingerprint = '';
   bool _stopped = false;
 
-  /// Presenza ogni minuto; reparti più di rado (cambiano poco); rubrica
-  /// aziendale (migliaia di contatti, una pagina ogni 500) ogni 6 ore, anche fra
-  /// un accesso e l'altro, o con "Sincronizza ora"; errori con attesa crescente
-  /// fino a 15 minuti (limite 8 token e blocco IP).
-  static const presenceEvery = Duration(seconds: 60);
-  static const orgsEvery = Duration(minutes: 10);
-  static const contactsEvery = Duration(hours: 6);
+  /// Cosa leggere e ogni quanto, scelto dall'utente ([PbxSync]; nome →
+  /// secondi, 0 = spenta). Errori con attesa crescente fino a 15 minuti
+  /// (limite 8 token e blocco IP).
+  Map<String, int> syncSettings = {};
   static const maxBackoff = Duration(minutes: 15);
   static const minGap = Duration(seconds: 10);
+
+  /// Con gli eventi attivi la presenza arriva in tempo reale: interni al più
+  /// ogni 5 minuti.
+  static const eventsExtensionsEvery = Duration(minutes: 5);
+
+  Duration every(PbxSync s) {
+    final d = s.of(syncSettings);
+    if (s == PbxSync.extensions && _ws != null && d < eventsExtensionsEvery) {
+      return eventsExtensionsEvery;
+    }
+    return d;
+  }
+
+  void setSyncEvery(PbxSync s, Duration d) {
+    final wasOff = s.of(syncSettings) == Duration.zero;
+    syncSettings = {...syncSettings, s.name: d.inSeconds};
+    if (_api == null || _stopped) return;
+    if (wasOff && d != Duration.zero) {
+      _readAt.remove(s);
+      sync(force: true);
+    } else if (!syncing) {
+      // Nuova cadenza: il prossimo giro si ricalcola.
+      _timer?.cancel();
+      _timer = Timer(_nextDelay(), sync);
+    }
+  }
+
+  /// Ultima lettura di una voce in questa sessione (rubrica: anche dalla cache).
+  DateTime? lastRead(PbxSync s) => _readAt[s];
+
+  /// Voce da rileggere a questo giro: accesa e scaduta (o [now] richiesto).
+  bool _due(PbxSync s, {bool now = false}) {
+    final d = every(s);
+    if (d == Duration.zero) return false;
+    final at = _readAt[s];
+    // Margine: il timer scatta a ridosso della scadenza.
+    return now ||
+        at == null ||
+        DateTime.now().difference(at) >= d - const Duration(seconds: 2);
+  }
 
   Future<void> start() async {
     await stop();
@@ -230,9 +270,9 @@ class PbxConnection {
     _api = api;
     // Dati della volta scorsa subito a schermo; la sync li aggiorna.
     final cached = directory.isEmpty ? await cache?.load() : null;
-    _contactsAt = null;
+    _readAt.clear();
     if (cached != null && !_stopped) {
-      _contactsAt = cached.contactsAt;
+      if (cached.contactsAt case final at?) _readAt[PbxSync.contacts] = at;
       directory = cached.directory;
       orgs = cached.orgs;
       contacts = cached.contacts;
@@ -264,7 +304,10 @@ class PbxConnection {
     optionalErrors.clear();
     try {
       if (!api.connected) await api.connect();
-      final ext = await api.listExtensions();
+      // Interni sempre al primo giro: provano le credenziali e servono a tutto.
+      final readExt = _due(PbxSync.extensions, now: force) || directory.isEmpty;
+      final ext = readExt ? await api.listExtensions() : directory;
+      if (readExt) _readAt[PbxSync.extensions] = DateTime.now();
       final idsChanged =
           ext
               .map((e) => e.id)
@@ -274,62 +317,63 @@ class PbxConnection {
           ext.length != directory.length;
       var newOrgs = orgs;
       var newContacts = contacts;
-      final orgsAt = _orgsAt;
-      if (force ||
-          idsChanged ||
-          orgsAt == null ||
-          DateTime.now().difference(orgsAt) > orgsEvery) {
+      if (_due(PbxSync.orgs, now: force || idsChanged)) {
         try {
           newOrgs = await api.listOrganizations();
         } catch (e) {
           // Reparti facoltativi: si tengono gli ultimi letti; non bloccano gli interni.
           optionalErrors.add('reparti: ${_short(e)}');
         }
-        _orgsAt = DateTime.now();
-        _detailStale = true;
-        // Codici funzione: cadenza lenta come i reparti.
+        _readAt[PbxSync.orgs] = DateTime.now();
+      }
+      if (_due(PbxSync.featureCodes, now: force)) {
         try {
           recordCode = await api.recordFeatureCode();
         } catch (e) {
           optionalErrors.add('codici funzione: ${_short(e)}');
         }
+        _readAt[PbxSync.featureCodes] = DateTime.now();
       }
-      final contactsAt = _contactsAt;
-      final readContacts =
-          full ||
-          contactsAt == null ||
-          DateTime.now().difference(contactsAt) > contactsEvery;
+      final readContacts = _due(PbxSync.contacts, now: full);
       if (readContacts) {
         try {
           newContacts = await api.listCompanyContacts();
-          _contactsAt = DateTime.now();
+          _readAt[PbxSync.contacts] = DateTime.now();
         } catch (e) {
           // Rubrica facoltativa (permessi, formato diverso dalla documentazione).
           optionalErrors.add('rubrica: ${_short(e)}');
         }
       }
-      // Casella vocale a ogni giro: è ciò che l'utente si aspetta di vedere subito.
       final vmOf = voicemailOf;
-      List<PbxVoicemail>? newVm;
-      if (vmOf != null && vmOf.isNotEmpty) {
+      var newVm = voicemail;
+      if (vmOf == null ||
+          vmOf.isEmpty ||
+          every(PbxSync.voicemail) == Duration.zero) {
+        // Spenta: la vista usa l'avviso SIP (MWI).
+        newVm = null;
+      } else if (_due(PbxSync.voicemail, now: force)) {
         try {
           newVm = await api.listVoicemail(vmOf);
         } catch (e) {
+          newVm = null;
           optionalErrors.add('casella vocale: ${_short(e)}');
         }
+        _readAt[PbxSync.voicemail] = DateTime.now();
       }
-      // Dettaglio del proprio interno: cadenza lenta, su 30022 o su richiesta.
+      // Dettaglio del proprio interno: anche su 30022 o su richiesta.
       var newDetail = ownDetail;
       final own = vmOf == null
           ? null
           : ext.where((e) => e.number == vmOf).firstOrNull;
-      if (own != null && (_detailStale || force)) {
+      if (own != null &&
+          _due(PbxSync.ownDetail, now: _detailStale || force || idsChanged)) {
         try {
           newDetail = await api.getExtension(own.id);
           _detailStale = false;
         } catch (e) {
           optionalErrors.add('dettaglio interno: ${_short(e)}');
         }
+        _readAt[PbxSync.ownDetail] = DateTime.now();
       }
       final detailChanged = !identical(newDetail, ownDetail);
       ownDetail = newDetail;
@@ -352,7 +396,7 @@ class PbxConnection {
             voicemail: newVm,
             detail: newDetail,
             recordCode: recordCode,
-            contactsAt: _contactsAt,
+            contactsAt: _readAt[PbxSync.contacts],
           ),
         );
       }
@@ -379,6 +423,28 @@ class PbxConnection {
       onUpdate(this, changed);
     }
     if (ok && realtime && _ws == null && _wsRetry == null) _connectEvents();
+  }
+
+  /// Salva sul PBX le modifiche di [edited] rispetto al dettaglio letto, solo
+  /// sul proprio interno (id dall'elenco, per numero) e solo i campi ammessi;
+  /// poi rilegge il dettaglio. Lancia se il PBX rifiuta.
+  Future<void> updateOwnExtension(PbxExtensionDetail edited) async {
+    final api = _api;
+    final current = ownDetail;
+    final own = directory.where((e) => e.number == voicemailOf).firstOrNull;
+    if (api == null || current == null || own == null) {
+      throw StateError('proprio interno non disponibile');
+    }
+    // Il dettaglio modificato deve essere proprio di quell'interno.
+    if (edited.id != null && edited.id != own.id) {
+      throw StateError('non è il proprio interno');
+    }
+    final changes = edited.changesFrom(current);
+    if (changes.isEmpty) return;
+    if (!api.connected) await api.connect();
+    await api.updateOwnExtension(own.id, changes);
+    debugPrint('pbx $id: interno aggiornato (${changes.keys.join(', ')})');
+    await refreshDetail();
   }
 
   /// Rilegge subito il dettaglio del proprio interno.
@@ -634,12 +700,23 @@ class PbxConnection {
     }
   }
 
+  /// Prossimo giro: la prima voce accesa che scade; con errori, attesa
+  /// crescente a partire dalla cadenza degli interni.
   Duration _nextDelay() {
-    // Con gli eventi attivi la presenza arriva in tempo reale: lettura di rado.
-    if (_failures == 0 && _ws != null) return const Duration(minutes: 5);
-    if (_failures == 0) return presenceEvery;
-    final s = presenceEvery.inSeconds * pow(2, min(_failures, 4));
-    return Duration(seconds: min(s.toInt(), maxBackoff.inSeconds));
+    if (_failures > 0) {
+      final s = every(PbxSync.extensions).inSeconds * pow(2, min(_failures, 4));
+      return Duration(seconds: min(s.toInt(), maxBackoff.inSeconds));
+    }
+    final now = DateTime.now();
+    var next = every(PbxSync.extensions);
+    for (final item in PbxSync.values) {
+      final d = every(item);
+      if (d == Duration.zero) continue;
+      final at = _readAt[item];
+      final left = at == null ? Duration.zero : d - now.difference(at);
+      if (left < next) next = left;
+    }
+    return next < minGap ? minGap : next;
   }
 
   static String _fingerprintOf(

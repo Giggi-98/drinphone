@@ -158,4 +158,4 @@ dichiararle fatte.
 - **AMI non è Yeastar OpenAPI**: evitare AMI in client utenti; backend-only per Asterisk se necessario. BLF SIP SUBSCRIBE/NOTIFY prima delle API private.
 - Separare `IMPLEMENTATO`, `DA VALIDARE` e `NON TESTATO`; `ARCHITECTURE.md` non deve spacciare componenti pianificati per esistenti.
 - F4/push richiede prova end-to-end con PBX/proxy, non si presume solo installando CallKit o FCM.
-- Credenziali API amministrative Yeastar nel client **solo** come da `DECISIONS.md` 2026-10-28 (bis): sola scrittura, cifrate DPAPI, mai nei log, solo endpoint in lettura. Mai AMI nel client.
+- Credenziali API amministrative Yeastar nel client **solo** come da `DECISIONS.md` 2026-10-28 (bis): sola scrittura, cifrate DPAPI, mai nei log, endpoint in lettura; in scrittura **solo** il proprio interno e i campi utente di `YeastarApi.ownWritable` (`DECISIONS.md` 2026-10-30 "Scrittura sul proprio interno"). Mai AMI nel client.

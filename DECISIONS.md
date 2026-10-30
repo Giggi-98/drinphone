@@ -6,6 +6,62 @@ aggiungi una voce nuova in cima che cita la vecchia. Il campo chiave è
 
 ---
 
+## 2026-10-30 · Scrittura sul proprio interno (di Gigi; ribalta la parte "solo endpoint in lettura" di "Credenziali OpenAPI Yeastar nel client" 2026-10-28 bis)
+**Scelta:** DrinPhone può **modificare il proprio interno** con
+`extension/update`, come farebbe l'utente da Linkus: presenza attuale, per
+ognuna delle 6 presenze inoltri interni/esterni (sempre, nessuna risposta,
+occupato → casella, interno, cellulare, numero esterno, termina, occupato;
+IVR/code/gruppi/messaggi si tengono se già impostati), timeout squillo,
+cellulare in contemporanea con conferma, gruppi di squillo; cambio automatico
+della presenza per orario; più dispositivi (occupato/rifiuto su tutti);
+casella vocale (attiva, PIN richiesto, data e ora, email, allegato, dopo
+l'email, formato ora). Vincoli: **solo l'id del proprio interno** (dall'elenco,
+per numero dell'account SIP); **elenco chiuso** di campi
+(`YeastarApi.ownWritable` e campi di `presence_list`), qualunque altro campo
+non parte (`ArgumentError`); bozza salvata solo con "Salva sul PBX";
+password, PIN e segreti scartati già alla lettura (non in memoria né in
+cache); valori mandati con il tipo letto dal PBX (`"0"` per `0` = errcode
+40002, visto sul pilota). Resto dell'interno (nome, email, ID chiamante,
+trasporti, SRTP, blocchi di uscita, Linkus) **solo in lettura**.
+Verificato sul pilota (interno 305): modifica e ripristino di campi di una
+presenza e della casella, nessun altro campo cambiato.
+**Rischio accettato (in più rispetto alla bis):** il limite "solo il proprio
+interno" lo impone l'app, non il PBX: chi estrae le credenziali dal PC può
+già modificare **qualunque** interno; un difetto dell'app che sbagliasse id
+cambierebbe l'interno di un altro (mitigato: id ricavato dall'elenco, test).
+**Scartato:** credenziali API per utente (Yeastar non le offre: le API sono
+dell'amministratore); gateway Econnet che firma le modifiche (più sicuro, da
+fare se la distribuzione esce dal gruppo interno); scrittura di tutti i 90
+campi (molti sono da amministratore).
+**Da rivedere se:** distribuzione a clienti esterni o più di qualche postazione
+per PBX (→ gateway), Yeastar introduce token per utente, o serve cambiare
+anche messaggi registrati, PIN o orari dell'interno.
+
+---
+
+## 2026-10-30 · Sincronizzazione PBX configurabile (aggiorna "Rubrica aziendale ogni 6 ore" e "Multi-PBX e sincronizzazione dati API")
+**Scelta:** cosa leggere dalle API del PBX e ogni quanto lo sceglie l'utente,
+per connessione, in Preferenze (scheda del PBX > "Cosa sincronizzare e ogni
+quanto"): una riga per funzione con frequenze a radio button e "Spenta".
+Registro unico `PbxSync` (`lib/core/pbx/pbx_sync.dart`): per voce scelte,
+predefinito, testo e se si può spegnere. Salvato in `settings.json`
+(`pbx[].sync`, nome → secondi, 0 = spenta); voci assenti = predefinito, voci
+sconosciute ignorate: aggiungere o togliere una funzione non rompe le
+impostazioni esistenti. Predefiniti = cadenze di prima (interni e casella 1
+min, reparti/dettaglio/codici 10 min, rubrica 6 ore). Interni e presenza non si
+spengono (provano le credenziali, servono a BLF e casella); con gli eventi in
+tempo reale restano al più ogni 5 min. "Sincronizza ora" rilegge solo le voci
+accese. Eventi WebSocket: interruttore a parte, come prima.
+**Scartato:** un solo intervallo globale (la rubrica da migliaia di contatti
+non può seguire la presenza); valori liberi (con le API Yeastar limitate a 8
+token e il blocco IP, solo scelte provate); impostazioni globali per tutti i
+PBX (ogni PBX ha licenze e permessi API diversi).
+**Da rivedere se:** si aggiungono funzioni API (CDR, registrazioni, code), un
+PBX diverso da Yeastar ha capacità diverse (allora le voci per tipo di PBX), o
+serve imporre le cadenze dall'amministratore (provisioning).
+
+---
+
 ## 2026-10-30 · ID di installazione: solo locale
 **Scelta:** ogni installazione crea al primo avvio un codice casuale di 16 byte
 (`install-id` nella cartella dati: resta fra aggiornamenti e reinstallazioni

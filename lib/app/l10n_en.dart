@@ -467,4 +467,85 @@ const en = <String, String>{
   'Aggiorna a {v}': 'Update to {v}',
   'ID installazione: {id}': 'Installation ID: {id}',
   'Copia': 'Copy',
+  'Interni e presenza': 'Extensions and presence',
+  'Reparti': 'Departments',
+  'Presenze e inoltri del mio interno': 'My extension presence and forwarding',
+  'Codici funzione (registrazione)': 'Feature codes (recording)',
+  'Elenco interni, nomi e presenza. Con gli eventi in tempo reale attivi '
+          'si rilegge al più ogni 5 minuti.':
+      'Extensions, names and presence. With real-time events on it is read '
+      'at most every 5 minutes.',
+  'Messaggi del proprio interno. Spenta: avviso SIP (MWI).':
+      'Messages of your extension. Off: SIP notification (MWI).',
+  'Pannello reparti nella vista Interni.':
+      'Departments panel in the Extensions view.',
+  'Preferenze > Presenza: inoltri, squillo, cellulare. Si rilegge anche '
+          'quando il PBX segnala una modifica.':
+      'Preferences > Presence: forwarding, ringing, mobile. Also read when '
+      'the PBX reports a change.',
+  'Codice per registrare le chiamate sul PBX.':
+      'Code to record calls on the PBX.',
+  'Migliaia di contatti, letti a pagine: cadenza lunga. "Sincronizza ora" '
+          'la rilegge subito.':
+      'Thousands of contacts, read in pages: long interval. "Sync now" reads '
+      'it immediately.',
+  'Spenta': 'Off',
+  '1 ora': '1 hour',
+  '{n} ore': '{n} hours',
+  '{n} min': '{n} min',
+  '{n} s': '{n} s',
+  'non ancora letta': 'not read yet',
+  'letta alle {t}': 'read at {t}',
+  'Cosa sincronizzare e ogni quanto': 'What to sync and how often',
+  'Numero esterno': 'External number',
+  'Scegli l\'interno di destinazione': 'Choose the destination extension',
+  'Numero esterno non valido': 'Invalid external number',
+  'Salvataggio non riuscito': 'Save failed',
+  'Modifiche non ancora salvate sul PBX': 'Changes not yet saved to the PBX',
+  'Salva sul PBX': 'Save to PBX',
+  'Destinazione': 'Destination',
+  'Imposta "{p}" come attuale': 'Set "{p}" as current',
+  'Squillo e cellulare · {p}': 'Ringing and mobile · {p}',
+  'Timeout squillo': 'Ring timeout',
+  '{n} secondi': '{n} seconds',
+  'Numero di cellulare dell\'interno sul PBX.':
+      'The extension\'s mobile number on the PBX.',
+  'Conferma con un tasto sul cellulare': 'Confirm with a key on the mobile',
+  'Evita che la chiamata finisca nella segreteria del cellulare.':
+      'Keeps the call from ending up in the mobile\'s voicemail.',
+  'Cambio automatico della presenza': 'Automatic presence change',
+  'Il PBX cambia la presenza da solo secondo l\'orario dell\'interno.': 'The PBX changes the presence by itself following the extension\'s hours.',
+  'In orario d\'ufficio': 'During office hours',
+  'In pausa': 'During breaks',
+  'Fuori orario': 'Outside office hours',
+  'Nei giorni festivi': 'On holidays',
+  'Non cambiare': 'Don\'t change',
+  'Più dispositivi': 'Multiple devices',
+  'Occupato se un dispositivo è in chiamata': 'Busy when a device is on a call',
+  'Le nuove chiamate seguono l\'inoltro "Occupato" invece di squillare sugli altri dispositivi.': 'New calls follow the "Busy" forwarding instead of ringing the other devices.',
+  'Rifiuto su un dispositivo = rifiuto su tutti':
+      'Reject on one device = reject on all',
+  'PIN richiesto per ascoltare': 'PIN required to listen',
+  'Il PIN si cambia dal PBX o da Linkus.':
+      'The PIN is changed from the PBX or Linkus.',
+  'Annuncia data e ora del messaggio': 'Announce message date and time',
+  'Avviso via email dei nuovi messaggi': 'Email notice of new messages',
+  'All\'indirizzo email dell\'interno sul PBX.':
+      'To the extension\'s email address on the PBX.',
+  'Allega l\'audio all\'email': 'Attach the audio to the email',
+  'Dopo l\'avviso via email': 'After the email notice',
+  'Formato dell\'ora': 'Time format',
+  '12 ore': '12-hour',
+  '24 ore': '24-hour',
+  'ID chiamante': 'Caller ID',
+  'Qualifica': 'Job title',
+  'Registrazioni contemporanee': 'Concurrent registrations',
+  'Trasporti SIP': 'SIP transports',
+  'SRTP': 'SRTP',
+  'Chiamate in uscita bloccate': 'Outbound calls blocked',
+  'Internazionali bloccate': 'International calls blocked',
+  'Linkus abilitato': 'Linkus enabled',
+  'Informazioni dell\'interno': 'Extension information',
+  'Le gestisce l\'amministratore del PBX: qui solo in lettura.':
+      'Managed by the PBX administrator: read-only here.',
 };

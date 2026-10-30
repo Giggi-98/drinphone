@@ -109,13 +109,15 @@ class LiveMember {
   ];
 }
 
-/// Inoltro di una presenza (`extension/get` → `presence_list`).
+/// Inoltro di una condizione di una presenza (vista su `presence_list`).
 class PresenceForward {
   const PresenceForward({
     required this.enabled,
     required this.dest,
     this.value = '',
     this.number = '',
+    this.prefix = '',
+    this.callConfirm = false,
   });
   final bool enabled;
 
@@ -128,16 +130,30 @@ class PresenceForward {
 
   /// Numero esterno per `external_num`.
   final String number;
+
+  /// Prefisso di uscita (numeri) o ripetizioni (messaggio registrato).
+  final String prefix;
+
+  /// Il destinatario esterno deve premere un tasto per accettare.
+  final bool callConfirm;
+
+  /// Campi di `presence_list` per la condizione [cond] (es. `ex_busy`).
+  Map<String, Object> toJson(String cond) => {
+    'enb_${cond}_forward': enabled ? 1 : 0,
+    '${cond}_forward_dest': dest,
+    '${cond}_forward_value': value,
+    '${cond}_forward_num': number,
+    '${cond}_forward_prefix': prefix,
+    '${cond}_forward_call_confirm': callConfirm ? 1 : 0,
+  };
 }
 
-/// Impostazioni di una presenza: inoltri per chiamate interne ed esterne.
+/// Una delle sei presenze: inoltri per chiamate interne ed esterne e, su
+/// Yeastar P-Series, anche squillo, cellulare, gruppi e messaggio di benvenuto
+/// (verificato sul pilota: questi campi stanno qui, non sull'interno).
 class PresenceSetting {
-  const PresenceSetting(this.status, this.forwards);
-  final String status;
-
-  /// Chiavi: `in_always`, `in_no_answer`, `in_busy`, `ex_always`,
-  /// `ex_no_answer`, `ex_busy`.
-  final Map<String, PresenceForward> forwards;
+  const PresenceSetting(this.raw);
+  final Map<String, dynamic> raw;
 
   static const conditions = [
     'in_always',
@@ -147,122 +163,133 @@ class PresenceSetting {
     'ex_no_answer',
     'ex_busy',
   ];
+
+  String get status => _s(raw, 'status');
+
+  Map<String, PresenceForward> get forwards => {
+    for (final k in conditions)
+      k: PresenceForward(
+        enabled: _flag(raw, 'enb_${k}_forward'),
+        dest: _s(raw, '${k}_forward_dest'),
+        value: _s(raw, '${k}_forward_value'),
+        number: _s(raw, '${k}_forward_num'),
+        prefix: _s(raw, '${k}_forward_prefix'),
+        callConfirm: _flag(raw, '${k}_forward_call_confirm'),
+      ),
+  };
+
+  int? get ringTimeout => int.tryParse(_s(raw, 'ring_timeout'));
+  bool get ringMobile => _flag(raw, 'enb_ring_mobile');
+  bool get mobileCallConfirm => _flag(raw, 'mobile_call_confirm');
+  bool get acceptRingGroup => _flag(raw, 'enb_accept_call_from_rg');
+
+  /// Messaggio di benvenuto della casella in questa presenza ('' = predefinito).
+  String get greeting => _s(raw, 'vm_greeting');
+
+  PresenceSetting withValues(Map<String, Object> changes) =>
+      PresenceSetting({...raw, ...changes});
+
+  PresenceSetting withForward(String cond, PresenceForward f) =>
+      withValues(f.toJson(cond));
 }
 
-/// Dettaglio del proprio interno (`extension/get`), in sola lettura.
-/// Il PIN della casella (`vm_pin`) arriva nella risposta ma non viene tenuto.
-class PbxExtensionDetail {
-  const PbxExtensionDetail({
-    required this.presence,
-    this.customPresence = '',
-    this.presences = const [],
-    this.ringTimeout,
-    this.ringMobile = false,
-    this.mobileNumber = '',
-    this.acceptRingGroup = false,
-    this.vmEnabled = false,
-    this.vmPinAuth = false,
-    this.vmNotification = '',
-    this.vmAfterNotification = '',
-    this.vmPlayDatetime = false,
-    this.vmGreeting = '',
-  });
+String _s(Map<String, dynamic> m, String k) => '${m[k] ?? ''}';
 
-  final String presence;
-  final String customPresence;
-  final List<PresenceSetting> presences;
-  final int? ringTimeout;
-  final bool ringMobile;
-  final String mobileNumber;
-  final bool acceptRingGroup;
-  final bool vmEnabled;
-  final bool vmPinAuth;
-  final String vmNotification;
-  final String vmAfterNotification;
-  final bool vmPlayDatetime;
-  final String vmGreeting;
+/// Valore con il tipo che il PBX ha usato per quel campo: `"0"` dove si
+/// aspetta `0` dà errcode 40002 (verificato sul pilota).
+Object _typed(Object v, Object? like) => switch (like) {
+  int() => v is int ? v : int.tryParse('$v') ?? v,
+  String() => '$v',
+  _ => v,
+};
+bool _flag(Map<String, dynamic> m, String k) => _s(m, k) == '1';
+
+/// Dettaglio del proprio interno (`extension/get`). Tiene la risposta del PBX
+/// senza i segreti (password, PIN: [_secret]); le modifiche sono copie
+/// ([withValues], [withPresence]) e [changesFrom] dà solo i campi utente
+/// ammessi in scrittura ([YeastarApi.ownWritable]).
+class PbxExtensionDetail {
+  PbxExtensionDetail._(this._j);
+  final Map<String, dynamic> _j;
+
+  /// Campi che non si tengono nemmeno in memoria o in cache (`vm_pin`,
+  /// `reg_password`…); restano gli interruttori `enb_…` (es. `enb_vm_pin`).
+  static final _secret = RegExp(
+    r'^(?!enb_).*(^|_)(pin|password|secret|token)$',
+    caseSensitive: false,
+  );
+
+  static PbxExtensionDetail parse(Map<String, dynamic> j) =>
+      PbxExtensionDetail._(_clean(j) as Map<String, dynamic>);
+
+  static Object? _clean(Object? v) {
+    if (v is Map) {
+      return <String, dynamic>{
+        for (final e in v.entries)
+          if (!_secret.hasMatch('${e.key}')) '${e.key}': _clean(e.value),
+      };
+    }
+    if (v is List) return [for (final x in v) _clean(x)];
+    return v;
+  }
+
+  /// Forma letta da [parse] (cache su disco, cifrata).
+  Map<String, dynamic> toJson() => _j;
+
+  int? get id => int.tryParse(_s(_j, 'id'));
+  String field(String k) => _s(_j, k);
+  bool flag(String k) => _flag(_j, k);
+
+  String get presence => field('presence_status');
+  String get customPresence => field('custom_presence_status');
+
+  List<PresenceSetting> get presences => [
+    for (final p
+        in (_j['presence_list'] as List? ?? const [])
+            .whereType<Map<String, dynamic>>())
+      PresenceSetting(p),
+  ];
 
   PresenceSetting? settingOf(String status) =>
       presences.where((p) => p.status == status).firstOrNull;
 
-  PbxExtensionDetail withPresence(String p) => PbxExtensionDetail(
-    presence: p,
-    customPresence: customPresence,
-    presences: presences,
-    ringTimeout: ringTimeout,
-    ringMobile: ringMobile,
-    mobileNumber: mobileNumber,
-    acceptRingGroup: acceptRingGroup,
-    vmEnabled: vmEnabled,
-    vmPinAuth: vmPinAuth,
-    vmNotification: vmNotification,
-    vmAfterNotification: vmAfterNotification,
-    vmPlayDatetime: vmPlayDatetime,
-    vmGreeting: vmGreeting,
-  );
+  PbxExtensionDetail withValues(Map<String, Object> changes) =>
+      PbxExtensionDetail._({..._j, ...changes});
 
-  /// Forma di `extension/get` letta da [parse] (cache su disco).
-  Map<String, dynamic> toJson() {
-    String flag(bool b) => b ? '1' : '0';
-    return {
-      'presence_status': presence,
-      'custom_presence_status': customPresence,
-      'presence_list': [
-        for (final p in presences)
-          {
-            'status': p.status,
-            for (final MapEntry(key: k, value: f) in p.forwards.entries) ...{
-              'enb_${k}_forward': flag(f.enabled),
-              '${k}_forward_dest': f.dest,
-              '${k}_forward_value': f.value,
-              '${k}_forward_num': f.number,
-            },
-          },
-      ],
-      'ring_timeout': ringTimeout ?? '',
-      'enb_ring_mobile': flag(ringMobile),
-      'mobile_number': mobileNumber,
-      'enb_accept_call_from_rg': flag(acceptRingGroup),
-      'enb_vm': flag(vmEnabled),
-      'enb_vm_pin': flag(vmPinAuth),
-      'new_vm_notification': vmNotification,
-      'vm_after_notification': vmAfterNotification,
-      'enb_vm_play_datetime': flag(vmPlayDatetime),
-      'vm_greeting': vmGreeting,
-    };
-  }
+  PbxExtensionDetail withPresence(String p) =>
+      withValues({'presence_status': p});
 
-  static PbxExtensionDetail parse(Map<String, dynamic> j) {
-    String str(Map<String, dynamic> m, String k) => '${m[k] ?? ''}';
-    bool flag(Map<String, dynamic> m, String k) => str(m, k) == '1';
-    return PbxExtensionDetail(
-      presence: str(j, 'presence_status'),
-      customPresence: str(j, 'custom_presence_status'),
-      presences: [
-        for (final p
-            in (j['presence_list'] as List? ?? const [])
-                .whereType<Map<String, dynamic>>())
-          PresenceSetting(str(p, 'status'), {
-            for (final k in PresenceSetting.conditions)
-              k: PresenceForward(
-                enabled: flag(p, 'enb_${k}_forward'),
-                dest: str(p, '${k}_forward_dest'),
-                value: str(p, '${k}_forward_value'),
-                number: str(p, '${k}_forward_num'),
-              ),
-          }),
-      ],
-      ringTimeout: int.tryParse(str(j, 'ring_timeout')),
-      ringMobile: flag(j, 'enb_ring_mobile'),
-      mobileNumber: str(j, 'mobile_number'),
-      acceptRingGroup: flag(j, 'enb_accept_call_from_rg'),
-      vmEnabled: flag(j, 'enb_vm'),
-      vmPinAuth: flag(j, 'enb_vm_pin'),
-      vmNotification: str(j, 'new_vm_notification'),
-      vmAfterNotification: str(j, 'vm_after_notification'),
-      vmPlayDatetime: flag(j, 'enb_vm_play_datetime'),
-      vmGreeting: str(j, 'vm_greeting'),
-    );
+  PbxExtensionDetail withSetting(PresenceSetting s) => PbxExtensionDetail._({
+    ..._j,
+    'presence_list': [
+      for (final p in presences) p.status == s.status ? s.raw : p.raw,
+    ],
+  });
+
+  /// Campi cambiati rispetto a [old], solo quelli scrivibili; per
+  /// `presence_list` solo le presenze cambiate, con i loro campi scrivibili.
+  Map<String, Object> changesFrom(PbxExtensionDetail old) {
+    final out = <String, Object>{};
+    for (final k in YeastarApi.ownWritable) {
+      final v = _j[k];
+      if (v != null && '$v' != '${old._j[k]}') out[k] = _typed(v, old._j[k]);
+    }
+    final list = <Map<String, Object>>[];
+    for (final p in presences) {
+      final before = old.settingOf(p.status)?.raw ?? const {};
+      final writable = {
+        for (final e in p.raw.entries)
+          if (YeastarApi.presenceWritable(e.key) && e.value != null)
+            e.key: _typed(e.value as Object, before[e.key]),
+      };
+      // Presenza cambiata: si manda intera (campi scrivibili), così il PBX
+      // non deve completare un elemento parziale della lista.
+      if (writable.entries.any((e) => '${e.value}' != '${before[e.key]}')) {
+        list.add({'status': p.status, ...writable});
+      }
+    }
+    if (list.isNotEmpty) out['presence_list'] = list;
+    return out;
   }
 }
 
@@ -567,6 +594,61 @@ class YeastarApi {
     );
     final d = j['data'];
     return PbxExtensionDetail.parse(d is Map<String, dynamic> ? d : j);
+  }
+
+  /// Campi dell'interno che DrinPhone può cambiare, solo sul **proprio**
+  /// interno (DECISIONS "Scrittura sul proprio interno"): impostazioni da
+  /// utente come in Linkus. Tutto il resto (password, PIN, trasporto, permessi
+  /// di uscita, ruolo, Linkus, DOD…) resta solo in lettura.
+  static const ownWritable = {
+    'presence_status',
+    'presence_office_time_switch',
+    'presence_break_time_switch',
+    'presence_holiday_switch',
+    'presence_other_time_switch',
+    'enb_vm',
+    'enb_vm_pin',
+    'new_vm_notification',
+    'vm_after_notification',
+    'enb_vm_play_datetime',
+    'vm_new_email_notify',
+    'vm_email_with_audio',
+    'vm_play_time_format',
+    'vm_greeting',
+    'vm_lang',
+    'user_lang',
+    'enb_all_busy_mode_for_endpoints',
+    'enb_all_reject_mode_for_endpoints',
+  };
+
+  static final _presenceField = RegExp(
+    r'^(status|ring_timeout|enb_ring_mobile|mobile_call_confirm|'
+    r'enb_accept_call_from_rg|vm_greeting|'
+    r'enb_(in|ex)_(always|no_answer|busy)_forward|'
+    r'(in|ex)_(always|no_answer|busy)_forward_(dest|value|num|prefix|call_confirm))$',
+  );
+
+  /// Campo di un elemento di `presence_list` scrivibile.
+  static bool presenceWritable(String k) => _presenceField.hasMatch(k);
+
+  /// `extension/update` sul proprio interno [id] con i soli campi ammessi;
+  /// qualunque altro campo è un errore di programmazione e non parte.
+  Future<void> updateOwnExtension(int id, Map<String, Object> changes) async {
+    for (final e in changes.entries) {
+      if (e.key == 'presence_list') {
+        for (final item in e.value as List) {
+          final bad = (item as Map).keys.where((k) => !presenceWritable('$k'));
+          if (bad.isNotEmpty) throw ArgumentError('campo non ammesso: $bad');
+        }
+      } else if (!ownWritable.contains(e.key)) {
+        throw ArgumentError('campo non ammesso: ${e.key}');
+      }
+    }
+    if (changes.isEmpty) return;
+    await _call('extension/update', 'POST', _uri('extension/update'), {
+      'id': id,
+      ...changes,
+    });
   }
 
   /// Messaggi della casella vocale di un interno (più recenti per primi).

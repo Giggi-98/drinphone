@@ -4,6 +4,7 @@ import '../../app/l10n.dart';
 import '../../app/phone_controller.dart';
 import '../../app/theme.dart';
 import '../../core/pbx/pbx_connection.dart';
+import '../../core/pbx/pbx_sync.dart';
 import '../../core/security/api_credential_store.dart';
 
 /// Connessione API al PBX dell'account (al più una), usata in Preferenze >
@@ -148,6 +149,7 @@ class _ConnectionTile extends StatelessWidget {
               style: TextStyle(fontSize: 12, color: c.muted),
             ),
           ),
+          _SyncSettings(phone: phone, conn: conn),
           const SizedBox(height: 6),
           Wrap(
             spacing: 8,
@@ -179,6 +181,103 @@ class _ConnectionTile extends StatelessWidget {
               ),
             ],
           ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Cosa leggere dalle API e ogni quanto: una riga per voce di [PbxSync], con
+/// le frequenze a radio button (e "Spenta" se la voce si può spegnere).
+class _SyncSettings extends StatelessWidget {
+  const _SyncSettings({required this.phone, required this.conn});
+  final PhoneController phone;
+  final PbxConnection conn;
+
+  String _at(DateTime? t) {
+    if (t == null) return tr('non ancora letta');
+    String two(int n) => n.toString().padLeft(2, '0');
+    return tr('letta alle {t}', {'t': '${two(t.hour)}:${two(t.minute)}'});
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.drin;
+    final summary = [
+      for (final s in PbxSync.values)
+        '${s.label} ${syncEveryLabel(s.of(conn.syncSettings)).toLowerCase()}',
+    ].join(' · ');
+    return Theme(
+      // Niente linee sopra e sotto l'ExpansionTile.
+      data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+      child: ExpansionTile(
+        tilePadding: EdgeInsets.zero,
+        childrenPadding: const EdgeInsets.only(left: 40, bottom: 8),
+        leading: Icon(Icons.tune_rounded, color: c.muted),
+        title: Text(tr('Cosa sincronizzare e ogni quanto')),
+        subtitle: Text(
+          summary,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(fontSize: 12, color: c.muted),
+        ),
+        expandedCrossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          for (final s in PbxSync.values)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    s.label,
+                    style: TextStyle(
+                      fontWeight: FontWeight.w600,
+                      color: c.text,
+                    ),
+                  ),
+                  Text(
+                    '${s.help} · ${_at(conn.lastRead(s))}',
+                    style: TextStyle(fontSize: 12, color: c.muted),
+                  ),
+                  RadioGroup<Duration>(
+                    groupValue: s.of(conn.syncSettings),
+                    onChanged: (d) {
+                      if (d != null) phone.setSyncEvery(conn, s, d);
+                    },
+                    child: Wrap(
+                      spacing: 4,
+                      children: [
+                        for (final d in [
+                          if (s.canDisable) Duration.zero,
+                          ...s.choices,
+                        ])
+                          InkWell(
+                            borderRadius: BorderRadius.circular(8),
+                            onTap: () => phone.setSyncEvery(conn, s, d),
+                            child: Padding(
+                              padding: const EdgeInsets.only(right: 8),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Radio<Duration>(value: d),
+                                  Text(
+                                    syncEveryLabel(d),
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      color: c.text,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
         ],
       ),
     );

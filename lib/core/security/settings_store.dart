@@ -22,12 +22,21 @@ class Extension {
 /// Connessione API a un PBX: solo dati non segreti. Le credenziali stanno nel
 /// file DPAPI della connessione (ApiCredentialStore).
 class PbxConnectionInfo {
-  const PbxConnectionInfo(this.id, this.label, {this.realtime = false});
+  const PbxConnectionInfo(
+    this.id,
+    this.label, {
+    this.realtime = false,
+    this.sync = const {},
+  });
   final String id;
   final String label;
 
   /// Eventi in tempo reale via WebSocket (richiede i monitor attivi sul PBX).
   final bool realtime;
+
+  /// Frequenze scelte per [PbxSync] (nome → secondi, 0 = spenta); le voci
+  /// assenti valgono il predefinito.
+  final Map<String, int> sync;
 }
 
 /// Tipo di profilo (DECISIONS "Profili"): decide quali sezioni si vedono.
@@ -329,6 +338,10 @@ class SettingsStore {
           (c as Map<String, dynamic>)['id'] as String,
           c['label'] as String? ?? 'PBX',
           realtime: c['realtime'] as bool? ?? false,
+          sync: {
+            for (final e in (c['sync'] as Map? ?? const {}).entries)
+              if (e.value is int) e.key as String: e.value as int,
+          },
         ),
     ];
     final kind = j['kind'] as String?;
@@ -454,7 +467,12 @@ class SettingsStore {
     'seenVoicemail': p.seenVoicemail,
     'pbx': [
       for (final c in p.pbx)
-        {'id': c.id, 'label': c.label, 'realtime': c.realtime},
+        {
+          'id': c.id,
+          'label': c.label,
+          'realtime': c.realtime,
+          if (c.sync.isNotEmpty) 'sync': c.sync,
+        },
     ],
   };
 

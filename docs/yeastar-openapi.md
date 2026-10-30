@@ -103,6 +103,13 @@ multi-tenant, retention dei dati personali (rubrica, numeri).
 `company_contact/list` (4468 contatti, paginati da 500), `del_token`.
 Il client rilegge interni e reparti ogni 60 s (presenza); WebSocket eventi non usato.
 
+## 7a. Verificato sul PBX pilota il 2026-10-30
+`extension/get` (90 campi): squillo, cellulare, gruppi di squillo e messaggio di
+benvenuto stanno **in ogni elemento di `presence_list`**, non sull'interno; valori
+interi (non stringhe). `extension/update` con `id` + i soli campi cambiati
+(anche un elemento di `presence_list` intero) cambia solo quelli; un valore
+`"0"` dove il PBX usa `0` → `errcode 40002 PARAMETER ERROR`.
+
 ## 7b. Ancora da verificare sul PBX pilota
 Edition e firmware; piano; API attivabile; `get_token` da IP ammesso; formato
 reale di `extension/list`, `organization/list`, `company_contact/list`; payload

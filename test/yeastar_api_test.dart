@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:drinphone/app/phone_controller.dart';
 import 'package:drinphone/core/pbx/pbx_cache.dart';
 import 'package:drinphone/core/pbx/pbx_connection.dart';
+import 'package:drinphone/core/pbx/pbx_sync.dart';
 import 'package:drinphone/core/pbx/yeastar_api.dart';
 import 'package:drinphone/core/security/api_credential_store.dart';
 import 'package:drinphone/core/security/settings_store.dart';
@@ -143,16 +144,21 @@ class FakePbx {
               'number': '305',
               'presence_status': 'available',
               'custom_presence_status': 'Ufficio',
-              'ring_timeout': 60,
-              'enb_ring_mobile': 0,
-              'enb_accept_call_from_rg': 1,
               'enb_vm': 1,
               'enb_vm_pin': 1,
               'vm_pin': '6666',
               'new_vm_notification': 'with_attach',
               'vm_after_notification': 'mark_read',
+              'reg_password': 'segreta',
+              'enb_all_busy_mode_for_endpoints': 1,
               'presence_list': [
-                {'status': 'available', 'enb_in_always_forward': 0},
+                {
+                  'status': 'available',
+                  'enb_in_always_forward': 0,
+                  'ring_timeout': 60,
+                  'enb_ring_mobile': 0,
+                  'enb_accept_call_from_rg': 1,
+                },
                 {
                   'status': 'off_work',
                   'enb_ex_always_forward': 1,
@@ -164,6 +170,8 @@ class FakePbx {
               ],
             },
           };
+        case '/openapi/v1.0/extension/update':
+          reply = {'errcode': 0, 'errmsg': 'SUCCESS'};
         case '/openapi/v1.0/del_token':
           reply = {'errcode': 0, 'errmsg': 'SUCCESS'};
         default:
@@ -294,6 +302,7 @@ void main() {
     FakeSipEngine engine,
     Map<String, String> pbxUrls, {
     PbxCache Function(String id)? cacheFor,
+    Map<String, int> sync = const {},
   }) async {
     FlutterSecureStorage.setMockInitialValues({});
     final sep = Platform.pathSeparator;
@@ -314,7 +323,10 @@ void main() {
           Extension('Manuale', '400'),
           Extension('Doppione', '301'),
         ],
-        pbx: [for (final id in pbxUrls.keys) PbxConnectionInfo(id, 'PBX $id')],
+        pbx: [
+          for (final id in pbxUrls.keys)
+            PbxConnectionInfo(id, 'PBX $id', sync: sync),
+        ],
       ),
     );
     final phone = PhoneController(
@@ -358,36 +370,78 @@ void main() {
     await phone.shutdown();
   }, skip: !Platform.isWindows);
 
-  test('accesso con cache fresca: rubrica non riscaricata, sì con Sincronizza ora', () async {
-    final sep = Platform.pathSeparator;
-    final path = '${tmp.path}${sep}cache-a.dpapi';
-    PbxCache cacheFor(String id) => PbxCache(path);
-    int contactReads() => pbx.requests
-        .where((r) => r.uri.path.endsWith('company_contact/list'))
-        .length;
-    final base = contactReads();
-    var phone = await controllerWith(FakeSipEngine(), {
-      'a': pbx.baseUrl,
-    }, cacheFor: cacheFor);
-    for (var i = 0; i < 50 && !File(path).existsSync(); i++) {
-      await Future<void>.delayed(const Duration(milliseconds: 20));
-    }
-    await phone.shutdown();
-    expect(contactReads() - base, 1);
+  test(
+    'accesso con cache fresca: rubrica non riscaricata, sì con Sincronizza ora',
+    () async {
+      final sep = Platform.pathSeparator;
+      final path = '${tmp.path}${sep}cache-a.dpapi';
+      PbxCache cacheFor(String id) => PbxCache(path);
+      int contactReads() => pbx.requests
+          .where((r) => r.uri.path.endsWith('company_contact/list'))
+          .length;
+      final base = contactReads();
+      var phone = await controllerWith(FakeSipEngine(), {
+        'a': pbx.baseUrl,
+      }, cacheFor: cacheFor);
+      for (var i = 0; i < 50 && !File(path).existsSync(); i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+      }
+      await phone.shutdown();
+      expect(contactReads() - base, 1);
 
-    phone = await controllerWith(FakeSipEngine(), {
-      'a': pbx.baseUrl,
-    }, cacheFor: cacheFor);
+      phone = await controllerWith(FakeSipEngine(), {
+        'a': pbx.baseUrl,
+      }, cacheFor: cacheFor);
+      final conn = phone.connections.single;
+      expect(conn.ok, isTrue);
+      expect(conn.contacts.single.name, 'Mario Rossi');
+      expect(contactReads() - base, 1);
+
+      await phone.resync();
+      expect(contactReads() - base, 2);
+      await phone.shutdown();
+      await cacheFor('a').saved;
+    },
+    skip: !Platform.isWindows,
+  );
+
+  test('sincronizzazione: voci spente mai lette, scelte salvate', () async {
+    int reads(String path) =>
+        pbx.requests.where((r) => r.uri.path.endsWith(path)).length;
+    final contacts0 = reads('company_contact/list');
+    final vm0 = reads('vm/get');
+    final ext0 = reads('extension/list');
+    final phone = await controllerWith(
+      FakeSipEngine(),
+      {'a': pbx.baseUrl},
+      sync: {'contacts': 0, 'voicemail': 0, 'extensions': 0, 'bogus': 5},
+    );
     final conn = phone.connections.single;
     expect(conn.ok, isTrue);
-    expect(conn.contacts.single.name, 'Mario Rossi');
-    expect(contactReads() - base, 1);
+    expect(reads('company_contact/list') - contacts0, 0);
+    expect(reads('vm/get') - vm0, 0);
+    // Gli interni non si spengono: 0 = predefinito.
+    expect(reads('extension/list') - ext0, greaterThan(0));
+    expect(conn.every(PbxSync.extensions), PbxSync.extensions.byDefault);
+    expect(conn.every(PbxSync.orgs), PbxSync.orgs.byDefault);
 
+    // "Sincronizza ora" rispetta le voci spente.
     await phone.resync();
-    expect(contactReads() - base, 2);
+    expect(reads('company_contact/list') - contacts0, 0);
+
+    // Riaccesa: letta subito e salvata in settings.json.
+    await phone.setSyncEvery(conn, PbxSync.contacts, const Duration(hours: 24));
+    for (var i = 0; i < 50 && conn.syncing; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+    }
+    expect(reads('company_contact/list') - contacts0, 1);
+    final saved = await SettingsStore(
+      '${tmp.path}${Platform.pathSeparator}s.json',
+    ).load();
+    expect(saved.pbx.single.sync['contacts'], 86400);
+    expect(saved.pbx.single.sync['voicemail'], 0);
     await phone.shutdown();
-    await cacheFor('a').saved;
-  }, skip: !Platform.isWindows);
+  });
 
   test(
     'controller: interni dal PBX uniti ai manuali, senza il proprio, in BLF',
@@ -634,26 +688,91 @@ void main() {
       final d = phone.ownDetail!;
       expect(d.presence, 'available');
       expect(d.customPresence, 'Ufficio');
-      expect(d.ringTimeout, 60);
-      expect(d.acceptRingGroup, isTrue);
-      expect(d.vmPinAuth, isTrue);
+      expect(d.id, 15);
+      final av = d.settingOf('available')!;
+      expect(av.ringTimeout, 60);
+      expect(av.acceptRingGroup, isTrue);
+      expect(d.flag('enb_vm_pin'), isTrue);
       final off = d.settingOf('off_work')!;
       expect(off.forwards['ex_always']!.enabled, isTrue);
       expect(off.forwards['ex_always']!.dest, 'extension');
       expect(off.forwards['ex_always']!.value, '11');
       expect(off.forwards['in_busy']!.dest, 'ext_vm');
       expect(off.forwards['in_always']!.enabled, isFalse);
-      // Nessun campo del dettaglio contiene il PIN.
-      expect([
-        d.vmGreeting,
-        d.vmNotification,
-        d.customPresence,
-        d.mobileNumber,
-      ], isNot(contains('6666')));
+      // PIN e password non restano nemmeno in memoria (né in cache).
+      expect(jsonEncode(d.toJson()), isNot(contains('6666')));
+      expect(jsonEncode(d.toJson()), isNot(contains('segreta')));
+      expect(d.toJson().containsKey('enb_vm_pin'), isTrue);
       await phone.shutdown();
     },
     skip: !Platform.isWindows,
   );
+
+  test('proprio interno: si scrivono solo i campi utente cambiati, con i tipi del PBX', () async {
+    final phone = await controllerWith(FakeSipEngine(), {'a': pbx.baseUrl});
+    final d = phone.ownDetail!;
+    final av = d.settingOf('available')!;
+    final edited = d
+        .withSetting(
+          av
+              .withValues({'ring_timeout': '30'})
+              .withForward(
+                'ex_busy',
+                const PresenceForward(
+                  enabled: true,
+                  dest: 'external_num',
+                  number: '+39021234',
+                ),
+              ),
+        )
+        .withValues({'enb_all_busy_mode_for_endpoints': '0'});
+    final changes = edited.changesFrom(d);
+    expect(changes.keys, {'enb_all_busy_mode_for_endpoints', 'presence_list'});
+    // Tipo originale del PBX: "0"/"30" -> 0/30 (errcode 40002 altrimenti).
+    expect(changes['enb_all_busy_mode_for_endpoints'], 0);
+    final item = (changes['presence_list'] as List).single as Map;
+    expect(item['status'], 'available');
+    expect(item['ring_timeout'], 30);
+    expect(item['ex_busy_forward_num'], '+39021234');
+    // Solo la presenza cambiata; off_work non parte.
+    expect(jsonEncode(changes), isNot(contains('off_work')));
+
+    final before = pbx.bodies.length;
+    await phone.updateOwnExtension(edited);
+    final sent = pbx.requests
+        .skip(before)
+        .toList()
+        .indexWhere((r) => r.uri.path.endsWith('extension/update'));
+    final body = jsonDecode(pbx.bodies[before + sent]) as Map<String, dynamic>;
+    expect(body['id'], 15);
+    expect(body.keys, {
+      'id',
+      'enb_all_busy_mode_for_endpoints',
+      'presence_list',
+    });
+
+    // Campi da amministratore: rifiutati prima di partire.
+    final api = YeastarApi(
+      ApiCredentials(
+        baseUrl: pbx.baseUrl,
+        clientId: _id,
+        clientSecret: _secret,
+      ),
+    );
+    await expectLater(
+      api.updateOwnExtension(15, {'reg_password': 'x'}),
+      throwsArgumentError,
+    );
+    await expectLater(
+      api.updateOwnExtension(15, {
+        'presence_list': [
+          {'status': 'available', 'outbound_route_permission': 1},
+        ],
+      }),
+      throwsArgumentError,
+    );
+    await phone.shutdown();
+  }, skip: !Platform.isWindows);
 
   test('live calls: BYE con canale cambiato chiude; call/query riallinea e dà il tipo', () async {
     final phone = await controllerWith(FakeSipEngine(), {'a': pbx.baseUrl});

@@ -11,6 +11,7 @@ import '../core/platform/video_surface.dart';
 import '../core/update/updater.dart';
 import '../core/video/openh264.dart';
 import '../core/pbx/pbx_connection.dart';
+import '../core/pbx/pbx_sync.dart';
 import '../core/pbx/yeastar_api.dart';
 import '../core/security/api_credential_store.dart';
 import '../core/security/settings_store.dart';
@@ -299,7 +300,11 @@ class PhoneController extends ChangeNotifier {
       await _store.save(settings);
     }
     for (final i in infos) {
-      connections.add(_newConnection(i.id, i.label)..realtime = i.realtime);
+      connections.add(
+        _newConnection(i.id, i.label)
+          ..realtime = i.realtime
+          ..syncSettings = Map.of(i.sync),
+      );
     }
     _assignVoicemail();
     // Sincronizzazione in sottofondo: le sezioni partono dalla cache.
@@ -401,6 +406,14 @@ class PhoneController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Frequenza di una voce di sincronizzazione (salvata; [Duration.zero] =
+  /// spenta). Si applica dal prossimo giro, subito se la voce era spenta.
+  Future<void> setSyncEvery(PbxConnection c, PbxSync s, Duration every) async {
+    c.setSyncEvery(s, every);
+    await _saveConnectionList();
+    notifyListeners();
+  }
+
   Future<void> removeConnection(PbxConnection c) async {
     await c.forget();
     connections.remove(c);
@@ -414,7 +427,12 @@ class PhoneController extends ChangeNotifier {
     settings = settings.copyWith(
       pbx: [
         for (final c in connections)
-          PbxConnectionInfo(c.id, c.label, realtime: c.realtime),
+          PbxConnectionInfo(
+            c.id,
+            c.label,
+            realtime: c.realtime,
+            sync: c.syncSettings,
+          ),
       ],
     );
     await _store.save(settings);
@@ -961,6 +979,14 @@ class PhoneController extends ChangeNotifier {
   }
 
   Future<void> refreshOwnDetail() async => primaryConnection?.refreshDetail();
+
+  /// Modifiche al proprio interno sul PBX (Preferenze > Presenza / Casella).
+  Future<void> updateOwnExtension(PbxExtensionDetail edited) async {
+    final c = primaryConnection;
+    if (c == null) throw StateError('nessun PBX collegato');
+    await c.updateOwnExtension(edited);
+    notifyListeners();
+  }
 
   /// Ascolto messaggi: codice dell'account in uso, altrimenti del profilo.
   Future<void> callVoicemail() {

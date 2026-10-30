@@ -23,6 +23,7 @@ assets/brand/                       logo "Drin!" bianco monocromatico (1x, 2.0x)
 lib/core/app_paths.dart             cartelle dati: %APPDATA%\Econnet\DrinPhone
 lib/core/install_id.dart            ID casuale dell'installazione (supporto, solo locale)
 lib/core/sip/sip_engine.dart        porta astratta SipEngine + tipi neutri
+lib/core/pbx/pbx_sync.dart          registro delle voci sincronizzabili dalle API PBX
 lib/core/sip/linphone_ffi_engine.dart  unico adattatore liblinphone (FFI, API C)
 lib/core/security/settings_store.dart  impostazioni JSON + password in storage sicuro
 lib/features/shell/home_screen.dart barra sezioni, barra composizione, griglia interni
@@ -87,18 +88,30 @@ spikes/f0a/                         spike F0-A (non prodotto)
   Inizio = prima volta vista, durata da prima risposta. Vista `features/live/`:
   tabelle "Entranti e interne" / "Uscenti", scelta del PBX, colonna BLF a gruppi
   (Preferiti + reparti, attivi/totale); solo lettura, nessun controllo di chiamata.
-- **Presenza in profondità** (`IMPLEMENTATO`, verificato sul pilota) — `extension/get`
-  del proprio interno (cadenza dei reparti, su 30022, su "Rileggi"): presenza e testo,
-  per ognuna delle 6 presenze gli inoltri interni/esterni (sempre, nessuna risposta,
-  occupato → destinazione), timeout squillo, cellulare in contemporanea, gruppi di
-  squillo, impostazioni casella vocale. **Sola lettura** (DECISIONS 2026-10-28 bis):
-  `vm_pin` arriva nella risposta e viene scartato nel parse. Preferenze > Presenza e
-  Casella vocale; chip presenza in alto.
+- **Proprio interno in profondità** (`IMPLEMENTATO`; lettura e scrittura verificate
+  sul pilota via API, effetto sulle chiamate `DA VALIDARE`) — DECISIONS "Scrittura
+  sul proprio interno". `extension/get` del proprio interno (`PbxSync.ownDetail`, su
+  30022, su "Rileggi") → `PbxExtensionDetail`: la risposta senza segreti
+  (`…pin`/`…password`, tranne gli `enb_…`), letture per campo e `PresenceSetting`
+  per presenza (inoltri, squillo, cellulare, gruppi, benvenuto: su P-Series stanno
+  in `presence_list`). Modifiche come copie (`withValues`/`withSetting`), `changesFrom`
+  = solo campi di `YeastarApi.ownWritable` / `presenceWritable`, presenze cambiate
+  intere, tipi del PBX. `PbxConnection.updateOwnExtension` → `extension/update` con
+  l'id del proprio interno, poi rilettura. UI `features/preferences/own_extension.dart`
+  (part di `preferences_view.dart`): bozza + "Salva sul PBX"; Presenza (stato
+  attuale, inoltri, squillo, cambio per orario, più dispositivi, info in sola
+  lettura), Casella vocale (impostazioni sul PBX). Chip presenza in alto.
 - **Stato registrazione** — pillola in alto a sinistra (pallino e testo; dettagli nel
   tooltip), accanto alla presenza. Una sola registrazione: niente "Chiama con".
 - **Dispositivi audio** (`IMPLEMENTATO`, `DA VALIDARE`) — `linphone_core_get_sound_devices`
   + set capture/playback/ringer; scelta in Preferenze > Audio, salvata in
   `settings.json` e riapplicata all'avvio.
+- **Sincronizzazione PBX configurabile** (`IMPLEMENTATO`, `DA VALIDARE` sul pilota) —
+  DECISIONS "Sincronizzazione PBX configurabile". `PbxSync` (`core/pbx/pbx_sync.dart`):
+  extensions, voicemail, orgs, ownDetail, featureCodes, contacts, con scelte e
+  predefinito; `PbxConnectionInfo.sync` / `PbxConnection.syncSettings`; `sync()`
+  legge le voci accese e scadute (`_due`), il timer punta alla prima scadenza.
+  UI: `_SyncSettings` in `features/account/api_dialog.dart` (radio button).
 - **Connessioni PBX** (`IMPLEMENTATO`) — `PbxConnection` (`lib/core/pbx/pbx_connection.dart`),
   una per PBX, elenco id/etichetta in `settings.json`, credenziali in
   `yeastar-api[-<id>].dpapi` (`default` = file della versione singola, migrato).
