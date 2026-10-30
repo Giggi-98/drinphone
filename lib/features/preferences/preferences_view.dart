@@ -7,6 +7,7 @@ import '../../app/l10n.dart';
 import '../../app/phone_controller.dart';
 import '../../app/theme.dart';
 import '../../core/pbx/yeastar_api.dart';
+import '../../core/platform/autostart.dart';
 import '../../core/video/openh264.dart';
 import '../../core/sip/sip_engine.dart';
 import '../account/api_dialog.dart';
@@ -72,7 +73,7 @@ class _PreferencesViewState extends State<PreferencesView> {
           children: [
             AudioSettings(phone: phone),
             _AdvancedTab(phone: phone),
-            const _FeaturesTab(),
+            _FeaturesTab(phone: phone),
           ],
         ),
       ),
@@ -1010,12 +1011,22 @@ class _AudioSettingsState extends State<AudioSettings> {
 
 // ------------------------------------------------------------ Funzionalità
 
-class _FeaturesTab extends StatelessWidget {
-  const _FeaturesTab();
+class _FeaturesTab extends StatefulWidget {
+  const _FeaturesTab({required this.phone});
+  final PhoneController phone;
+
+  @override
+  State<_FeaturesTab> createState() => _FeaturesTabState();
+}
+
+class _FeaturesTabState extends State<_FeaturesTab> {
+  // Letto dal registro di Windows (HKCU...Run), la fonte vera.
+  bool _autostart = Autostart.enabled;
 
   @override
   Widget build(BuildContext context) {
     final c = context.drin;
+    final p = widget.phone;
     Widget row(IconData icon, String title, String why) => ListTile(
       contentPadding: EdgeInsets.zero,
       leading: Icon(icon, color: c.muted),
@@ -1042,11 +1053,37 @@ class _FeaturesTab extends StatelessWidget {
             tr('Risposta automatica'),
             tr('Lato app: per interfono e citofoni'),
           ),
-          row(
-            Icons.rocket_launch_outlined,
-            tr('Avvio con Windows'),
-            tr('Lato app: con il pacchetto di installazione'),
-          ),
+          if (Platform.isWindows) ...[
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              secondary: Icon(Icons.rocket_launch_outlined, color: c.muted),
+              title: Text(tr('Avvio con Windows')),
+              subtitle: Text(
+                tr('Parte all’accesso a Windows, nella barra di sistema.'),
+              ),
+              value: _autostart,
+              onChanged: (v) {
+                Autostart.set(v);
+                setState(() => _autostart = Autostart.enabled);
+              },
+            ),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              secondary: Icon(Icons.minimize_rounded, color: c.muted),
+              title: Text(tr('Resta nella barra di sistema')),
+              subtitle: Text(
+                tr(
+                  'Chiudendo la finestra le chiamate continuano ad arrivare; '
+                  'per uscire: Esci dall’icona vicino all’orologio.',
+                ),
+              ),
+              value: p.settings.closeToTray,
+              onChanged: (v) async {
+                await p.setCloseToTray(v);
+                if (mounted) setState(() {});
+              },
+            ),
+          ],
         ],
       ),
     );

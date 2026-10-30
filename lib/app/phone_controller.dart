@@ -618,6 +618,13 @@ class PhoneController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Chiudendo la finestra l'app resta nella barra di sistema.
+  Future<void> setCloseToTray(bool on) async {
+    settings = settings.copyWith(closeToTray: on);
+    await _store.save(settings);
+    notifyListeners();
+  }
+
   /// Tema (Sistema, Chiaro, Scuro), salvato con le impostazioni.
   Future<void> setThemeMode(ThemeMode mode) async {
     appThemeMode.value = mode;
@@ -680,6 +687,7 @@ class PhoneController extends ChangeNotifier {
         debugLog: settings.debugLog,
         lang: settings.lang,
         theme: settings.theme,
+        closeToTray: settings.closeToTray,
         audio: settings.audio,
         callOptions: settings.callOptions,
         video: settings.video,
@@ -737,6 +745,7 @@ class PhoneController extends ChangeNotifier {
             debugLog: settings.debugLog,
             lang: settings.lang,
             theme: settings.theme,
+            closeToTray: settings.closeToTray,
             audio: settings.audio,
             callOptions: settings.callOptions,
             video: settings.video,

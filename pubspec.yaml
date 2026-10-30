@@ -41,6 +41,9 @@ dependencies:
   crypto: ^3.0.8
   cryptography: ^2.9.0
   mysql_client: 0.0.27
+  tray_manager: 0.5.3
+  local_notifier: 0.1.6
+  win32_registry: 3.0.3
 dev_dependencies:
   flutter_test:
     sdk: flutter

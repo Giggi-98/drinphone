@@ -4,6 +4,7 @@ import '../../app/l10n.dart';
 import '../../app/phone_controller.dart';
 import '../../app/theme.dart';
 import '../../core/update/updater.dart';
+import '../shell/desktop_shell.dart';
 import 'release_notes_dialog.dart';
 
 /// Stato degli aggiornamenti, "Verifica ora" e "Installa e riavvia"
@@ -93,7 +94,10 @@ class UpdatePanel extends StatelessWidget {
                               );
                               return;
                             }
-                            u.install(phone.shutdown);
+                            u.install(() async {
+                              await phone.shutdown();
+                              await DesktopShell.instance?.dispose();
+                            });
                           },
                     icon: const Icon(Icons.system_update_alt_rounded, size: 18),
                     label: Text(tr('Installa e riavvia')),

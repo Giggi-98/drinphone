@@ -1,6 +1,15 @@
 // Traduzioni inglesi. Chiave = testo italiano esatto usato in tr().
 // Una chiave mancante mostra l'italiano: aggiungerla qui.
 const en = <String, String>{
+  // Barra di sistema, notifiche, avvio con Windows.
+  'Parte all’accesso a Windows, nella barra di sistema.': 'Starts when you sign in to Windows, in the system tray.',
+  'Resta nella barra di sistema': 'Keep running in the system tray',
+  'Chiudendo la finestra le chiamate continuano ad arrivare; per uscire: Esci dall’icona vicino all’orologio.': 'Closing the window keeps calls coming in; to quit: Quit from the icon next to the clock.',
+  'Apri DrinPhone': 'Open DrinPhone',
+  'Esci': 'Quit',
+  'Registrazione non riuscita': 'Registration failed',
+  'Videochiamata in arrivo · {n}': 'Incoming video call · {n}',
+  'Chiamata in arrivo · {n}': 'Incoming call · {n}',
   // CDR dal database del PBX (Database Grant).
   'Database CDR': 'CDR database',
   'Collegato · {n} chiamate lette': 'Connected · {n} calls read',

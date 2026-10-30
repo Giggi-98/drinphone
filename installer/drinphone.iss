@@ -56,6 +56,14 @@ Source: "ALPHA.txt"; DestDir: "{app}"; Flags: ignoreversion
 Name: "{group}\{#AppName} {#Channel}"; Filename: "{app}\drinphone.exe"
 Name: "{autodesktop}\{#AppName} {#Channel}"; Filename: "{app}\drinphone.exe"; Tasks: desktopicon
 
+; L'app scrive da sola il valore di avvio con Windows (Preferenze) e il
+; collegamento delle notifiche (local_notifier): si tolgono con l'app.
+[Registry]
+Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: none; ValueName: "DrinPhone"; Flags: uninsdeletevalue dontcreatekey
+
+[UninstallDelete]
+Type: files; Name: "{userprograms}\DrinPhone.lnk"
+
 [Run]
 Filename: "{app}\drinphone.exe"; Description: "{cm:LaunchProgram,{#AppName}}"; Flags: nowait postinstall skipifsilent
 ; Aggiornamento dall'app (installer lanciato con /SILENT): si riapre da sola.

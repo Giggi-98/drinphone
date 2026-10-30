@@ -178,8 +178,15 @@ spikes/f0a/                         spike F0-A (non prodotto)
 - **Ricerca** — il campo in alto filtra la griglia per nome/numero; Invio chiama
   il numero o l'unico interno trovato.
 - **Attenzione chiamata entrante** (Windows) — `WindowAttention` (user32 via FFI):
-  ripristina la finestra, `SetForegroundWindow`, `FlashWindowEx` sulla barra.
-  Nessuna notifica toast (servirebbe un plugin/WinRT).
+  ripristina la finestra, `SetForegroundWindow`, `FlashWindowEx` sulla barra;
+  `show`/`hide`/`inFront` per la barra di sistema.
+- **Barra di sistema e notifiche** (`IMPLEMENTATO` Windows, `DA VALIDARE` dal vivo) —
+  `DesktopShell` (`features/shell/desktop_shell.dart`): icona `tray_manager`
+  (menu Apri/Esci, clic = mostra), toast `local_notifier` per ogni chiamata in
+  arrivo se l'app non è in primo piano (Rispondi/Rifiuta, chiuso a fine
+  squillo). Chiusura finestra = nascosta (`Settings.closeToTray`, default sì);
+  "Esci" dalla barra = shutdown e uscita. Avvio con Windows: `Autostart`
+  (`core/platform/autostart.dart`, `HKCU…Run`, `--autostart` = parte nascosta).
 - **Account** (`IMPLEMENTATO`; logout `DA VALIDARE` sul PBX: un-REGISTER) —
   DECISIONS "Un account vivo alla volta". Nel codice restano `Profile`/`profileId`:
   un profilo = un account, con al più una registrazione (`accounts`) e una
@@ -339,7 +346,9 @@ Flutter 3.47.8 / Dart 3.13.7; `ffi` ^2.2.0; `archive` ^4.5 (bzip2 di OpenH264) e
 `crypto` ^3.0 (SHA-256); ANGLE di Qt 5.15.2 (libEGL/libGLESv2, BSD-3, per il
 video; `tool/fetch_angle.ps1`); `file_selector` ^1.1.0 (scelta del
 file da importare, plugin flutter.dev); `flutter_secure_storage` ^11.2.0
-(Windows: richiede componente VS "C++ ATL"); `mysql_client` 0.0.27 (BSD-3, CDR via Database Grant);
+(Windows: richiede componente VS "C++ ATL"); `mysql_client` 0.0.27 (BSD-3, CDR via Database Grant); `tray_manager` 0.5.3 e
+`local_notifier` 0.1.6 (MIT, barra di sistema e notifiche), `win32_registry` 3.0.3
+(BSD-3, avvio con Windows);
 `cryptography` ^2.9.0 (Ed25519 in Dart
 puro, firma degli aggiornamenti); linphone-sdk-win64 5.5.39 (GPLv3 /
 commerciale, `docs/licenze-e-compliance.md`); font Bricolage Grotesque, Onest e Red Hat Mono

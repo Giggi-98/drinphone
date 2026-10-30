@@ -15,6 +15,7 @@ import 'core/install_id.dart';
 import 'core/contacts/personal_contacts.dart';
 import 'core/pbx/pbx_cache.dart';
 import 'core/video/openh264.dart';
+import 'core/platform/autostart.dart';
 import 'core/platform/window_attention.dart';
 import 'core/security/api_credential_store.dart';
 import 'core/security/cdr_db_store.dart';
@@ -22,9 +23,10 @@ import 'core/security/settings_store.dart';
 import 'core/sip/linphone_ffi_engine.dart';
 import 'core/update/updater.dart';
 import 'app/brand.dart';
+import 'features/shell/desktop_shell.dart';
 import 'features/shell/home_screen.dart';
 
-Future<void> main() async {
+Future<void> main(List<String> args) async {
   WidgetsFlutterBinding.ensureInitialized();
   // Font inclusi nell'app (OFL): licenze nella pagina delle licenze.
   LicenseRegistry.addLicense(() async* {
@@ -72,6 +74,13 @@ Future<void> main() async {
   );
   await phone.init();
   runApp(DrinPhoneApp(phone: phone));
+  // Barra di sistema e notifiche (Windows); avviato con Windows: nascosto.
+  await DesktopShell.start(phone);
+  if (args.contains(Autostart.flag) && phone.settings.closeToTray) {
+    WidgetsBinding.instance.addPostFrameCallback(
+      (_) => WindowAttention.instance.hide(),
+    );
+  }
 }
 
 /// Errori non gestiti in `logs/flutter-errors.log`: in release un errore di

@@ -6,6 +6,7 @@ import '../../app/brand.dart';
 import '../../app/l10n.dart';
 import '../../app/phone_controller.dart';
 import '../../app/theme.dart';
+import '../../core/platform/window_attention.dart';
 import '../../core/security/settings_store.dart';
 import '../../core/sip/sip_engine.dart';
 import '../call/call_window.dart';
@@ -18,6 +19,7 @@ import '../setup/setup_wizard.dart';
 import '../voicemail/voicemail_view.dart';
 import '../update/release_notes_dialog.dart';
 import '../update/update_panel.dart';
+import 'desktop_shell.dart';
 import 'search_box.dart';
 import 'widgets.dart';
 
@@ -58,7 +60,15 @@ class _HomeScreenState extends State<HomeScreen> {
       onResume: () => p.resync(force: false),
       // Chiudendo la finestra: revoca token API, un-REGISTER, flush del log.
       onExitRequested: () async {
+        // Chiudendo la finestra l'app resta nella barra di sistema (se
+        // scelto); "Esci" dalla barra termina davvero.
+        final shell = DesktopShell.instance;
+        if (shell != null && !shell.quitting && p.settings.closeToTray) {
+          WindowAttention.instance.hide();
+          return AppExitResponse.cancel;
+        }
         await p.shutdown();
+        await shell?.dispose();
         return AppExitResponse.exit;
       },
     );

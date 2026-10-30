@@ -57,6 +57,46 @@ class WindowAttention {
         int Function(Pointer<_FlashInfo>)
       >('FlashWindowEx');
 
+  late final _isVisible = _user32
+      .lookupFunction<
+        Int32 Function(Pointer<Void>),
+        int Function(Pointer<Void>)
+      >('IsWindowVisible');
+  late final _getForeground = _user32
+      .lookupFunction<Pointer<Void> Function(), Pointer<Void> Function()>(
+        'GetForegroundWindow',
+      );
+
+  Pointer<Void> _hwnd() => using(
+    (a) => _findWindow(_className.toNativeUtf16(allocator: a), nullptr),
+  );
+
+  /// Finestra nascosta nella barra di sistema (chiusura con "resta attivo").
+  void hide() {
+    if (!Platform.isWindows) return;
+    final hwnd = _hwnd();
+    if (hwnd != nullptr) _showWindow(hwnd, 0); // SW_HIDE
+  }
+
+  /// Di nuovo visibile e in primo piano (icona o notifica nella barra).
+  void show() {
+    if (!Platform.isWindows) return;
+    final hwnd = _hwnd();
+    if (hwnd == nullptr) return;
+    _showWindow(hwnd, _isIconic(hwnd) != 0 ? _swRestore : 5); // SW_SHOW
+    _setForeground(hwnd);
+  }
+
+  /// L'utente sta guardando l'app: visibile e in primo piano.
+  bool get inFront {
+    if (!Platform.isWindows) return true;
+    final hwnd = _hwnd();
+    return hwnd != nullptr &&
+        _isVisible(hwnd) != 0 &&
+        _isIconic(hwnd) == 0 &&
+        _getForeground() == hwnd;
+  }
+
   void request() {
     if (!Platform.isWindows) return;
     using((a) {

@@ -100,6 +100,7 @@ class Settings {
     this.pbx = const [],
     this.lang = 'it',
     this.theme = 'system',
+    this.closeToTray = true,
     this.voicemailCode = '*2',
     this.favorites = const [],
     this.audio = const ('', '', ''),
@@ -132,6 +133,9 @@ class Settings {
 
   /// Tema dell'interfaccia: `system`, `light`, `dark`.
   final String theme;
+
+  /// Chiudendo la finestra l'app resta nella barra di sistema (Windows).
+  final bool closeToTray;
 
   /// Codice funzione per ascoltare la casella vocale. `*2` è il default di
   /// Yeastar P-Series: configurabile, non universale (docs/sip-e-blf.md).
@@ -202,6 +206,7 @@ class Settings {
       pbx: t.pbx,
       lang: lang,
       theme: theme,
+      closeToTray: closeToTray,
       voicemailCode: t.voicemailCode,
       favorites: t.favorites,
       audio: audio,
@@ -231,6 +236,7 @@ class Settings {
       pbx: a.pbx,
       lang: lang,
       theme: theme,
+      closeToTray: closeToTray,
       voicemailCode: a.voicemailCode,
       favorites: a.favorites,
       audio: audio,
@@ -252,6 +258,7 @@ class Settings {
     List<PbxConnectionInfo>? pbx,
     String? lang,
     String? theme,
+    bool? closeToTray,
     String? voicemailCode,
     List<String>? favorites,
     (String, String, String)? audio,
@@ -271,6 +278,7 @@ class Settings {
     pbx: pbx ?? this.pbx,
     lang: lang ?? this.lang,
     theme: theme ?? this.theme,
+    closeToTray: closeToTray ?? this.closeToTray,
     voicemailCode: voicemailCode ?? this.voicemailCode,
     favorites: favorites ?? this.favorites,
     audio: audio ?? this.audio,
@@ -410,6 +418,7 @@ class SettingsStore {
       extensions: active?.extensions ?? const [],
       lang: j['lang'] as String? ?? 'it',
       theme: j['theme'] as String? ?? 'system',
+      closeToTray: j['closeToTray'] as bool? ?? true,
       voicemailCode: active?.voicemailCode ?? '*2',
       favorites: active?.favorites ?? const [],
       seenMissedAt: active?.seenMissedAt ?? '',
@@ -523,6 +532,7 @@ class SettingsStore {
         'debugLog': s.debugLog,
         'lang': s.lang,
         'theme': s.theme,
+        'closeToTray': s.closeToTray,
         'audioCapture': s.audio.$1,
         'audioPlayback': s.audio.$2,
         'audioRinger': s.audio.$3,
