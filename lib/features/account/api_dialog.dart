@@ -303,13 +303,24 @@ class _CredentialsDialogState extends State<_CredentialsDialog> {
         ? widget.conn!.baseUrl
         : 'https://${widget.phone.settings.account?.domain.split(':').first ?? ''}',
   );
+  late final _ownExtension = TextEditingController(
+    text: widget.conn?.ownExtension.isNotEmpty == true
+        ? widget.conn!.ownExtension
+        : widget.phone.settings.account?.username ?? '',
+  );
   final _clientId = TextEditingController();
   final _clientSecret = TextEditingController();
   bool _saving = false;
 
   @override
   void dispose() {
-    for (final c in [_label, _baseUrl, _clientId, _clientSecret]) {
+    for (final c in [
+      _label,
+      _baseUrl,
+      _ownExtension,
+      _clientId,
+      _clientSecret,
+    ]) {
       c.dispose();
     }
     super.dispose();
@@ -332,6 +343,7 @@ class _CredentialsDialogState extends State<_CredentialsDialog> {
       baseUrl: _baseUrl.text.trim().replaceAll(RegExp(r'/+$'), ''),
       clientId: _clientId.text.trim(),
       clientSecret: _clientSecret.text.trim(),
+      ownExtension: _ownExtension.text.trim(),
     );
     final conn = widget.conn;
     if (conn == null) {
@@ -380,6 +392,19 @@ class _CredentialsDialogState extends State<_CredentialsDialog> {
                   labelText: tr('Indirizzo API del PBX'),
                   hintText:
                       'https://pbx.esempio.it oppure https://10.0.0.5:8088',
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _ownExtension,
+                validator: _required,
+                decoration: InputDecoration(
+                  labelText: tr('Interno dell\'utente'),
+                  helperText: tr(
+                    'Il solo interno che l\'app legge e modifica con queste '
+                    'credenziali; deve coincidere con l\'account SIP.',
+                  ),
+                  helperMaxLines: 2,
                 ),
               ),
               const SizedBox(height: 12),

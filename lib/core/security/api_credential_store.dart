@@ -23,12 +23,19 @@ class ApiCredentials {
     required this.baseUrl,
     required this.clientId,
     required this.clientSecret,
+    this.ownExtension = '',
   });
 
   /// Es. `https://drin.ras.yeastar.com` o `https://192.168.1.10:8088`.
   final String baseUrl;
   final String clientId;
   final String clientSecret;
+
+  /// Interno dell'utente su questo PBX, scelto da chi inserisce le
+  /// credenziali: l'unico che l'app legge e modifica con questa chiave, e solo
+  /// se coincide con lo username SIP (DECISIONS 2026-10-30 "Modello di
+  /// fiducia"). '' = nessuno (credenziali salvate prima di questa versione).
+  final String ownExtension;
 
   // Mai stampare ID o Secret.
   @override
@@ -211,6 +218,7 @@ class ApiCredentialStore {
       'baseUrl': c.baseUrl,
       'clientId': c.clientId,
       'clientSecret': c.clientSecret,
+      'ownExtension': c.ownExtension,
     }),
   );
 
@@ -225,6 +233,7 @@ class ApiCredentialStore {
         baseUrl: m['baseUrl'] as String,
         clientId: m['clientId'] as String,
         clientSecret: m['clientSecret'] as String,
+        ownExtension: m['ownExtension'] as String? ?? '',
       );
     } catch (_) {
       return null;

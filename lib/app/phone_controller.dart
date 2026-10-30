@@ -393,6 +393,9 @@ class PhoneController extends ChangeNotifier {
     if (label != null) c.label = label;
     await _saveConnectionList();
     if (creds != null) {
+      // Forse un altro PBX: niente dati né cache di quello di prima.
+      await c.stop();
+      await c.clearData();
       await c.store.save(creds);
       await c.start();
     }

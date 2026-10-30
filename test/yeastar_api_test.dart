@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -30,6 +31,14 @@ class FakePbx {
   /// Risposte di call/query per tipo; null = errore (PBX senza la funzione).
   Map<String, List<Map<String, Object>>>? calls;
 
+  /// extension/list in errore (token valido ma elenco negato).
+  bool failExtensionList = false;
+
+  /// Richiesta a [holdPath] trattenuta finché [release] non completa.
+  String? holdPath;
+  final holdArrived = Completer<void>();
+  final release = Completer<void>();
+
   String get baseUrl => 'http://127.0.0.1:${server.port}';
 
   Future<void> start() async {
@@ -50,6 +59,10 @@ class FakePbx {
       requests.add(req);
       final body = await utf8.decoder.bind(req).join();
       bodies.add(body);
+      if (req.uri.path == holdPath) {
+        if (!holdArrived.isCompleted) holdArrived.complete();
+        await release.future;
+      }
       Map<String, Object> reply;
       switch (req.uri.path) {
         case '/openapi/v1.0/get_token':
@@ -64,6 +77,8 @@ class FakePbx {
                   'refresh_token': 'RT1',
                 }
               : {'errcode': 10004, 'errmsg': 'FAILURE'};
+        case '/openapi/v1.0/extension/list' when failExtensionList:
+          reply = {'errcode': 10001, 'errmsg': 'FAILURE'};
         case '/openapi/v1.0/extension/list':
           final page = int.parse(req.uri.queryParameters['page']!);
           reply = {
@@ -136,12 +151,13 @@ class FakePbx {
             'data': calls![req.uri.queryParameters['type']] ?? const [],
           };
         case '/openapi/v1.0/extension/get':
+          final id = int.parse(req.uri.queryParameters['id'] ?? '15');
           reply = {
             'errcode': 0,
             'errmsg': 'SUCCESS',
             'data': {
-              'id': 15,
-              'number': '305',
+              'id': id,
+              'number': const {11: '301', 15: '305', 50: '350'}[id] ?? '',
               'presence_status': 'available',
               'custom_presence_status': 'Ufficio',
               'enb_vm': 1,
@@ -310,7 +326,12 @@ void main() {
         ApiCredentialStore('${tmp.path}${sep}api-$id.dpapi');
     for (final e in pbxUrls.entries) {
       await storeFor(e.key).save(
-        ApiCredentials(baseUrl: e.value, clientId: _id, clientSecret: _secret),
+        ApiCredentials(
+          baseUrl: e.value,
+          clientId: _id,
+          clientSecret: _secret,
+          ownExtension: '305',
+        ),
       );
     }
     final settings = SettingsStore('${tmp.path}${sep}s.json');
@@ -773,6 +794,138 @@ void main() {
     );
     await phone.shutdown();
   }, skip: !Platform.isWindows);
+
+  // Audit 2026-10-30 (run-3): l'utente finale non sceglie su quale interno
+  // scrive la chiave dell'amministratore cambiando lo username SIP.
+  test(
+    'proprio interno: lo username SIP cambiato non sposta letture e scritture',
+    () async {
+      final phone = await controllerWith(FakeSipEngine(), {'a': pbx.baseUrl});
+      expect(phone.ownDetail?.id, 15);
+      final a = phone.settings.account!;
+      await phone.saveAccount(
+        SipAccount(id: a.id, username: '301', password: 'p', domain: a.domain),
+      );
+      final before = pbx.requests.length;
+      await phone.refreshOwnDetail();
+      final after = pbx.requests.skip(before).map((r) => r.uri).toList();
+      // Né il dettaglio né la casella dell'interno 301 (id 11).
+      expect(after.where((u) => u.path.endsWith('extension/get')), isEmpty);
+      expect(after.where((u) => u.toString().contains('301')), isEmpty);
+      expect(phone.ownDetail, isNull);
+      final colleague = PbxExtensionDetail.parse({'id': 11, 'number': '301'});
+      await expectLater(
+        phone.updateOwnExtension(
+          colleague.withValues({'presence_status': 'away'}),
+        ),
+        throwsStateError,
+      );
+      expect(
+        pbx.requests.where((r) => r.uri.path.endsWith('extension/update')),
+        isEmpty,
+      );
+      await phone.shutdown();
+    },
+    skip: !Platform.isWindows,
+  );
+
+  // Audit 2026-10-30 (run-3): dopo il cambio di PBX niente id dal PBX vecchio.
+  test(
+    'cambio PBX: dati e cache del PBX precedente non guidano le scritture',
+    () async {
+      final sep = Platform.pathSeparator;
+      final path = '${tmp.path}${sep}cache-a.dpapi';
+      final b = FakePbx()..failExtensionList = true;
+      await b.start();
+      final phone = await controllerWith(FakeSipEngine(), {
+        'a': pbx.baseUrl,
+      }, cacheFor: (_) => PbxCache(path));
+      final conn = phone.connections.single;
+      for (var i = 0; i < 50 && !File(path).existsSync(); i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+      }
+      final edited = phone.ownDetail!.withValues({
+        'enb_all_busy_mode_for_endpoints': '0',
+      });
+      await phone.updateConnection(
+        conn,
+        creds: ApiCredentials(
+          baseUrl: b.baseUrl,
+          clientId: _id,
+          clientSecret: _secret,
+          ownExtension: '305',
+        ),
+      );
+      expect(conn.directory, isEmpty);
+      expect(phone.ownDetail, isNull);
+      expect(await PbxCache(path).load(), isNull);
+      await expectLater(phone.updateOwnExtension(edited), throwsStateError);
+      expect(
+        b.requests.where((r) => r.uri.path.endsWith('extension/update')),
+        isEmpty,
+      );
+      await phone.shutdown();
+      await b.server.close(force: true);
+    },
+    skip: !Platform.isWindows,
+  );
+
+  // Audit 2026-10-30 (run-4): un giro ancora in corso sul PBX di prima non
+  // rimette i suoi dati dopo il cambio di credenziali.
+  test(
+    'cambio PBX durante una sync: il giro vecchio non riscrive dati né cache',
+    () async {
+      final sep = Platform.pathSeparator;
+      final path = '${tmp.path}${sep}cache-a.dpapi';
+      final b = FakePbx()..failExtensionList = true;
+      await b.start();
+      final phone = await controllerWith(FakeSipEngine(), {
+        'a': pbx.baseUrl,
+      }, cacheFor: (_) => PbxCache(path));
+      final conn = phone.connections.single;
+      for (var i = 0; i < 50 && !File(path).existsSync(); i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+      }
+      final edited = phone.ownDetail!.withValues({
+        'enb_all_busy_mode_for_endpoints': '0',
+      });
+      // Giro su A fermo al dettaglio dell'interno, elenco già letto.
+      pbx.holdPath = '/openapi/v1.0/extension/get';
+      final running = phone.resync();
+      await pbx.holdArrived.future;
+      await phone.updateConnection(
+        conn,
+        creds: ApiCredentials(
+          baseUrl: b.baseUrl,
+          clientId: _id,
+          clientSecret: _secret,
+          ownExtension: '305',
+        ),
+      );
+      pbx.release.complete();
+      await running;
+      for (var i = 0; i < 50 && conn.syncing; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+      }
+      await PbxCache(path).saved;
+      expect(conn.directory, isEmpty);
+      expect(phone.ownDetail, isNull);
+      expect(await PbxCache(path).load(), isNull);
+      // Il PBX nuovo è stato interrogato (prima sync non persa).
+      expect(
+        b.requests.where((r) => r.uri.path.endsWith('extension/list')),
+        isNotEmpty,
+      );
+      await expectLater(phone.updateOwnExtension(edited), throwsStateError);
+      expect(
+        b.requests.where((r) => r.uri.path.endsWith('extension/update')),
+        isEmpty,
+      );
+      await phone.shutdown();
+      await b.server.close(force: true);
+    },
+    skip: !Platform.isWindows,
+  );
 
   test('live calls: BYE con canale cambiato chiude; call/query riallinea e dà il tipo', () async {
     final phone = await controllerWith(FakeSipEngine(), {'a': pbx.baseUrl});

@@ -6,6 +6,33 @@ aggiungi una voce nuova in cima che cita la vecchia. Il campo chiave è
 
 ---
 
+## 2026-10-30 · Modello di fiducia: utente finale meno fidato dell'amministratore (precisa "Scrittura sul proprio interno" 2026-10-30)
+**Scelta:** chi inserisce le credenziali API Yeastar (amministratore, che il
+client non mostra più dopo il salvataggio) è **più fidato** dell'utente
+finale che usa il telefono. L'app non deve permettere all'utente finale, con
+le sole azioni dell'interfaccia, di usare la chiave dell'amministratore oltre
+il proprio interno: per esempio cambiando lo username SIP per far diventare
+"proprio" l'interno di un collega. Resta valido il rischio accettato della
+voce citata: chi **estrae** le credenziali dal PC (stesso utente Windows) può
+già modificare qualunque interno; il confine qui è l'uso dalla UI senza
+estrazione.
+**Origine:** audit di sicurezza fase 2 (`docs/sicurezza/2026-10-30-audit-fase2-credenziali-yeastar.md`),
+punto rimandato 2.
+**Attuazione:** l'amministratore indica l'**interno dell'utente** insieme alle
+credenziali API (stesso blob DPAPI, `ApiCredentials.ownExtension`); l'app
+legge e scrive il proprio interno solo se lo username SIP coincide. Credenziali
+nuove = dati e cache della connessione buttati.
+**Scartato:** utente e amministratore allo stesso livello (renderebbe inutile
+nascondere le credenziali API nella UI); "proprio interno" = account SIP
+registrato con successo (con `authUser` separato la registrazione non prova
+lo username, e il comportamento del PBX non è verificabile dal client);
+scegliere la connessione solo per `pbxId` (la UI non lo imposta: resta il
+legame per host, coperto dall'interno fissato per connessione).
+**Da rivedere se:** la postazione è sempre gestita da una sola persona che è
+anche amministratore del PBX, o arriva il gateway Econnet che firma le modifiche.
+
+---
+
 ## 2026-10-30 · Scrittura sul proprio interno (di Gigi; ribalta la parte "solo endpoint in lettura" di "Credenziali OpenAPI Yeastar nel client" 2026-10-28 bis)
 **Scelta:** DrinPhone può **modificare il proprio interno** con
 `extension/update`, come farebbe l'utente da Linkus: presenza attuale, per

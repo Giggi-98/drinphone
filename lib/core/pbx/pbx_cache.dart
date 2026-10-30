@@ -180,5 +180,6 @@ class PbxCache {
     }
   }
 
-  Future<void> clear() => _box.clear();
+  /// Dopo i salvataggi in corso: uno in coda non ricrea il file cancellato.
+  Future<void> clear() => saved.then((_) => _box.clear());
 }

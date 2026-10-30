@@ -97,7 +97,13 @@ spikes/f0a/                         spike F0-A (non prodotto)
   in `presence_list`). Modifiche come copie (`withValues`/`withSetting`), `changesFrom`
   = solo campi di `YeastarApi.ownWritable` / `presenceWritable`, presenze cambiate
   intere, tipi del PBX. `PbxConnection.updateOwnExtension` → `extension/update` con
-  l'id del proprio interno, poi rilettura. UI `features/preferences/own_extension.dart`
+  l'id del proprio interno, poi rilettura. Il proprio interno è lo username SIP
+  **solo se coincide** con `ApiCredentials.ownExtension`, scelto con le
+  credenziali dall'amministratore (DECISIONS "Modello di fiducia"); altrimenti
+  niente dettaglio, casella né scritture (`PbxConnection.voicemailOf` = null).
+  Nuove credenziali di una connessione = dati e cache buttati
+  (`PbxConnection.clearData`): gli id di un altro PBX non guidano le scritture.
+  UI `features/preferences/own_extension.dart`
   (part di `preferences_view.dart`): bozza + "Salva sul PBX"; Presenza (stato
   attuale, inoltri, squillo, cambio per orario, più dispositivi, info in sola
   lettura), Casella vocale (impostazioni sul PBX). Chip presenza in alto.
@@ -237,7 +243,7 @@ spikes/f0a/                         spike F0-A (non prodotto)
   (file temporaneo + rinomina, una scrittura alla volta per file) solo se la sync
   trova dati cambiati o ha riletto la rubrica; codifica, DPAPI e decodifica in un
   isolate (`Isolate.run`), fuori dal thread dell'interfaccia; cancellata con la
-  connessione o il profilo.
+  connessione, il profilo o nuove credenziali (dopo i salvataggi in coda).
 - **BLF al rientro** — ultimi stati della sessione per account, in memoria:
   `blfOf` li usa come ripiego e `blfStale` li segnala (anello/pallino attenuato,
   "da confermare"). SUBSCRIBE a gruppi di 10 ogni 200 ms (`watchDialogs`), ridisegno
@@ -327,6 +333,9 @@ commerciale, `docs/licenze-e-compliance.md`). Toolchain: VS 2022 Build Tools 17.
   Latin-1 e ripassati al core con gli stessi byte (`_deviceName`/`_deviceNative`).
 - Chiave privata degli aggiornamenti: solo sul PC di chi pubblica; persa = niente
   più aggiornamenti per i client installati.
+- Credenziali API salvate prima del campo "Interno dell'utente" (0.1.1 e
+  precedenti): niente proprio interno (presenze, inoltri, casella) finché
+  l'amministratore non le reinserisce indicando l'interno.
 
 ## 7. Architettura target (PROPOSTA, non implementata)
 ```

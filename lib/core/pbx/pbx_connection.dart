@@ -165,7 +165,18 @@ class PbxConnection {
   bool _snapshotting = false;
 
   /// Interno di cui leggere la casella vocale (l'account SIP); null = nessuno.
-  String? voicemailOf;
+  /// Vale solo se coincide con [ownExtension]: lo username SIP lo modifica
+  /// l'utente, l'interno della chiave lo sceglie l'amministratore.
+  String? get voicemailOf {
+    final v = _voicemailOf;
+    return v != null && v.isNotEmpty && v == ownExtension ? v : null;
+  }
+
+  set voicemailOf(String? v) => _voicemailOf = v;
+  String? _voicemailOf;
+
+  /// Interno dell'utente fissato con le credenziali ([ApiCredentials]).
+  String ownExtension = '';
 
   /// Messaggi in casella; null = non letti dall'API (non disponibile o errore).
   List<PbxVoicemail>? voicemail;
@@ -262,6 +273,7 @@ class PbxConnection {
       return;
     }
     baseUrl = creds.baseUrl;
+    ownExtension = creds.ownExtension;
     final api = apiFactory(creds);
     // Token rinnovato: il WebSocket si ricollega con quello nuovo.
     api.onTokens = () {
@@ -326,9 +338,10 @@ class PbxConnection {
         }
         _readAt[PbxSync.orgs] = DateTime.now();
       }
+      var newRecordCode = recordCode;
       if (_due(PbxSync.featureCodes, now: force)) {
         try {
-          recordCode = await api.recordFeatureCode();
+          newRecordCode = await api.recordFeatureCode();
         } catch (e) {
           optionalErrors.add('codici funzione: ${_short(e)}');
         }
@@ -345,6 +358,12 @@ class PbxConnection {
         }
       }
       final vmOf = voicemailOf;
+      if (vmOf == null && (_voicemailOf ?? '').isNotEmpty) {
+        // Credenziali senza interno (prima versione) o username cambiato.
+        optionalErrors.add(
+          'proprio interno: ${ownExtension.isEmpty ? 'non indicato nelle credenziali API' : 'diverso da quello delle credenziali API'}',
+        );
+      }
       var newVm = voicemail;
       if (vmOf == null ||
           vmOf.isEmpty ||
@@ -361,10 +380,11 @@ class PbxConnection {
         _readAt[PbxSync.voicemail] = DateTime.now();
       }
       // Dettaglio del proprio interno: anche su 30022 o su richiesta.
-      var newDetail = ownDetail;
       final own = vmOf == null
           ? null
           : ext.where((e) => e.number == vmOf).firstOrNull;
+      // Senza proprio interno non resta quello di prima (username cambiato).
+      var newDetail = own == null ? null : ownDetail;
       if (own != null &&
           _due(PbxSync.ownDetail, now: _detailStale || force || idsChanged)) {
         try {
@@ -375,8 +395,15 @@ class PbxConnection {
         }
         _readAt[PbxSync.ownDetail] = DateTime.now();
       }
+      // Credenziali cambiate durante le letture (stop + clearData): sono dati
+      // del PBX di prima, non vanno né in memoria né in cache.
+      if (!identical(api, _api)) {
+        _readAt.clear();
+        return;
+      }
       final detailChanged = !identical(newDetail, ownDetail);
       ownDetail = newDetail;
+      recordCode = newRecordCode;
       final fp =
           '${_fingerprintOf(ext, newOrgs, newContacts)}\n'
           '${newVm?.map((m) => '${m.id}|${m.read}').join(',')}';
@@ -395,7 +422,7 @@ class PbxConnection {
             newContacts,
             voicemail: newVm,
             detail: newDetail,
-            recordCode: recordCode,
+            recordCode: newRecordCode,
             contactsAt: _readAt[PbxSync.contacts],
           ),
         );
@@ -410,6 +437,8 @@ class PbxConnection {
         'c': newContacts.length,
       });
     } catch (e) {
+      // Errore di un giro del PBX di prima (client chiuso): non conta.
+      if (!identical(api, _api)) return;
       // e non contiene URL né token (YeastarApiException), solo operazione e codice.
       _failures++;
       ok = false;
@@ -419,7 +448,14 @@ class PbxConnection {
       });
     } finally {
       syncing = false;
-      if (!_stopped) _timer = Timer(_nextDelay(), sync);
+      // Un giro del PBX di prima ha tenuto occupata la prima sync del nuovo:
+      // si rifà subito.
+      if (!_stopped) {
+        _timer = Timer(
+          identical(api, _api) ? _nextDelay() : Duration.zero,
+          sync,
+        );
+      }
       onUpdate(this, changed);
     }
     if (ok && realtime && _ws == null && _wsRetry == null) _connectEvents();
@@ -435,8 +471,8 @@ class PbxConnection {
     if (api == null || current == null || own == null) {
       throw StateError('proprio interno non disponibile');
     }
-    // Il dettaglio modificato deve essere proprio di quell'interno.
-    if (edited.id != null && edited.id != own.id) {
+    // Il dettaglio modificato e quello letto devono essere di quell'interno.
+    if (edited.id != own.id || current.id != own.id) {
       throw StateError('non è il proprio interno');
     }
     final changes = edited.changesFrom(current);
@@ -486,10 +522,18 @@ class PbxConnection {
         (_) => ws.add('heartbeat'),
       );
       eventsStatus = tr('Eventi in tempo reale: collegamento…');
+      // Solo il socket corrente: uno chiuso (credenziali cambiate, eventi
+      // spenti) non scrive più stato né tocca quello nuovo.
       ws.listen(
-        _onEvent,
-        onDone: _onEventsClosed,
-        onError: (_) => _onEventsClosed(),
+        (data) {
+          if (identical(ws, _ws)) _onEvent(data);
+        },
+        onDone: () {
+          if (identical(ws, _ws)) _onEventsClosed();
+        },
+        onError: (_) {
+          if (identical(ws, _ws)) _onEventsClosed();
+        },
         cancelOnError: true,
       );
     } catch (e) {
@@ -548,6 +592,8 @@ class PbxConnection {
           return;
         }
       }
+      // Lettura del PBX di prima (credenziali cambiate nel frattempo).
+      if (!identical(api, _api)) return;
       // Le chiamate nate durante la lettura restano: le vedrà il giro dopo.
       liveCalls.removeWhere(
         (id, c) => !fresh.containsKey(id) && c.seen.isBefore(started),
@@ -742,9 +788,24 @@ class PbxConnection {
   Future<void> forget() async {
     await stop();
     await store.clear();
+    await clearData();
+  }
+
+  /// Butta i dati letti dal PBX, in memoria e in cache: con credenziali nuove
+  /// il PBX può essere un altro, e i suoi id di interno non sono questi.
+  Future<void> clearData() async {
     await cache?.clear();
     directory = const [];
     orgs = const [];
     contacts = const [];
+    ownDetail = null;
+    voicemail = null;
+    recordCode = null;
+    callStatus.clear();
+    liveCalls.clear();
+    lastSync = null;
+    _fingerprint = '';
+    _readAt.clear();
+    _detailStale = true;
   }
 }
