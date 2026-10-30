@@ -6,6 +6,23 @@ aggiungi una voce nuova in cima che cita la vecchia. Il campo chiave è
 
 ---
 
+## 2026-10-30 · CDR come la pagina del PBX: pagine e ordinamento sul server
+Cita "CDR: `cdr_basic` (CDR Advanced) prima di `cdr`". **Scelta:** il CDR
+nell'app ricalca la pagina CDR del PBX: totale (`COUNT(*)` con lo stesso
+WHERE), pagine numerate, ordinamento fatto da MySQL su un elenco fisso di
+colonne (Ora di default dalla più recente), filtri Da/A separati e tutti gli
+esiti. Le gambe (`cdr_clip`) si leggono con una seconda query solo per le
+righe della pagina; il dettaglio della chiamata le mostra senza un'altra
+lettura. Esportazione CSV dall'app (fino a 10.000 righe, a blocchi di 500).
+**Scartato:** "Carica altre" con ordinamento nell'app (ordina solo ciò che
+è già scaricato, nessun totale); JOIN con `cdr_clip` nella query principale
+(una riga per gamba, pagine sbagliate); sottoquery correlate per trunk e DID
+(una per riga e per colonna); colonna di ordinamento passata dalla UI come
+testo (iniezione).
+**Da rivedere se:** il `COUNT(*)` con il filtro sul proprio interno diventa
+lento su PBX con molto traffico (allora totale stimato o solo "pagina
+successiva"), o Yeastar documenta il formato di `queues`/`ringgroups`/`ivrs`.
+
 ## 2026-10-30 · CDR: `cdr_basic` (CDR Advanced) prima di `cdr`
 Cita "CDR dal database del PBX (Database Grant)". **Scelta:** il registro del
 PBX legge `cdr_basic` quando esiste e ricade su `cdr` solo sui firmware che

@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 
 import '../../app/l10n.dart';
@@ -7,14 +5,14 @@ import '../../app/phone_controller.dart';
 import '../../app/theme.dart';
 import '../../core/call_history.dart';
 import '../../core/pbx/pbx_cdr.dart';
-import '../../core/pbx/pbx_connection.dart';
 import '../../core/sip/sip_engine.dart';
 import '../shell/widgets.dart';
 import 'call_table.dart';
+import 'cdr_view.dart';
 
 enum _Kind { all, incoming, missed, outgoing }
 
-enum _Period { today, week, month, all }
+enum _Period { today, week, month, all, custom }
 
 /// Da dove vengono le chiamate: questo PC, il CDR del PBX per il proprio
 /// interno, il CDR di tutto il PBX (se l'amministratore lo concede).
@@ -31,12 +29,18 @@ class HistoryView extends StatefulWidget {
 }
 
 class _HistoryViewState extends State<HistoryView> {
-  /// Filtri come in Linkus: tipo, periodo, nome/numero.
+  /// Filtri: tipo, esito (CDR), periodo o intervallo di date, nome/numero.
   _Kind _kind = _Kind.all;
   CdrKind _cdrKind = CdrKind.all;
+  CdrOutcome _cdrOutcome = CdrOutcome.all;
   _Period _period = _Period.week;
+  DateTimeRange? _range;
   _Source _source = _Source.local;
   final _filter = TextEditingController();
+
+  /// Solo CDR: chi chiama e chi è chiamato, separati.
+  final _callFrom = TextEditingController();
+  final _callTo = TextEditingController();
 
   DateTime? get _from {
     final now = DateTime.now();
@@ -46,12 +50,90 @@ class _HistoryViewState extends State<HistoryView> {
       _Period.week => today.subtract(const Duration(days: 6)),
       _Period.month => today.subtract(const Duration(days: 29)),
       _Period.all => null,
+      _Period.custom => _range?.start,
     };
+  }
+
+  /// Fine esclusa: il giorno dopo l'ultimo dell'intervallo.
+  DateTime? get _to {
+    final end = _period == _Period.custom ? _range?.end : null;
+    return end == null ? null : DateTime(end.year, end.month, end.day + 1);
+  }
+
+  bool get _filtered =>
+      _kind != _Kind.all ||
+      _cdrKind != CdrKind.all ||
+      _cdrOutcome != CdrOutcome.all ||
+      _period != _Period.week ||
+      _filter.text.isNotEmpty ||
+      _callFrom.text.isNotEmpty ||
+      _callTo.text.isNotEmpty;
+
+  void _reset() => setState(() {
+    _kind = _Kind.all;
+    _cdrKind = CdrKind.all;
+    _cdrOutcome = CdrOutcome.all;
+    _period = _Period.week;
+    _range = null;
+    _filter.clear();
+    _callFrom.clear();
+    _callTo.clear();
+    _page = 0;
+  });
+
+  /// Campo Da / A del CDR, stretto, dentro la riga dei filtri.
+  Widget _partyField(TextEditingController ctl, String label) => Padding(
+    padding: const EdgeInsets.only(right: DrinSpace.s2),
+    child: SizedBox(
+      width: 180,
+      height: 36,
+      child: TextField(
+        controller: ctl,
+        onChanged: (_) => setState(() {}),
+        style: DrinText.body.copyWith(color: context.drin.ink),
+        decoration: InputDecoration(
+          isDense: true,
+          prefixIcon: const Icon(Icons.person_search_outlined, size: 16),
+          hintText: label,
+          hintStyle: DrinText.body.copyWith(color: context.drin.muted),
+        ),
+      ),
+    ),
+  );
+
+  static String _day(DateTime d) =>
+      '${d.day.toString().padLeft(2, '0')}/'
+      '${d.month.toString().padLeft(2, '0')}/${d.year}';
+
+  Future<void> _pickPeriod(_Period v) async {
+    if (v != _Period.custom) {
+      setState(() {
+        _period = v;
+        _page = 0;
+      });
+      return;
+    }
+    final now = DateTime.now();
+    final r = await showDateRangePicker(
+      context: context,
+      firstDate: DateTime(2015),
+      lastDate: now,
+      initialDateRange: _range,
+      helpText: tr('Intervallo di date'),
+    );
+    if (r == null || !mounted) return;
+    setState(() {
+      _range = r;
+      _period = _Period.custom;
+      _page = 0;
+    });
   }
 
   @override
   void dispose() {
     _filter.dispose();
+    _callFrom.dispose();
+    _callTo.dispose();
     super.dispose();
   }
 
@@ -62,29 +144,67 @@ class _HistoryViewState extends State<HistoryView> {
       _Kind.missed => r.missed,
       _Kind.outgoing => r.direction == CallDirection.outgoing,
     };
-    final from = _from;
+    final from = _from, to = _to;
     final q = _filter.text.trim().toLowerCase();
     return kindOk &&
         (from == null || !r.start.isBefore(from)) &&
+        (to == null || r.start.isBefore(to)) &&
         (q.isEmpty || r.number.contains(q) || r.name.toLowerCase().contains(q));
   }
 
   int _page = 0;
   static const pageSize = 50;
 
-  Widget _menu<T>(T value, Map<T, String> items, ValueChanged<T> onPick) =>
-      DropdownButton<T>(
-        value: value,
-        underline: const SizedBox.shrink(),
-        borderRadius: BorderRadius.circular(DrinRadius.control),
-        items: [
+  /// Filtro a pillola "Etichetta: valore ▾"; evidenziato se non è quello
+  /// predefinito ([initial]).
+  Widget _menu<T>(
+    String label,
+    T value,
+    T initial,
+    Map<T, String> items,
+    ValueChanged<T> onPick, {
+    String? shown,
+  }) {
+    final c = context.drin;
+    final on = value != initial;
+    return Padding(
+      padding: const EdgeInsets.only(right: DrinSpace.s2),
+      child: PopupMenuButton<T>(
+        tooltip: label,
+        initialValue: value,
+        onSelected: onPick,
+        itemBuilder: (_) => [
           for (final e in items.entries)
-            DropdownMenuItem(value: e.key, child: Text(e.value)),
+            PopupMenuItem(value: e.key, child: Text(e.value)),
         ],
-        onChanged: (v) {
-          if (v != null) onPick(v);
-        },
-      );
+        child: Container(
+          height: 36,
+          padding: const EdgeInsets.symmetric(horizontal: DrinSpace.s3),
+          decoration: BoxDecoration(
+            color: on ? c.primary.withValues(alpha: 0.14) : c.raised,
+            border: Border.all(color: on ? c.primary : c.line),
+            borderRadius: BorderRadius.circular(DrinRadius.pill),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('$label: ', style: DrinText.label.copyWith(color: c.muted)),
+              Text(
+                shown ?? items[value]!,
+                style: DrinText.label.copyWith(color: on ? c.primary : c.ink),
+              ),
+              const SizedBox(width: DrinSpace.s1),
+              Icon(
+                Icons.expand_more_rounded,
+                size: 16,
+                color: on ? c.primary : c.muted,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 
   /// Colonne del registro di questo PC.
   static List<CallColumn> get _localColumns => [
@@ -195,7 +315,9 @@ class _HistoryViewState extends State<HistoryView> {
                 ],
                 if (local)
                   _menu(
+                    tr('Tipo'),
                     _kind,
+                    _Kind.all,
                     {
                       _Kind.all: tr('Tutte'),
                       _Kind.incoming: tr('In arrivo'),
@@ -207,28 +329,72 @@ class _HistoryViewState extends State<HistoryView> {
                       _page = 0;
                     }),
                   )
-                else
-                  _menu(_cdrKind, {
-                    CdrKind.all: tr('Tutte'),
-                    CdrKind.inbound: tr('In arrivo'),
-                    CdrKind.outbound: tr('In uscita'),
-                    CdrKind.internal: tr('Interne'),
-                    CdrKind.unanswered: tr('Non risposte'),
-                  }, (v) => setState(() => _cdrKind = v)),
-                const SizedBox(width: DrinSpace.s3),
+                else ...[
+                  _menu(
+                    tr('Tipo'),
+                    _cdrKind,
+                    CdrKind.all,
+                    {
+                      CdrKind.all: tr('Tutte'),
+                      CdrKind.inbound: tr('In arrivo'),
+                      CdrKind.outbound: tr('In uscita'),
+                      CdrKind.internal: tr('Interne'),
+                    },
+                    (v) => setState(() => _cdrKind = v),
+                  ),
+                  _menu(
+                    tr('Esito'),
+                    _cdrOutcome,
+                    CdrOutcome.all,
+                    {
+                      CdrOutcome.all: tr('Tutti'),
+                      CdrOutcome.answered: tr('Risposta'),
+                      CdrOutcome.unanswered: tr('Non risposte (tutte)'),
+                      CdrOutcome.noAnswer: tr('Non risposta'),
+                      CdrOutcome.abandoned: tr('Abbandonata'),
+                      CdrOutcome.busy: tr('Occupato'),
+                      CdrOutcome.failed: tr('Non riuscita'),
+                      CdrOutcome.voicemail: tr('Casella vocale'),
+                    },
+                    (v) => setState(() => _cdrOutcome = v),
+                  ),
+                  _partyField(_callFrom, tr('Da')),
+                  Padding(
+                    padding: const EdgeInsets.only(right: DrinSpace.s2),
+                    child: IconButton(
+                      tooltip: tr('Scambia Da e A'),
+                      onPressed: () => setState(() {
+                        final t = _callFrom.text;
+                        _callFrom.text = _callTo.text;
+                        _callTo.text = t;
+                      }),
+                      icon: const Icon(Icons.swap_horiz_rounded, size: 18),
+                    ),
+                  ),
+                  _partyField(_callTo, tr('A')),
+                ],
                 _menu(
+                  tr('Periodo'),
                   _period,
+                  _Period.week,
                   {
                     _Period.today: tr('Oggi'),
                     _Period.week: tr('Ultimi 7 giorni'),
                     _Period.month: tr('Ultimi 30 giorni'),
                     _Period.all: tr('Tutto'),
+                    _Period.custom: tr('Intervallo di date…'),
                   },
-                  (v) => setState(() {
-                    _period = v;
-                    _page = 0;
-                  }),
+                  _pickPeriod,
+                  shown: _period == _Period.custom && _range != null
+                      ? '${_day(_range!.start)} – ${_day(_range!.end)}'
+                      : null,
                 ),
+                if (_filtered)
+                  TextButton.icon(
+                    onPressed: _reset,
+                    icon: const Icon(Icons.filter_alt_off_outlined, size: 16),
+                    label: Text(tr('Azzera filtri')),
+                  ),
               ];
               final search = <Widget>[
                 SizedBox(
@@ -256,8 +422,13 @@ class _HistoryViewState extends State<HistoryView> {
                   children: [
                     title,
                     const SizedBox(width: DrinSpace.s4),
-                    ...filters,
-                    const Spacer(),
+                    Expanded(
+                      child: Wrap(
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        runSpacing: DrinSpace.s2,
+                        children: filters,
+                      ),
+                    ),
                     ...search,
                   ],
                 );
@@ -281,15 +452,23 @@ class _HistoryViewState extends State<HistoryView> {
             child: AnimatedSwitcher(
               duration: DrinMotion.of(context, DrinMotion.base),
               child: !local
-                  ? _CdrList(
+                  ? CdrView(
                       key: ValueKey(
-                        '$_source|$_period|$_cdrKind|${_filter.text.trim()}',
+                        '$_source|$_period|$_range|$_cdrKind|$_cdrOutcome|'
+                        '${_filter.text.trim()}|${_callFrom.text.trim()}|'
+                        '${_callTo.text.trim()}',
                       ),
                       conn: conn!,
-                      wholePbx: _source == _Source.wholePbx,
-                      search: _filter.text.trim(),
-                      from: _from,
-                      kind: _cdrKind,
+                      filters: CdrQuery(
+                        wholePbx: _source == _Source.wholePbx,
+                        search: _filter.text.trim(),
+                        callFrom: _callFrom.text.trim(),
+                        callTo: _callTo.text.trim(),
+                        from: _from,
+                        to: _to,
+                        kind: _cdrKind,
+                        outcome: _cdrOutcome,
+                      ),
                       canDial: p.canDial,
                       onCall: widget.onCall,
                     )
@@ -321,188 +500,6 @@ class _HistoryViewState extends State<HistoryView> {
           ],
         ],
       ),
-    );
-  }
-}
-
-/// Chiamate dal CDR del PBX (Database Grant), a pagine da [PbxCdr.pageSize].
-class _CdrList extends StatefulWidget {
-  const _CdrList({
-    super.key,
-    required this.conn,
-    required this.wholePbx,
-    required this.search,
-    required this.from,
-    required this.kind,
-    required this.canDial,
-    required this.onCall,
-  });
-  final PbxConnection conn;
-  final bool wholePbx;
-  final String search;
-  final DateTime? from;
-  final CdrKind kind;
-  final bool canDial;
-  final ValueChanged<String> onCall;
-
-  @override
-  State<_CdrList> createState() => _CdrListState();
-}
-
-class _CdrListState extends State<_CdrList> {
-  final _rows = <CdrRecord>[];
-  bool _loading = true;
-  bool _more = false;
-  String? _error;
-  Timer? _debounce;
-
-  @override
-  void initState() {
-    super.initState();
-    // Ogni filtro nuovo crea una lista nuova: digitando si interroga il
-    // database una volta sola, quando ci si ferma.
-    _debounce = Timer(const Duration(milliseconds: 400), _load);
-  }
-
-  @override
-  void dispose() {
-    _debounce?.cancel();
-    super.dispose();
-  }
-
-  Future<void> _load() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
-    try {
-      final page = await widget.conn.readCdr(
-        wholePbx: widget.wholePbx,
-        search: widget.search,
-        from: widget.from,
-        kind: widget.kind,
-        offset: _rows.length,
-      );
-      if (!mounted) return;
-      _rows.addAll(page);
-      _more = page.length == PbxCdr.pageSize;
-    } catch (e) {
-      // Solo il tipo d'errore: niente host o credenziali.
-      _error = '${e.runtimeType}';
-    }
-    if (mounted) setState(() => _loading = false);
-  }
-
-  /// Esito come lo scrive il PBX, a parole e col suo colore.
-  static (String, Color) _outcome(String d, DrinColors c) =>
-      switch (d.toUpperCase()) {
-        'ANSWERED' => (tr('Risposta'), c.freeText),
-        'NO ANSWER' => (tr('Non risposta'), c.busyText),
-        'ABANDONED' => (tr('Abbandonata'), c.busyText),
-        'BUSY' => (tr('Occupato'), c.away),
-        'FAILED' => (tr('Non riuscita'), c.busyText),
-        'VOICEMAIL' => (tr('Casella vocale'), c.primary),
-        _ => (d, c.away),
-      };
-
-  static List<CallColumn> get _columns => [
-    CallColumn(tr('Ora'), width: 112),
-    CallColumn(tr('Tipo'), width: 116, hideBelow: 900),
-    CallColumn(tr('Da'), flex: 1),
-    CallColumn(tr('A'), flex: 1),
-    CallColumn(tr('Esito'), width: 132),
-    CallColumn(tr('Durata'), width: 80, end: true, hideBelow: 1000),
-    CallColumn(tr('Conversazione'), width: 112, end: true, hideBelow: 680),
-  ];
-
-  CallRow _row(CdrRecord r, DrinColors c, String? own) {
-    final (icon, kind) = switch (r.callType) {
-      'Inbound' => (Icons.call_received_rounded, tr('In arrivo')),
-      'Outbound' => (Icons.call_made_rounded, tr('In uscita')),
-      'Internal' => (Icons.swap_horiz_rounded, tr('Interna')),
-      final t => (Icons.call_rounded, t),
-    };
-    final (outcome, outcomeColor) = _outcome(r.disposition, c);
-    // Chi richiamare: l'altro capo rispetto al proprio interno; nel CDR di
-    // tutto il PBX chi ha chiamato.
-    final other = own != null && r.src == own ? r.dst : r.src;
-    final missedByMe = !r.answered && own != null && r.src != own;
-    // Gruppo di squillo, coda, IVR: chi ha risposto (o l'ultimo squillo).
-    final via = r.lastDst.isNotEmpty && r.lastDst != r.dst;
-    final last = r.lastDstName.isNotEmpty
-        ? '${r.lastDstName} · ${r.lastDst}'
-        : r.lastDst;
-    return CallRow(
-      cells: [
-        WhenCell(r.time),
-        KindCell(icon, kind),
-        party(r.srcName, r.src, color: missedByMe ? c.busyText : null),
-        party(
-          r.dstName,
-          r.dst,
-          extra: via
-              ? SubLine(
-                  Icons.subdirectory_arrow_right_rounded,
-                  r.answered
-                      ? tr('Risposto da {n}', {'n': last})
-                      : tr('Ultimo squillo: {n}', {'n': last}),
-                )
-              : null,
-        ),
-        OutcomePill(outcome, outcomeColor),
-        DurationCell(r.duration),
-        DurationCell(r.talk, strong: true),
-      ],
-      callTooltip: tr('Richiama {n}', {'n': other}),
-      call: widget.canDial && other.isNotEmpty
-          ? () => widget.onCall(other)
-          : null,
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final c = context.drin;
-    final own = widget.conn.voicemailOf;
-    if (_rows.isEmpty && _loading) {
-      return const Center(child: CircularProgressIndicator());
-    }
-    if (_rows.isEmpty) {
-      return Center(
-        child: Text(
-          _error != null
-              ? tr('CDR non leggibile: {e}', {'e': _error!})
-              : own == null && !widget.wholePbx
-              ? tr('Nessun proprio interno per questo PBX.')
-              : tr('Nessuna chiamata.'),
-          style: DrinText.body.copyWith(
-            color: _error != null ? c.busyText : c.muted,
-          ),
-        ),
-      );
-    }
-    return CallTable(
-      columns: _columns,
-      rows: [for (final r in _rows) _row(r, c, own)],
-      footer: _more || _error != null
-          ? Padding(
-              padding: const EdgeInsets.all(DrinSpace.s3),
-              child: Center(
-                child: _loading
-                    ? const SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : OutlinedButton(
-                        onPressed: _load,
-                        child: Text(
-                          _error != null ? tr('Riprova') : tr('Carica altre'),
-                        ),
-                      ),
-              ),
-            )
-          : null,
     );
   }
 }

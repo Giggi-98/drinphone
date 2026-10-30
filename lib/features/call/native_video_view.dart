@@ -42,7 +42,12 @@ class _VideoSlotState extends State<VideoSlot> {
     final box = context.findRenderObject() as RenderBox?;
     if (s == null || box == null || !box.hasSize) return;
     final dpr = View.of(context).devicePixelRatio;
-    final r = box.localToGlobal(Offset.zero) & box.size;
+    // Con la scala dell'interfaccia (DrinScaled) anche la misura va
+    // trasformata, non solo l'origine.
+    final r = MatrixUtils.transformRect(
+      box.getTransformTo(null),
+      Offset.zero & box.size,
+    );
     s.place(
       (r.left * dpr).round(),
       (r.top * dpr).round(),

@@ -65,25 +65,22 @@ class VoicemailView extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 20),
-          ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 640),
-            child: Row(
-              children: [
-                counter(
-                  tr('Nuovi messaggi'),
-                  phone.voicemailNew,
-                  phone.voicemailNew > 0 ? c.busy : c.muted,
-                  Icons.mark_email_unread_outlined,
-                ),
-                const SizedBox(width: 16),
-                counter(
-                  tr('Già ascoltati'),
-                  phone.voicemailOld,
-                  c.muted,
-                  Icons.drafts_outlined,
-                ),
-              ],
-            ),
+          Row(
+            children: [
+              counter(
+                tr('Nuovi messaggi'),
+                phone.voicemailNew,
+                phone.voicemailNew > 0 ? c.busy : c.muted,
+                Icons.mark_email_unread_outlined,
+              ),
+              const SizedBox(width: 16),
+              counter(
+                tr('Già ascoltati'),
+                phone.voicemailOld,
+                c.muted,
+                Icons.drafts_outlined,
+              ),
+            ],
           ),
           const SizedBox(height: 24),
           FilledButton.icon(

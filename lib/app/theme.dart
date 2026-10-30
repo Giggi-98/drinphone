@@ -212,6 +212,49 @@ extension DrinColorsX on BuildContext {
   DrinColors get drin => Theme.of(this).extension<DrinColors>()!;
 }
 
+/// Scala dell'interfaccia su desktop (DESIGN.md §7): tutto (testo, icone,
+/// spazi, colonne) cresce o cala con la larghezza della finestra, così la
+/// finestra è sempre occupata per intero e i caratteri seguono la larghezza.
+abstract final class DrinScale {
+  /// Larghezza (pixel logici) a cui la scala è 1.
+  static const base = 1366.0;
+  static const min = 0.9, max = 1.3;
+
+  static double of(double width) => (width / base).clamp(min, max);
+}
+
+/// Applica [DrinScale] a [child]: lo impagina a `larghezza / k` e lo
+/// ingrandisce di k, con MediaQuery coerente (dialoghi e menu inclusi).
+class DrinScaled extends StatelessWidget {
+  const DrinScaled({super.key, required this.child});
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final mq = MediaQuery.of(context);
+    final k = DrinScale.of(mq.size.width);
+    if (k == 1) return child;
+    final size = mq.size / k;
+    return FittedBox(
+      fit: BoxFit.fill,
+      alignment: Alignment.topLeft,
+      child: SizedBox.fromSize(
+        size: size,
+        child: MediaQuery(
+          data: mq.copyWith(
+            size: size,
+            devicePixelRatio: mq.devicePixelRatio * k,
+            padding: mq.padding / k,
+            viewPadding: mq.viewPadding / k,
+            viewInsets: mq.viewInsets / k,
+          ),
+          child: child,
+        ),
+      ),
+    );
+  }
+}
+
 ThemeData buildTheme(Brightness b) {
   final c = b == Brightness.dark ? DrinColors.dark : DrinColors.light;
   TextStyle t(TextStyle s, Color color) => s.copyWith(color: color);

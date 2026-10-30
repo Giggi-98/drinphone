@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../app/l10n.dart';
 import '../../app/phone_controller.dart';
 import '../../app/theme.dart';
+import '../../core/pbx/pbx_cdr.dart';
 import '../../core/pbx/pbx_connection.dart';
 import '../../core/pbx/pbx_sync.dart';
 import '../../core/security/api_credential_store.dart';
@@ -570,9 +571,9 @@ class _CdrDbDialogState extends State<_CdrDbDialog> {
       _user.clear();
       _password.clear();
       // Prova: una pagina del CDR (del proprio interno, o di tutto il PBX).
-      final rows = await widget.conn.readCdr(wholePbx: _whole);
+      final page = await widget.conn.readCdr(CdrQuery(wholePbx: _whole));
       _ok = true;
-      _result = tr('Collegato · {n} chiamate lette', {'n': rows.length});
+      _result = tr('Collegato · {n} chiamate lette', {'n': page.rows.length});
     } catch (e) {
       _ok = false;
       // Solo il tipo d'errore: mai host, utente o password nei messaggi.
