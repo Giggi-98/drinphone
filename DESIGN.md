@@ -132,12 +132,33 @@ Regole:
   allineate a destra in `number` (`m:ss`, `h:mm:ss`, "—" se zero); Richiama
   all'hover. Sotto una certa larghezza spariscono prima Durata e Tipo, poi
   Conversazione; i filtri vanno a capo sotto il titolo.
+  Nel CDR del PBX, come nella pagina CDR del PBX: intestazioni ordinabili
+  (testo `primary` e freccia sulla colonna attiva, doppia freccia `muted`
+  sulle altre; di default Ora dalla più recente); sopra la tabella il numero
+  di chiamate in `label` `muted`, Aggiorna, scelta delle colonne (menu con
+  spunte) ed "Esporta CSV" (pulsante bordato); sotto le pagine con "righe
+  per pagina". Coda / gruppo / IVR con l'icona del passaggio in `primary`
+  (IVR, call flow, coda, gruppo) e "+n" in `label` `muted`. Clic sulla riga:
+  dialogo "Dettagli chiamata" con i campi in griglia (`label` `muted` sopra,
+  `body` sotto, "—" in `muted` se vuoti) e la tabella delle gambe.
+- **Filtro a pillola** (sopra le tabelle): alto 36, raggio `pill`, testo
+  `label` "Etichetta: valore" con freccia; a riposo fondo `raised` e bordo
+  `line`, etichetta `muted`, valore `ink`; con un valore diverso dal
+  predefinito bordo e valore `primary`, fondo `primary` al 14%. Accanto,
+  "Azzera filtri" (pulsante testo) solo se un filtro è attivo.
 
 ## 7. Struttura adattiva
 
 Barra laterale su desktop (≥ 1024), binario di icone su tablet (600–1023),
 barra in basso su telefono (< 600). Stessi token in tutte; la chiamata in
 corso su telefono occupa lo schermo intero.
+
+Su desktop l'interfaccia è in scala con la finestra (`DrinScale`): fattore
+`larghezza / 1366`, tra 0,9 e 1,3, applicato a tutto (testo, icone, spazi,
+colonne), così i caratteri seguono la larghezza e i contenuti occupano
+l'intera finestra. Le larghezze di soglia qui sopra si misurano dopo la
+scala. I contenuti non hanno larghezza massima: schede e campi si
+allargano fino al bordo.
 
 ## 8. Come si verifica
 

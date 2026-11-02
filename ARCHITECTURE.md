@@ -165,7 +165,7 @@ spikes/f0a/                         spike F0-A (non prodotto)
 - **Registro chiamate** (`IMPLEMENTATO`) — `CallHistoryStore` (`lib/core/call_history.dart`):
   `history[-<profilo>].json` locale, per profilo, ultime 200 chiamate, salvataggi in coda; persa = entrante
   non risposta. Vista `features/history/` con filtri tipo (tutte/in arrivo/perse/
-  in uscita), periodo (oggi/7/30 giorni/tutto) e nome/numero.
+  in uscita), periodo (oggi/7/30 giorni/tutto/intervallo di date) e nome/numero.
 - **CDR dal PBX** (`IMPLEMENTATO`; letto dal vivo sul pilota 83.25 con Database
   Grant) — `PbxCdr` (`core/pbx/pbx_cdr.dart`, `mysql_client`) legge dal MySQL
   del PBX (porta 3306, statement preparati, 50 righe a pagina, timeout) la
@@ -177,10 +177,22 @@ spikes/f0a/                         spike F0-A (non prodotto)
   "Database CDR" della scheda PBX. Filtro sul proprio interno
   (`PbxConnection.voicemailOf`): chiamante, chiamato, secondo/ultimo
   partecipante o una gamba in `cdr_clip` (gruppi di squillo e code); tutto il
-  PBX solo con `wholePbx` deciso dall'amministratore. Filtri tipo/esito
-  (`CdrKind`) e periodo. Vista: Registro chiamate, fonte "Questo PC" / "PBX" /
-  "Tutto il PBX", tabella `CallTable` (`features/history/call_table.dart`,
-  DESIGN.md "Tabella chiamate").
+  PBX solo con `wholePbx` deciso dall'amministratore. Richiesta `CdrQuery`:
+  filtri tipo (`CdrKind`), esito (`CdrOutcome`, tutti i valori del PBX),
+  periodo o intervallo di date (`from`/`to`, fine esclusa), ricerca libera e
+  Da/A separati, tutti come parametri; ordinamento `CdrSort` da un elenco
+  fisso di colonne (di default `timestamp` DESC); pagina `offset`/`limit`
+  (al più `PbxCdr.maxLimit`). Risposta `CdrPage`: righe e totale (`COUNT(*)`
+  con lo stesso WHERE). Per le righe della pagina una seconda query su
+  `cdr_clip` (`uid IN (…)`) porta le gambe (`CdrLeg`: trunk, DID/DOD,
+  durate); `cdr` storica senza gambe. Code, gruppi, IVR, call flow di
+  `cdr_basic` (`queues`, `ringgroups`, `ivrs`, `callflows`, formato non
+  documentato: `DA VALIDARE` sul pilota) letti come JSON o testo con virgole.
+  `cdrCsv` esporta con le colonne dell'esportazione del PBX. Vista: Registro
+  chiamate, fonte "Questo PC" / "PBX" / "Tutto il PBX"; il CDR in `CdrView`
+  (`features/history/cdr_view.dart`: totale, pagine, ordinamento,
+  colonne a scelta, dettaglio con le gambe, Esporta CSV) sopra `CallTable`
+  (`features/history/call_table.dart`, DESIGN.md "Tabella chiamate").
 - **Ricerca** — il campo in alto filtra la griglia per nome/numero; Invio chiama
   il numero o l'unico interno trovato.
 - **Attenzione chiamata entrante** (Windows) — `WindowAttention` (user32 via FFI):

@@ -185,13 +185,7 @@ class _PreferencesViewState extends State<PreferencesView> {
               child: SingleChildScrollView(
                 key: ValueKey('pref-scroll-$idx'),
                 padding: const EdgeInsets.all(20),
-                child: Align(
-                  alignment: Alignment.topLeft,
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 900),
-                    child: all[idx].$3,
-                  ),
-                ),
+                child: all[idx].$3,
               ),
             ),
           ),
@@ -259,7 +253,6 @@ class _Field extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = context.drin;
     return Container(
-      constraints: const BoxConstraints(minWidth: 160, maxWidth: 280),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
         color: c.surface,
@@ -330,31 +323,46 @@ class _UserTab extends StatelessWidget {
               ),
               const SizedBox(width: 20),
               Expanded(
-                child: Wrap(
-                  spacing: 12,
-                  runSpacing: 10,
-                  children: [
-                    _Field(
-                      tr('Interno'),
-                      a?.username ?? '',
-                      icon: Icons.tag_rounded,
-                    ),
-                    _Field(
-                      tr('Nome'),
-                      me?.name ?? a?.displayName ?? '',
-                      icon: Icons.person_outline_rounded,
-                    ),
-                    _Field(
-                      tr('Email'),
-                      me?.email ?? '',
-                      icon: Icons.alternate_email_rounded,
-                    ),
-                    _Field(
-                      tr('Cellulare'),
-                      me?.mobile ?? '',
-                      icon: Icons.smartphone_rounded,
-                    ),
-                  ],
+                // I campi si dividono la riga; sotto i 180 px a testa vanno
+                // a capo.
+                child: LayoutBuilder(
+                  builder: (context, box) {
+                    final fields = [
+                      _Field(
+                        tr('Interno'),
+                        a?.username ?? '',
+                        icon: Icons.tag_rounded,
+                      ),
+                      _Field(
+                        tr('Nome'),
+                        me?.name ?? a?.displayName ?? '',
+                        icon: Icons.person_outline_rounded,
+                      ),
+                      _Field(
+                        tr('Email'),
+                        me?.email ?? '',
+                        icon: Icons.alternate_email_rounded,
+                      ),
+                      _Field(
+                        tr('Cellulare'),
+                        me?.mobile ?? '',
+                        icon: Icons.smartphone_rounded,
+                      ),
+                    ];
+                    const gap = 12.0;
+                    final perRow = (box.maxWidth / 180).floor().clamp(
+                      1,
+                      fields.length,
+                    );
+                    final w = (box.maxWidth - gap * (perRow - 1)) / perRow;
+                    return Wrap(
+                      spacing: gap,
+                      runSpacing: 10,
+                      children: [
+                        for (final f in fields) SizedBox(width: w, child: f),
+                      ],
+                    );
+                  },
                 ),
               ),
             ],

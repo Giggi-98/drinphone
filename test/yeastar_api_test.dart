@@ -851,16 +851,20 @@ void main() {
         const CdrDbCredentials(host: 'pbx.test', user: 'u', password: 'p'),
       );
       expect(conn.cdrConfigured, isTrue);
-      expect((await conn.readCdr()).single.src, '0496369001');
-      expect(db.queries.last.$2, List.filled(6, '305'));
-      await expectLater(conn.readCdr(wholePbx: true), throwsStateError);
+      final page = await conn.readCdr(const CdrQuery());
+      expect(page.rows.single.src, '0496369001');
+      expect(db.page.$2, List.filled(6, '305'));
+      await expectLater(
+        conn.readCdr(const CdrQuery(wholePbx: true)),
+        throwsStateError,
+      );
 
       final a = phone.settings.account!;
       await phone.saveAccount(
         SipAccount(id: a.id, username: '301', password: 'p', domain: a.domain),
       );
       final before = db.queries.length;
-      expect(await conn.readCdr(), isEmpty);
+      expect((await conn.readCdr(const CdrQuery())).rows, isEmpty);
       expect(db.queries.length, before);
       await phone.shutdown();
     },

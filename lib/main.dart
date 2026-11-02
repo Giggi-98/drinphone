@@ -148,7 +148,11 @@ class DrinPhoneApp extends StatelessWidget {
         themeMode: appThemeMode.value,
         theme: buildTheme(Brightness.light),
         darkTheme: buildTheme(Brightness.dark),
-        builder: (_, child) => _Relocalize(child: child!),
+        // Desktop: interfaccia in scala con la finestra (DrinScale).
+        builder: (_, child) =>
+            Platform.isWindows || Platform.isLinux || Platform.isMacOS
+            ? DrinScaled(child: _Relocalize(child: child!))
+            : _Relocalize(child: child!),
         home: HomeScreen(phone: phone),
       ),
     );

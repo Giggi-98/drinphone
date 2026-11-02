@@ -18,6 +18,7 @@ class CallColumn {
     this.flex = 0,
     this.end = false,
     this.hideBelow = 0,
+    this.sortKey,
   });
   final String label;
   final double width;
@@ -26,14 +27,20 @@ class CallColumn {
   /// Allineata a destra (durate).
   final bool end;
   final double hideBelow;
+
+  /// Se non nullo, un clic sull'intestazione ordina per questa colonna.
+  final Object? sortKey;
 }
 
 /// Una riga: celle nell'ordine delle colonne, numero da richiamare.
 class CallRow {
-  const CallRow({required this.cells, this.call, this.callTooltip});
+  const CallRow({required this.cells, this.call, this.callTooltip, this.onTap});
   final List<Widget> cells;
   final VoidCallback? call;
   final String? callTooltip;
+
+  /// Clic sulla riga (dettaglio).
+  final VoidCallback? onTap;
 }
 
 class CallTable extends StatelessWidget {
@@ -42,9 +49,17 @@ class CallTable extends StatelessWidget {
     required this.columns,
     required this.rows,
     this.footer,
+    this.sortKey,
+    this.descending = true,
+    this.onSort,
   });
   final List<CallColumn> columns;
   final List<CallRow> rows;
+
+  /// Ordinamento in corso (freccia sull'intestazione) e cambio di colonna.
+  final Object? sortKey;
+  final bool descending;
+  final ValueChanged<Object>? onSort;
 
   /// In fondo alla lista (Carica altre, avanzamento).
   final Widget? footer;
@@ -75,16 +90,7 @@ class CallTable extends StatelessWidget {
               decoration: BoxDecoration(
                 border: Border(bottom: BorderSide(color: c.line)),
               ),
-              child: line([
-                for (final col in columns)
-                  Text(
-                    col.label,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    textAlign: col.end ? TextAlign.end : TextAlign.start,
-                    style: DrinText.label.copyWith(color: c.muted),
-                  ),
-              ]),
+              child: line([for (final col in columns) _header(col, c)]),
             ),
             Expanded(
               child: ListView.builder(
@@ -104,6 +110,41 @@ class CallTable extends StatelessWidget {
           ],
         );
       },
+    );
+  }
+
+  /// Intestazione: testo; se ordinabile, cliccabile con la freccia.
+  Widget _header(CallColumn col, DrinColors c) {
+    final key = col.sortKey;
+    final on = key != null && key == sortKey;
+    final text = Text(
+      col.label,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      textAlign: col.end ? TextAlign.end : TextAlign.start,
+      style: DrinText.label.copyWith(color: on ? c.primary : c.muted),
+    );
+    final sort = onSort;
+    if (key == null || sort == null) return text;
+    return InkWell(
+      borderRadius: BorderRadius.circular(DrinRadius.control),
+      onTap: () => sort(key),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Flexible(child: text),
+          const SizedBox(width: 2),
+          Icon(
+            !on
+                ? Icons.unfold_more_rounded
+                : descending
+                ? Icons.arrow_downward_rounded
+                : Icons.arrow_upward_rounded,
+            size: 14,
+            color: on ? c.primary : c.muted,
+          ),
+        ],
+      ),
     );
   }
 
@@ -142,30 +183,35 @@ class _HoverRowState extends State<_HoverRow> {
     final mouse = RendererBinding.instance.mouseTracker.mouseIsConnected;
     final row = widget.row;
     return MouseRegion(
+      cursor: row.onTap != null ? SystemMouseCursors.click : MouseCursor.defer,
       onEnter: (_) => setState(() => _hover = true),
       onExit: (_) => setState(() => _hover = false),
-      child: AnimatedContainer(
-        duration: fast,
-        curve: DrinMotion.curve,
-        height: CallTable.rowHeight,
-        padding: const EdgeInsets.only(left: DrinSpace.s3),
-        decoration: BoxDecoration(
-          color: _hover ? c.raised : c.raised.withValues(alpha: 0),
-          borderRadius: BorderRadius.circular(DrinRadius.row),
-        ),
-        child: Stack(
-          alignment: Alignment.centerRight,
-          children: [
-            widget.child,
-            AnimatedOpacity(
-              duration: fast,
-              opacity: _hover || !mouse ? 1 : 0,
-              child: CallIconButton(
-                tooltip: row.callTooltip,
-                onPressed: row.call,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: row.onTap,
+        child: AnimatedContainer(
+          duration: fast,
+          curve: DrinMotion.curve,
+          height: CallTable.rowHeight,
+          padding: const EdgeInsets.only(left: DrinSpace.s3),
+          decoration: BoxDecoration(
+            color: _hover ? c.raised : c.raised.withValues(alpha: 0),
+            borderRadius: BorderRadius.circular(DrinRadius.row),
+          ),
+          child: Stack(
+            alignment: Alignment.centerRight,
+            children: [
+              widget.child,
+              AnimatedOpacity(
+                duration: fast,
+                opacity: _hover || !mouse ? 1 : 0,
+                child: CallIconButton(
+                  tooltip: row.callTooltip,
+                  onPressed: row.call,
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
