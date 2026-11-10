@@ -118,7 +118,18 @@ class PbxConnection {
     final creds = await cdrStore?.load();
     if (creds == null) throw StateError('CDR non configurato');
     cdrWholePbx = creds.wholePbx;
-    return PbxCdr(creds, open: cdrOpener).read(ownExtension: voicemailOf, q: q);
+    final page = await PbxCdr(
+      creds,
+      open: cdrOpener,
+    ).read(ownExtension: voicemailOf, q: q);
+    if (callTimelines.isEmpty || page.rows.isEmpty) return page;
+    return CdrPage([
+      for (final r in page.rows)
+        if (callTimelines[r.uid] case final tl?)
+          r.withLegs(r.legs, timeline: tl)
+        else
+          r,
+    ], page.total);
   }
 
   /// Salva (o sostituisce) le credenziali del database CDR.
@@ -159,6 +170,10 @@ class PbxConnection {
   /// Chiamate in corso sul PBX (evento 30011 + fotografia call/query).
   final liveCalls = <String, LiveCall>{};
 
+  /// Timeline di fine chiamata dall'evento 30039 (`Call End Timeline Notification`),
+  /// per `uid` del CDR (ultime 200 chiamate).
+  final callTimelines = <String, List<CdrTimelineLeg>>{};
+
   /// Chiamate da mostrare, dalla più vecchia. Il PBX dà id diversi alla tratta
   /// trunk e a quella dell'interno della stessa conversazione: una riga per
   /// coppia di capi, preferendo quella con il trunk.
@@ -196,8 +211,9 @@ class PbxConnection {
   int _wsFailures = 0;
 
   /// Eventi sottoscritti: registrazione (30007), stato chiamata (30008),
-  /// presenza (30009), anagrafica interno cambiata (30022).
-  static const eventTopics = [30007, 30008, 30009, 30011, 30022];
+  /// presenza (30009), chiamate in corso (30011), anagrafica interno cambiata
+  /// (30022), timeline di fine chiamata (30039).
+  static const eventTopics = [30007, 30008, 30009, 30011, 30022, 30039];
 
   /// Tipi di `call/query` (documentati per le tre edition).
   static const _callTypes = ['inbound', 'outbound', 'internal'];
@@ -798,6 +814,22 @@ class PbxConnection {
           const Duration(seconds: 3),
           () => sync(force: true),
         );
+      case 30039:
+        final leg = CdrTimelineLeg.fromEvent(msg);
+        if (leg != null) {
+          final list = [
+            for (final l in callTimelines[leg.uid] ?? const <CdrTimelineLeg>[])
+              if (l.leg != leg.leg || (l.cdrId != leg.cdrId && leg.cdrId.isNotEmpty))
+                l,
+            leg,
+          ]..sort((a, b) => a.leg.compareTo(b.leg));
+          callTimelines.remove(leg.uid);
+          callTimelines[leg.uid] = list;
+          while (callTimelines.length > 200) {
+            callTimelines.remove(callTimelines.keys.first);
+          }
+          onUpdate(this, false);
+        }
       default:
         break;
     }
@@ -891,6 +923,7 @@ class PbxConnection {
     recordCode = null;
     callStatus.clear();
     liveCalls.clear();
+    callTimelines.clear();
     lastSync = null;
     _fingerprint = '';
     _readAt.clear();

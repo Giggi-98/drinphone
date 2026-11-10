@@ -86,7 +86,7 @@ class CallTable extends StatelessWidget {
           children: [
             Container(
               height: 36,
-              padding: const EdgeInsets.symmetric(horizontal: DrinSpace.s3),
+              padding: const EdgeInsets.only(left: DrinSpace.s3),
               decoration: BoxDecoration(
                 border: Border(bottom: BorderSide(color: c.line)),
               ),
@@ -131,6 +131,8 @@ class CallTable extends StatelessWidget {
       onTap: () => sort(key),
       child: Row(
         mainAxisSize: MainAxisSize.min,
+        mainAxisAlignment:
+            col.end ? MainAxisAlignment.end : MainAxisAlignment.start,
         children: [
           Flexible(child: text),
           const SizedBox(width: 2),
@@ -218,30 +220,65 @@ class _HoverRowState extends State<_HoverRow> {
   }
 }
 
-/// Due righe: principale (nome) e secondaria (numero in `number`).
+/// Due righe: principale (nome in `heading`, o numero in `number` se
+/// [numberTop]) e secondaria (numero in `number`, o [extra]). Se ci sono sia
+/// [bottom] sia [extra], il numero resta sulla prima riga accanto al nome.
 class TwoLine extends StatelessWidget {
-  const TwoLine(this.top, {super.key, this.bottom, this.color, this.extra});
+  const TwoLine(
+    this.top, {
+    super.key,
+    this.bottom,
+    this.color,
+    this.extra,
+    this.numberTop = false,
+  });
   final String top;
   final String? bottom;
   final Color? color;
 
-  /// Terza informazione sotto (es. "risposto da", nota).
+  /// Riga secondaria sotto (es. "risposto da", nota).
   final Widget? extra;
+
+  /// True quando [top] è un numero senza nome: usa `DrinText.number`.
+  final bool numberTop;
 
   @override
   Widget build(BuildContext context) {
     final c = context.drin;
+    final hasBottom = bottom != null && bottom!.isNotEmpty;
+    final topStyle = (numberTop ? DrinText.number : DrinText.heading).copyWith(
+      color: color ?? c.ink,
+    );
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          top,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: DrinText.heading.copyWith(color: color ?? c.ink),
-        ),
-        if (bottom != null && bottom!.isNotEmpty && extra == null)
+        if (hasBottom && extra != null)
+          Row(
+            children: [
+              Flexible(
+                child: Text(
+                  top,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: topStyle,
+                ),
+              ),
+              Text(
+                ' · $bottom',
+                maxLines: 1,
+                style: DrinText.number.copyWith(color: c.muted),
+              ),
+            ],
+          )
+        else
+          Text(
+            top,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: topStyle,
+          ),
+        if (hasBottom && extra == null)
           Text(
             bottom!,
             maxLines: 1,
@@ -254,11 +291,16 @@ class TwoLine extends StatelessWidget {
   }
 }
 
-/// Chi parla in una cella: nome e numero, o solo il numero.
+/// Chi parla in una cella: nome e numero, o solo il numero (in `number`).
 TwoLine party(String name, String number, {Color? color, Widget? extra}) =>
     name.isNotEmpty && name != number
     ? TwoLine(name, bottom: number, color: color, extra: extra)
-    : TwoLine(number.isEmpty ? '—' : number, color: color, extra: extra);
+    : TwoLine(
+        number.isEmpty ? '—' : number,
+        color: color,
+        extra: extra,
+        numberTop: number.isNotEmpty,
+      );
 
 /// Riga secondaria con icona (risposto da, nota).
 class SubLine extends StatelessWidget {

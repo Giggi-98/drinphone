@@ -2,6 +2,7 @@
 // totale, ordinamento dalle intestazioni (di default dalla più recente),
 // colonne a scelta, dettaglio con le gambe, esportazione CSV.
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
@@ -177,7 +178,6 @@ class _CdrViewState extends State<CdrView> {
 
   /// Colonne nell'ordine del PBX, con la cella di ogni chiamata.
   List<(CallColumn, Widget Function(CdrRecord))> _columns(DrinColors c) {
-    final own = widget.conn.voicemailOf;
     bool on(_Col x) => !_hidden.contains(x);
     return [
       (
@@ -196,11 +196,7 @@ class _CdrViewState extends State<CdrView> {
         ),
       (
         CallColumn(tr('Da'), flex: 3),
-        (r) => party(
-          r.srcName,
-          r.src,
-          color: !r.answered && own != null && r.src != own ? c.busyText : null,
-        ),
+        (r) => party(r.srcName, r.src),
       ),
       (
         CallColumn(tr('A'), flex: 3),
@@ -244,7 +240,7 @@ class _CdrViewState extends State<CdrView> {
         (
           CallColumn(
             tr('Durata'),
-            width: 84,
+            width: 92,
             end: true,
             hideBelow: 1000,
             sortKey: CdrSort.duration,
@@ -260,7 +256,7 @@ class _CdrViewState extends State<CdrView> {
         (
           CallColumn(
             tr('Conversazione'),
-            width: 120,
+            width: 128,
             end: true,
             hideBelow: 680,
             sortKey: CdrSort.talk,
@@ -557,8 +553,10 @@ class _RouteCell extends StatelessWidget {
   }
 }
 
-/// Dettaglio di una chiamata: tutti i campi del CDR e le gambe.
-class _CdrDetails extends StatelessWidget {
+/// Dettaglio di una chiamata a 3 pannelli (come CDR Details di Yeastar):
+/// Riepilogo a sinistra, Timeline per Leg al centro (da evento 30039 o
+/// ricostruita dalle gambe CDR), Ripartizione tempi con ciambella a destra.
+class _CdrDetails extends StatefulWidget {
   const _CdrDetails(this.r);
   final CdrRecord r;
 
@@ -575,7 +573,932 @@ class _CdrDetails extends StatelessWidget {
         '${two(t.hour)}:${two(t.minute)}:${two(t.second)}';
   }
 
-  static String _dur(int s) => s <= 0 ? '—' : DurationCell.format(s);
+  /// Formato `00:00:31` per la timeline e la ripartizione tempi.
+  static String _hms(int s) {
+    final v = s < 0 ? 0 : s;
+    String two(int n) => n.toString().padLeft(2, '0');
+    final h = v ~/ 3600;
+    final m = (v % 3600) ~/ 60;
+    final sec = v % 60;
+    return '${two(h)}:${two(m)}:${two(sec)}';
+  }
+
+  /// Formato offset `00:05` dall'inizio chiamata.
+  static String _mmss(int s) {
+    final v = s < 0 ? 0 : s;
+    String two(int n) => n.toString().padLeft(2, '0');
+    final h = v ~/ 3600;
+    final m = (v % 3600) ~/ 60;
+    final sec = v % 60;
+    return h > 0 ? '$h:${two(m)}:${two(sec)}' : '${two(m)}:${two(sec)}';
+  }
+
+  @override
+  State<_CdrDetails> createState() => _CdrDetailsState();
+}
+
+enum _StepTone { info, answered, ended }
+
+class _TimelineStep {
+  const _TimelineStep({
+    required this.offsetSec,
+    required this.title,
+    this.subtitle = '',
+    this.icon,
+    this.tone = _StepTone.info,
+    this.children = const [],
+  });
+  final int offsetSec;
+  final String title;
+  final String subtitle;
+  final IconData? icon;
+  final _StepTone tone;
+  final List<(_TimelineStep, bool)> children;
+}
+
+class _TimelineLeg {
+  const _TimelineLeg(this.number, this.steps);
+  final int number;
+  final List<_TimelineStep> steps;
+}
+
+class _CdrDetailsState extends State<_CdrDetails> {
+  final Set<String> _collapsed = {};
+
+  CdrRecord get r => widget.r;
+
+  String _closedByLabel() {
+    final raw = r.disconnectBy.trim();
+    if (raw.isEmpty) return '';
+    if (raw.toLowerCase() == 'external') {
+      final ext = r.callType == 'Inbound'
+          ? _CdrDetails._party(r.srcName, r.src)
+          : '';
+      return ext.isEmpty
+          ? tr('Interlocutore esterno')
+          : '${tr('Interlocutore esterno')} ($ext)';
+    }
+    return _pretty(raw);
+  }
+
+  String _closerParty(String finalTarget) {
+    final raw = r.disconnectBy.trim();
+    if (raw.toLowerCase() == 'external') {
+      return r.callType == 'Inbound'
+          ? _CdrDetails._party(r.srcName, r.src)
+          : finalTarget;
+    }
+    if (raw.isNotEmpty) return _pretty(raw);
+    return finalTarget.isNotEmpty
+        ? finalTarget
+        : _CdrDetails._party(r.srcName, r.src);
+  }
+
+  List<_TimelineLeg> _buildTimeline(DrinColors c) {
+    if (r.timeline.isNotEmpty) {
+      return _fromEvent30039(c);
+    }
+    return _fromCdrRecord(c);
+  }
+
+  List<_TimelineLeg> _fromEvent30039(DrinColors c) {
+    final t0 =
+        r.time ??
+        r.timeline
+            .map((l) => l.timeStart)
+            .whereType<DateTime>()
+            .firstOrNull;
+    int off(DateTime? t, int fallback) =>
+        t != null && t0 != null ? math.max(0, t.difference(t0).inSeconds) : fallback;
+    final out = <_TimelineLeg>[];
+    for (final leg in r.timeline) {
+      final steps = <_TimelineStep>[];
+      final legStart = off(leg.timeStart, 0);
+      if (leg.events.isEmpty) {
+        if (leg.callFrom.isNotEmpty) {
+          steps.add(
+            _TimelineStep(
+              offsetSec: legStart,
+              icon: Icons.call_rounded,
+              title: tr('Chiamata da {n}', {'n': _pretty(leg.callFrom)}),
+              subtitle: [
+                if (leg.srcTrunk.isNotEmpty) 'via ${leg.srcTrunk}',
+                if (leg.dstTrunk.isNotEmpty) '→ ${leg.dstTrunk}',
+              ].join(' · '),
+            ),
+          );
+        }
+        if (leg.callTo.isNotEmpty) {
+          steps.add(
+            _TimelineStep(
+              offsetSec: legStart,
+              title: tr('Tentativo di contatto {n}', {'n': _pretty(leg.callTo)}),
+              subtitle: leg.ring > 0
+                  ? tr('Squillo per {d}', {
+                      'd': _CdrDetails._hms(leg.ring),
+                    })
+                  : '',
+            ),
+          );
+        }
+        if (leg.status.toUpperCase() == 'ANSWERED') {
+          steps.add(
+            _TimelineStep(
+              offsetSec: legStart + leg.ring,
+              icon: Icons.call_rounded,
+              tone: _StepTone.answered,
+              title: tr('{n} ha risposto alla chiamata', {
+                'n': _pretty(leg.callTo),
+              }),
+              subtitle:
+                  '${tr('Conversazione')}: ${_CdrDetails._hms(leg.talk)}',
+            ),
+          );
+        }
+      } else {
+        for (final ev in leg.events) {
+          final evOff = off(ev.time, legStart);
+          final name = ev.name.toLowerCase();
+          final target = _pretty(
+            ev.content['dst'] ?? ev.content['target'] ?? ev.content['name'] ?? leg.callTo,
+          );
+          final sub = [
+            if ((ev.content['trunk'] ?? '').isNotEmpty)
+              'via ${ev.content['trunk']}',
+            if ((ev.content['endpoint'] ?? '').isNotEmpty)
+              ev.content['endpoint']!,
+          ].join(' · ');
+          if (name.contains('call_from') || name == 'start') {
+            steps.add(
+              _TimelineStep(
+                offsetSec: evOff,
+                icon: Icons.call_rounded,
+                title: tr('Chiamata da {n}', {
+                  'n': _pretty(ev.content['src'] ?? leg.callFrom),
+                }),
+                subtitle: sub.isNotEmpty
+                    ? sub
+                    : (leg.srcTrunk.isNotEmpty ? 'via ${leg.srcTrunk}' : ''),
+              ),
+            );
+          } else if (name.contains('route')) {
+            steps.add(
+              _TimelineStep(
+                offsetSec: evOff,
+                title: tr('Instradata a {d}', {'d': target}),
+                subtitle: sub,
+              ),
+            );
+          } else if (name.contains('enter')) {
+            steps.add(
+              _TimelineStep(
+                offsetSec: evOff,
+                title: tr('Ingresso in {d}', {'d': target}),
+                subtitle: leg.ring > 0
+                    ? tr('Squillo per {d}', {
+                        'd': _CdrDetails._hms(leg.ring),
+                      })
+                    : sub,
+              ),
+            );
+          } else if (name.contains('assign')) {
+            final count = int.tryParse(ev.content['count'] ?? '') ?? 1;
+            steps.add(
+              _TimelineStep(
+                offsetSec: evOff,
+                title: tr('Assegnata a {n} interni', {'n': count}),
+                subtitle: ev.rawContent.isNotEmpty ? ev.rawContent : sub,
+              ),
+            );
+          } else if (name.contains('tried') || name.contains('dial')) {
+            steps.add(
+              _TimelineStep(
+                offsetSec: evOff,
+                title: tr('Tentativo di contatto {n}', {'n': target}),
+                subtitle: sub,
+              ),
+            );
+          } else if (name.contains('answer') && !name.contains('no_answer')) {
+            steps.add(
+              _TimelineStep(
+                offsetSec: evOff,
+                icon: Icons.call_rounded,
+                tone: _StepTone.answered,
+                title: tr('{n} ha risposto alla chiamata', {'n': target}),
+                subtitle:
+                    '${tr('Conversazione')}: ${_CdrDetails._hms(leg.talk)}',
+              ),
+            );
+          } else if (name.contains('hang') ||
+              name.contains('hung') ||
+              name.contains('end')) {
+            steps.add(
+              _TimelineStep(
+                offsetSec: evOff,
+                icon: Icons.call_end_rounded,
+                tone: _StepTone.ended,
+                title: tr('{n} ha riagganciato', {
+                  'n': _pretty(
+                    ev.content['by'] ?? ev.content['party'] ?? _closerParty(target),
+                  ),
+                }),
+              ),
+            );
+          } else {
+            steps.add(
+              _TimelineStep(
+                offsetSec: evOff,
+                title: '${ev.name}${target.isNotEmpty ? ': $target' : ''}',
+                subtitle: sub,
+              ),
+            );
+          }
+        }
+      }
+      if (steps.isNotEmpty) {
+        out.add(_TimelineLeg(leg.leg, steps));
+      }
+    }
+    return out.isEmpty ? _fromCdrRecord(c) : out;
+  }
+
+  List<_TimelineLeg> _fromCdrRecord(DrinColors c) {
+    final t0 =
+        r.time ?? (r.legs.isNotEmpty ? r.legs.first.time : null);
+    int off(DateTime? t, int fallback) =>
+        t != null && t0 != null ? math.max(0, t.difference(t0).inSeconds) : fallback;
+
+    final caller = _CdrDetails._party(r.srcName, r.src);
+    final firstDst = _CdrDetails._party(r.dstName, r.dst);
+    final finalTarget = r.lastDst.isNotEmpty
+        ? _CdrDetails._party(r.lastDstName, r.lastDst)
+        : firstDst;
+
+    final leg1 = <_TimelineStep>[
+      _TimelineStep(
+        offsetSec: 0,
+        icon: Icons.call_rounded,
+        title: tr('Chiamata da {n}', {'n': caller.isEmpty ? '—' : caller}),
+        subtitle: [
+          if (r.srcTrunk.isNotEmpty) 'via ${r.srcTrunk}',
+          if (r.did.isNotEmpty) 'DID ${r.did}',
+        ].join(' · '),
+      ),
+    ];
+
+    for (final s in r.ivrs) {
+      leg1.add(
+        _TimelineStep(
+          offsetSec: 0,
+          title: '${tr('IVR')}: ${_pretty(s)}',
+        ),
+      );
+    }
+    for (final s in r.callFlows) {
+      leg1.add(
+        _TimelineStep(
+          offsetSec: 0,
+          title: '${tr('Call flow')}: ${_pretty(s)}',
+        ),
+      );
+    }
+
+    // Individua se la chiamata è passata per un gruppo/coda (es. 6300 -> 200)
+    final hasGroupRoute =
+        r.queues.isNotEmpty ||
+        r.ringGroups.isNotEmpty ||
+        (r.lastDst.isNotEmpty && r.lastDst != r.dst) ||
+        r.legs.length > 1;
+
+    // Se la prima gamba di cdr_clip rappresenta il gruppo/coda (stesso dst del
+    // record principale mentre le successive puntano agli interni), la usiamo
+    // come intestazione del gruppo e le successive come interni assegnati.
+    final bool firstLegIsContainer =
+        r.legs.length > 1 &&
+        r.legs.first.dst == r.dst &&
+        r.legs.skip(1).any((l) => l.dst != r.dst);
+    final memberLegs = firstLegIsContainer
+        ? r.legs.skip(1).toList()
+        : (r.legs.length > 1 ? r.legs : const <CdrLeg>[]);
+    final groupRing = firstLegIsContainer && r.legs.first.ring > 0
+        ? r.legs.first.ring
+        : r.ring;
+
+    if (hasGroupRoute) {
+      final groupLabel = r.ringGroups.isNotEmpty
+          ? _pretty(r.ringGroups.first)
+          : r.queues.isNotEmpty
+          ? _pretty(r.queues.first)
+          : firstDst;
+      if (groupLabel.isNotEmpty &&
+          (groupLabel != finalTarget || memberLegs.isNotEmpty)) {
+        leg1.add(
+          _TimelineStep(
+            offsetSec: 0,
+            title: tr('Instradata a {d}', {'d': groupLabel}),
+            subtitle: r.dstTrunk.isNotEmpty ? 'via ${r.dstTrunk}' : '',
+          ),
+        );
+        leg1.add(
+          _TimelineStep(
+            offsetSec: 0,
+            title: tr('Ingresso in {d}', {'d': groupLabel}),
+            subtitle: tr('Squillo per {d}', {
+              'd': _CdrDetails._hms(groupRing),
+            }),
+          ),
+        );
+      }
+      if (memberLegs.isNotEmpty) {
+        final assignOff = off(memberLegs.first.time, 1);
+        final children = <(_TimelineStep, bool)>[
+          for (final ml in memberLegs)
+            () {
+              final who = _CdrDetails._party(ml.dstName, ml.dst);
+              final ans = ml.disposition.toUpperCase() == 'ANSWERED';
+              final sub = [
+                if (ml.srcTrunk.isNotEmpty) ml.srcTrunk,
+                if (ml.dstTrunk.isNotEmpty) ml.dstTrunk,
+              ].join(' → ');
+              final String line;
+              if (ans) {
+                line = tr('{n}: Ha risposto alla chiamata', {'n': who});
+              } else if (r.answered) {
+                line = tr(
+                  '{n}: Risposto da un altro interno dopo {d}',
+                  {'n': who, 'd': _CdrDetails._hms(ml.ring)},
+                );
+              } else {
+                final (outLabel, _) = _CdrViewState.outcome(ml.disposition, c);
+                line = '$who: $outLabel (${_CdrDetails._hms(ml.ring)})';
+              }
+              return (
+                _TimelineStep(
+                  offsetSec: off(ml.time, assignOff),
+                  title: line,
+                  subtitle: sub,
+                ),
+                ans,
+              );
+            }(),
+        ];
+        leg1.add(
+          _TimelineStep(
+            offsetSec: assignOff,
+            title: tr('Assegnata a {n} interni', {'n': memberLegs.length}),
+            children: children,
+          ),
+        );
+      }
+    }
+
+    // Passi finali: contatto dell'interlocutore, risposta/mancata risposta e
+    // chiusura. Se c'è stato instradamento su gruppo/coda li separiamo in Leg 2
+    // come nel CDR Details di Yeastar.
+    final answeredLeg = memberLegs
+        .where((l) => l.disposition.toUpperCase() == 'ANSWERED')
+        .firstOrNull;
+    final contactOff = answeredLeg != null
+        ? off(answeredLeg.time, 1)
+        : (hasGroupRoute ? 1 : 0);
+    final answerOff = r.ring > 0 ? r.ring : contactOff;
+    final endOff = math.max(r.duration, answerOff + r.talk);
+    final closer = _closerParty(finalTarget);
+
+    final handlingSteps = <_TimelineStep>[
+      if (finalTarget.isNotEmpty)
+        _TimelineStep(
+          offsetSec: contactOff,
+          title: tr('Tentativo di contatto {n}', {'n': finalTarget}),
+          subtitle: r.dstTrunk.isNotEmpty
+              ? 'via ${r.dstTrunk}'
+              : (r.dod.isNotEmpty ? 'DOD ${r.dod}' : ''),
+        ),
+      if (r.answered)
+        _TimelineStep(
+          offsetSec: answerOff,
+          icon: Icons.call_rounded,
+          tone: _StepTone.answered,
+          title: tr('{n} ha risposto alla chiamata', {
+            'n': finalTarget.isEmpty ? '—' : finalTarget,
+          }),
+          subtitle: [
+            '${tr('Conversazione')}: ${_CdrDetails._hms(r.talk)}',
+            if (r.hold > 0) '${tr('In attesa')}: ${_CdrDetails._hms(r.hold)}',
+          ].join(' · '),
+        )
+      else
+        _TimelineStep(
+          offsetSec: answerOff,
+          icon: Icons.phone_missed_rounded,
+          tone: _StepTone.ended,
+          title:
+              '${_CdrViewState.outcome(r.disposition, c).$1} (${_CdrDetails._hms(r.ring)})',
+        ),
+      _TimelineStep(
+        offsetSec: endOff,
+        icon: Icons.call_end_rounded,
+        tone: _StepTone.ended,
+        title: tr('{n} ha riagganciato', {
+          'n': closer.isEmpty ? '—' : closer,
+        }),
+      ),
+    ];
+
+    if (hasGroupRoute) {
+      return [_TimelineLeg(1, leg1), _TimelineLeg(2, handlingSteps)];
+    }
+    return [
+      _TimelineLeg(1, [...leg1, ...handlingSteps]),
+    ];
+  }
+
+  // --------------------------------------------------- Pannello 1: Riepilogo
+
+  Widget _buildBasicCard(DrinColors c, String outcomeLabel, Color outcomeColor) {
+    final (kindIcon, kindLabel) = _CdrViewState.kind(r.callType);
+    final closedBy = _closedByLabel();
+    final extraFields = <(String, String, bool)>[
+      if (r.ivrs.isNotEmpty) (tr('IVR'), r.ivrs.map(_pretty).join(', '), false),
+      if (r.callFlows.isNotEmpty)
+        (tr('Call flow'), r.callFlows.map(_pretty).join(', '), false),
+      if (r.queues.isNotEmpty)
+        (tr('Coda'), r.queues.map(_pretty).join(', '), false),
+      if (r.ringGroups.isNotEmpty)
+        (tr('Gruppo di squillo'), r.ringGroups.map(_pretty).join(', '), false),
+      if (r.srcTrunk.isNotEmpty) (tr('Trunk in ingresso'), r.srcTrunk, false),
+      if (r.dstTrunk.isNotEmpty) (tr('Trunk in uscita'), r.dstTrunk, false),
+      if (r.did.isNotEmpty) (tr('DID'), r.did, true),
+      if (r.dod.isNotEmpty) (tr('DOD'), r.dod, true),
+      if (r.hasRecording) (tr('Registrazione'), tr('Sì'), false),
+    ];
+
+    Widget sectionItem(String label, Widget child) => Padding(
+      padding: const EdgeInsets.only(bottom: DrinSpace.s3),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label, style: DrinText.detail.copyWith(color: c.muted)),
+          const SizedBox(height: DrinSpace.s1),
+          child,
+        ],
+      ),
+    );
+
+    return Container(
+      decoration: BoxDecoration(
+        color: c.raised,
+        borderRadius: BorderRadius.circular(DrinRadius.panel),
+        border: Border.all(color: c.line),
+      ),
+      padding: const EdgeInsets.all(DrinSpace.s4),
+      child: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              tr('Riepilogo'),
+              style: DrinText.heading.copyWith(color: c.ink),
+            ),
+            const SizedBox(height: DrinSpace.s3),
+            if (r.uid.isNotEmpty)
+              sectionItem(
+                tr('ID'),
+                SelectableText(
+                  r.uid,
+                  style: DrinText.number.copyWith(color: c.ink),
+                ),
+              ),
+            sectionItem(
+              tr('Ora'),
+              SelectableText(
+                _CdrDetails._when(r.time),
+                style: DrinText.number.copyWith(color: c.ink),
+              ),
+            ),
+            sectionItem(tr('Tipo'), KindCell(kindIcon, kindLabel)),
+            sectionItem(
+              tr('Da'),
+              _PartyChip(name: r.srcName, number: r.src, accent: c.primary),
+            ),
+            sectionItem(
+              tr('A'),
+              _PartyChip(name: r.dstName, number: r.dst, accent: c.squillo),
+            ),
+            if (r.secondDst.isNotEmpty && r.secondDst != r.lastDst)
+              sectionItem(
+                tr('Secondo partecipante'),
+                _PartyChip(
+                  name: r.secondDstName,
+                  number: r.secondDst,
+                  accent: c.brand,
+                ),
+              ),
+            if (r.lastDst.isNotEmpty)
+              sectionItem(
+                tr('Ultimo partecipante'),
+                _PartyChip(
+                  name: r.lastDstName,
+                  number: r.lastDst,
+                  accent: c.free,
+                ),
+              ),
+            sectionItem(
+              tr('Esito'),
+              OutcomePill(outcomeLabel, outcomeColor),
+            ),
+            if (closedBy.isNotEmpty)
+              sectionItem(
+                tr('Chiuso da'),
+                SelectableText(
+                  closedBy,
+                  style: DrinText.body.copyWith(color: c.ink),
+                ),
+              ),
+            if (extraFields.isNotEmpty) ...[
+              Divider(height: DrinSpace.s5, color: c.line),
+              for (final (label, val, isNum) in extraFields)
+                sectionItem(
+                  label,
+                  SelectableText(
+                    val,
+                    style: (isNum ? DrinText.number : DrinText.body).copyWith(
+                      color: c.ink,
+                    ),
+                  ),
+                ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ---------------------------------------------------- Pannello 2: Timeline
+
+  Widget _buildTimelineCard(DrinColors c) {
+    final legs = _buildTimeline(c);
+    return Container(
+      decoration: BoxDecoration(
+        color: c.raised,
+        borderRadius: BorderRadius.circular(DrinRadius.panel),
+        border: Border.all(color: c.line),
+      ),
+      padding: const EdgeInsets.all(DrinSpace.s4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            tr('Timeline'),
+            style: DrinText.heading.copyWith(color: c.ink),
+          ),
+          const SizedBox(height: DrinSpace.s3),
+          Expanded(
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  for (var li = 0; li < legs.length; li++) ...[
+                    if (li > 0) const SizedBox(height: DrinSpace.s3),
+                    Text(
+                      tr('Leg {n}', {'n': legs[li].number}),
+                      style: DrinText.heading.copyWith(color: c.ink),
+                    ),
+                    const SizedBox(height: DrinSpace.s2),
+                    for (var si = 0; si < legs[li].steps.length; si++)
+                      _buildStepRow(
+                        c,
+                        legs[li].steps[si],
+                        keyId: '${legs[li].number}-$si',
+                        drawLineBelow:
+                            si < legs[li].steps.length - 1 ||
+                            li < legs.length - 1,
+                      ),
+                  ],
+                  const SizedBox(height: DrinSpace.s2),
+                  Text(
+                    tr('Fine chiamata'),
+                    style: DrinText.heading.copyWith(color: c.ink),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStepRow(
+    DrinColors c,
+    _TimelineStep step, {
+    required String keyId,
+    required bool drawLineBelow,
+  }) {
+    final collapsed = _collapsed.contains(keyId);
+    final (Color accent, Color softBg) = switch (step.tone) {
+      _StepTone.answered => (c.free, c.free.withValues(alpha: 0.16)),
+      _StepTone.ended => (c.busy, c.busy.withValues(alpha: 0.16)),
+      _StepTone.info => (c.primary, c.primary.withValues(alpha: 0.16)),
+    };
+
+    final Widget indicator;
+    if (step.icon != null) {
+      indicator = Container(
+        width: 24,
+        height: 24,
+        decoration: BoxDecoration(
+          color: softBg,
+          borderRadius: BorderRadius.circular(DrinRadius.control),
+          border: Border.all(color: accent.withValues(alpha: 0.45)),
+        ),
+        child: Icon(step.icon, size: 14, color: accent),
+      );
+    } else {
+      indicator = SizedBox(
+        width: 24,
+        height: 24,
+        child: Center(
+          child: Container(
+            width: 10,
+            height: 10,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: c.raised,
+              border: Border.all(color: accent, width: 2),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return IntrinsicHeight(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          SizedBox(
+            width: 24,
+            child: Column(
+              children: [
+                indicator,
+                if (drawLineBelow)
+                  Expanded(
+                    child: Container(width: 1.5, color: c.line),
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(width: DrinSpace.s2),
+          SizedBox(
+            width: 48,
+            child: Padding(
+              padding: const EdgeInsets.only(top: 3),
+              child: Text(
+                _CdrDetails._mmss(step.offsetSec),
+                style: DrinText.number.copyWith(color: c.muted),
+              ),
+            ),
+          ),
+          const SizedBox(width: DrinSpace.s2),
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.only(bottom: DrinSpace.s4),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Text(
+                      step.title,
+                      style: DrinText.label.copyWith(color: c.ink),
+                    ),
+                  ),
+                  if (step.subtitle.isNotEmpty) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      step.subtitle,
+                      style: DrinText.detail.copyWith(color: c.muted),
+                    ),
+                  ],
+                  if (step.children.isNotEmpty) ...[
+                    const SizedBox(height: DrinSpace.s1),
+                    InkWell(
+                      borderRadius: BorderRadius.circular(DrinRadius.control),
+                      onTap: () => setState(() {
+                        if (collapsed) {
+                          _collapsed.remove(keyId);
+                        } else {
+                          _collapsed.add(keyId);
+                        }
+                      }),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 2),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              collapsed ? tr('Espandi') : tr('Comprimi'),
+                              style: DrinText.detail.copyWith(color: c.primary),
+                            ),
+                            const SizedBox(width: 2),
+                            Icon(
+                              collapsed
+                                  ? Icons.expand_more_rounded
+                                  : Icons.expand_less_rounded,
+                              size: 14,
+                              color: c.primary,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    if (!collapsed) ...[
+                      const SizedBox(height: DrinSpace.s2),
+                      for (final (child, isAns) in step.children)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: DrinSpace.s2),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Padding(
+                                padding: const EdgeInsets.only(top: 4),
+                                child: Container(
+                                  width: 8,
+                                  height: 8,
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    border: Border.all(
+                                      color: isAns ? c.free : c.primary,
+                                      width: 1.8,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: DrinSpace.s2),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      child.title,
+                                      style: DrinText.body.copyWith(
+                                        color: c.ink,
+                                      ),
+                                    ),
+                                    if (child.subtitle.isNotEmpty)
+                                      Text(
+                                        child.subtitle,
+                                        style: DrinText.detail.copyWith(
+                                          color: c.muted,
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                    ],
+                  ],
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ------------------------------------------ Pannello 3: Ripartizione tempi
+
+  Widget _buildBreakdownCard(DrinColors c) {
+    final ring = math.max(0, r.ring);
+    final talk = math.max(0, r.talk);
+    final hold = math.max(0, r.hold);
+    final sumParts = ring + talk + hold;
+    final total = math.max(r.duration, sumParts);
+    final denom = sumParts > 0 ? sumParts : 1;
+
+    String pct(int v) =>
+        sumParts <= 0 ? '0.0%' : '${(v * 100.0 / denom).toStringAsFixed(1)}%';
+
+    Widget topStat(String label, int sec) => Expanded(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: DrinText.detail.copyWith(color: c.muted),
+          ),
+          const SizedBox(height: DrinSpace.s1),
+          Text(
+            _CdrDetails._hms(sec),
+            style: DrinText.number.copyWith(
+              color: c.ink,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+
+    Widget legendRow(Color dotColor, String label, int sec) => Padding(
+      padding: const EdgeInsets.symmetric(vertical: DrinSpace.s1),
+      child: Row(
+        children: [
+          Container(
+            width: 10,
+            height: 10,
+            decoration: BoxDecoration(shape: BoxShape.circle, color: dotColor),
+          ),
+          const SizedBox(width: DrinSpace.s2),
+          Expanded(
+            child: Text(
+              label,
+              style: DrinText.detail.copyWith(color: c.muted),
+            ),
+          ),
+          Text(
+            '${_CdrDetails._hms(sec)} · ${pct(sec)}',
+            style: DrinText.number.copyWith(color: c.ink),
+          ),
+        ],
+      ),
+    );
+
+    return Container(
+      decoration: BoxDecoration(
+        color: c.raised,
+        borderRadius: BorderRadius.circular(DrinRadius.panel),
+        border: Border.all(color: c.line),
+      ),
+      padding: const EdgeInsets.all(DrinSpace.s4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            tr('Ripartizione tempi'),
+            style: DrinText.heading.copyWith(color: c.ink),
+          ),
+          const SizedBox(height: DrinSpace.s3),
+          Row(
+            children: [
+              topStat(tr('Durata totale'), total),
+              const SizedBox(width: DrinSpace.s2),
+              topStat(tr('Squillo'), ring),
+              const SizedBox(width: DrinSpace.s2),
+              topStat(tr('Conversazione'), talk),
+            ],
+          ),
+          const SizedBox(height: DrinSpace.s5),
+          Center(
+            child: SizedBox(
+              width: 168,
+              height: 168,
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  CustomPaint(
+                    size: const Size.square(168),
+                    painter: _DonutPainter(
+                      slices: [
+                        (ring.toDouble(), c.free),
+                        (talk.toDouble(), c.squillo),
+                        (hold.toDouble(), c.brand),
+                      ],
+                      emptyColor: c.line,
+                    ),
+                  ),
+                  Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        _CdrDetails._hms(total),
+                        style: DrinText.number.copyWith(
+                          color: c.ink,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      Text(
+                        tr('Durata totale'),
+                        style: DrinText.detail.copyWith(color: c.muted),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: DrinSpace.s5),
+          legendRow(c.free, tr('Squillo'), ring),
+          legendRow(c.squillo, tr('Conversazione'), talk),
+          legendRow(c.brand, tr('In attesa'), hold),
+        ],
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -584,76 +1507,32 @@ class _CdrDetails extends StatelessWidget {
       r.disposition,
       c,
     );
-    final fields = <(String, String)>[
-      (tr('Ora'), _when(r.time)),
-      (tr('Tipo'), _CdrViewState.kind(r.callType).$2),
-      (tr('Da'), _party(r.srcName, r.src)),
-      (tr('A'), _party(r.dstName, r.dst)),
-      (tr('Secondo partecipante'), _party(r.secondDstName, r.secondDst)),
-      (tr('Ultimo partecipante'), _party(r.lastDstName, r.lastDst)),
-      (tr('IVR'), r.ivrs.map(_pretty).join(', ')),
-      (tr('Call flow'), r.callFlows.map(_pretty).join(', ')),
-      (tr('Coda'), r.queues.map(_pretty).join(', ')),
-      (tr('Gruppo di squillo'), r.ringGroups.map(_pretty).join(', ')),
-      (tr('Durata'), _dur(r.duration)),
-      (tr('Squillo'), _dur(r.ring)),
-      (tr('Conversazione'), _dur(r.talk)),
-      (tr('In attesa'), _dur(r.hold)),
-      (tr('Chiuso da'), r.disconnectBy),
-      (tr('Trunk in ingresso'), r.srcTrunk),
-      (tr('Trunk in uscita'), r.dstTrunk),
-      (tr('DID'), r.did),
-      (tr('DOD'), r.dod),
-      (tr('Registrazione'), r.hasRecording ? tr('Sì') : ''),
-    ];
-    Widget field(String label, String value) => SizedBox(
-      width: 220,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(label, style: DrinText.label.copyWith(color: c.muted)),
-          const SizedBox(height: 2),
-          SelectableText(
-            value.isEmpty ? '—' : value,
-            style: DrinText.body.copyWith(
-              color: value.isEmpty ? c.muted : c.ink,
-            ),
-          ),
-        ],
-      ),
-    );
-    Widget head(String s, {bool end = false}) => Text(
-      s,
-      textAlign: end ? TextAlign.end : TextAlign.start,
-      style: DrinText.label.copyWith(color: c.muted),
-    );
-    Widget cell(String s, {bool end = false, bool number = false}) => Padding(
-      padding: const EdgeInsets.symmetric(vertical: DrinSpace.s2),
-      child: Text(
-        s.isEmpty ? '—' : s,
-        textAlign: end ? TextAlign.end : TextAlign.start,
-        style: (number ? DrinText.number : DrinText.body).copyWith(
-          color: c.ink,
-        ),
-      ),
-    );
     return Dialog(
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 960, maxHeight: 720),
+        constraints: const BoxConstraints(maxWidth: 1180, maxHeight: 760),
         child: Padding(
           padding: const EdgeInsets.all(DrinSpace.s5),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
-            mainAxisSize: MainAxisSize.min,
             children: [
               Row(
                 children: [
-                  Expanded(
-                    child: Text(
-                      tr('Dettagli chiamata'),
-                      style: DrinText.title.copyWith(color: c.ink),
-                    ),
+                  Text(
+                    tr('Dettagli chiamata'),
+                    style: DrinText.title.copyWith(color: c.ink),
                   ),
+                  if (r.uid.isNotEmpty) ...[
+                    const SizedBox(width: DrinSpace.s3),
+                    Flexible(
+                      child: SelectableText(
+                        '(${tr('ID')} ${r.uid})',
+                        maxLines: 1,
+                        style: DrinText.number.copyWith(color: c.muted),
+                      ),
+                    ),
+                  ] else
+                    const Spacer(),
+                  if (r.uid.isNotEmpty) const Spacer(),
                   OutcomePill(outcomeLabel, outcomeColor),
                   const SizedBox(width: DrinSpace.s2),
                   IconButton(
@@ -664,88 +1543,43 @@ class _CdrDetails extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: DrinSpace.s4),
-              Flexible(
-                child: SingleChildScrollView(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Wrap(
-                        spacing: DrinSpace.s5,
-                        runSpacing: DrinSpace.s4,
-                        children: [for (final f in fields) field(f.$1, f.$2)],
-                      ),
-                      if (r.legs.isNotEmpty) ...[
-                        const SizedBox(height: DrinSpace.s5),
-                        Text(
-                          tr('Gambe della chiamata'),
-                          style: DrinText.heading.copyWith(color: c.ink),
-                        ),
-                        const SizedBox(height: DrinSpace.s2),
-                        Table(
-                          columnWidths: const {
-                            0: FixedColumnWidth(84),
-                            1: FlexColumnWidth(2),
-                            2: FlexColumnWidth(2),
-                            3: FixedColumnWidth(132),
-                            4: FixedColumnWidth(72),
-                            5: FixedColumnWidth(96),
-                            6: FlexColumnWidth(2),
-                          },
-                          defaultVerticalAlignment:
-                              TableCellVerticalAlignment.middle,
-                          border: TableBorder(
-                            horizontalInside: BorderSide(color: c.line),
-                          ),
+              Expanded(
+                child: LayoutBuilder(
+                  builder: (context, box) {
+                    if (box.maxWidth < 860) {
+                      return SingleChildScrollView(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
-                            TableRow(
-                              children: [
-                                head(tr('Ora')),
-                                head(tr('Da')),
-                                head(tr('A')),
-                                head(tr('Esito')),
-                                head(tr('Squillo'), end: true),
-                                head(tr('Conversazione'), end: true),
-                                head(tr('Trunk')),
-                              ],
+                            _buildBasicCard(c, outcomeLabel, outcomeColor),
+                            const SizedBox(height: DrinSpace.s3),
+                            SizedBox(
+                              height: 420,
+                              child: _buildTimelineCard(c),
                             ),
-                            for (final l in r.legs)
-                              TableRow(
-                                children: [
-                                  cell(
-                                    l.time == null
-                                        ? ''
-                                        : _when(l.time).split(' ').last,
-                                    number: true,
-                                  ),
-                                  cell(_party(l.srcName, l.src)),
-                                  cell(_party(l.dstName, l.dst)),
-                                  Align(
-                                    alignment: Alignment.centerLeft,
-                                    child: Builder(
-                                      builder: (context) {
-                                        final (t, col) = _CdrViewState.outcome(
-                                          l.disposition,
-                                          c,
-                                        );
-                                        return OutcomePill(t, col);
-                                      },
-                                    ),
-                                  ),
-                                  cell(_dur(l.ring), end: true, number: true),
-                                  cell(_dur(l.talk), end: true, number: true),
-                                  cell(
-                                    [
-                                      l.srcTrunk,
-                                      l.dstTrunk,
-                                    ].where((s) => s.isNotEmpty).join(' → '),
-                                  ),
-                                ],
-                              ),
+                            const SizedBox(height: DrinSpace.s3),
+                            _buildBreakdownCard(c),
                           ],
                         ),
+                      );
+                    }
+                    return Row(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        SizedBox(
+                          width: 272,
+                          child: _buildBasicCard(c, outcomeLabel, outcomeColor),
+                        ),
+                        const SizedBox(width: DrinSpace.s3),
+                        Expanded(child: _buildTimelineCard(c)),
+                        const SizedBox(width: DrinSpace.s3),
+                        SizedBox(
+                          width: 296,
+                          child: _buildBreakdownCard(c),
+                        ),
                       ],
-                    ],
-                  ),
+                    );
+                  },
                 ),
               ),
             ],
@@ -754,4 +1588,118 @@ class _CdrDetails extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Pill con avatar circolare e nome/numero come nei campi Call From / Call To
+/// di Yeastar CDR Details.
+class _PartyChip extends StatelessWidget {
+  const _PartyChip({
+    required this.name,
+    required this.number,
+    required this.accent,
+  });
+  final String name;
+  final String number;
+  final Color accent;
+
+  static String? _initials(String s) {
+    final words = RegExp(r'[A-Za-zÀ-ÖØ-öø-ÿ]+')
+        .allMatches(s)
+        .map((m) => m.group(0)!)
+        .toList();
+    if (words.isEmpty) return null;
+    if (words.length == 1) return words.first.substring(0, 1).toUpperCase();
+    return '${words.first[0]}${words.last[0]}'.toUpperCase();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.drin;
+    final hasName = name.isNotEmpty && name != number;
+    final label = _CdrDetails._party(name, number);
+    final seed = hasName ? name : number;
+    final ini = _initials(seed);
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: DrinSpace.s2,
+        vertical: DrinSpace.s1,
+      ),
+      decoration: BoxDecoration(
+        color: c.surface,
+        borderRadius: BorderRadius.circular(DrinRadius.pill),
+        border: Border.all(color: c.line),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 22,
+            height: 22,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: accent.withValues(alpha: 0.2),
+            ),
+            alignment: Alignment.center,
+            child: ini != null
+                ? Text(
+                    ini,
+                    style: DrinText.detail.copyWith(
+                      color: accent,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  )
+                : Icon(Icons.person_rounded, size: 13, color: accent),
+          ),
+          const SizedBox(width: DrinSpace.s2),
+          Flexible(
+            child: SelectableText(
+              label.isEmpty ? '—' : label,
+              maxLines: 1,
+              style: (hasName ? DrinText.label : DrinText.number).copyWith(
+                color: c.ink,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Grafico a ciambella per la ripartizione tempi (Squillo, Conversazione, Attesa).
+class _DonutPainter extends CustomPainter {
+  const _DonutPainter({required this.slices, required this.emptyColor});
+  final List<(double, Color)> slices;
+  final Color emptyColor;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    const stroke = 24.0;
+    final rect = Offset.zero & size;
+    final arcRect = rect.deflate(stroke / 2);
+    final total = slices.fold<double>(0, (a, b) => a + b.$1);
+    final paint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = stroke
+      ..strokeCap = StrokeCap.butt;
+
+    if (total <= 0) {
+      paint.color = emptyColor;
+      canvas.drawArc(arcRect, 0, math.pi * 2, false, paint);
+      return;
+    }
+
+    var start = -math.pi / 2;
+    for (final (value, color) in slices) {
+      if (value <= 0) continue;
+      final sweep = (value / total) * math.pi * 2;
+      paint.color = color;
+      canvas.drawArc(arcRect, start, sweep, false, paint);
+      start += sweep;
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _DonutPainter old) =>
+      old.emptyColor != emptyColor || old.slices != slices;
 }

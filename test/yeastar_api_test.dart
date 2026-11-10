@@ -630,7 +630,24 @@ void main() {
       30009,
       30011,
       30022,
+      30039,
     ]);
+    pbx.events!.add(
+      jsonEncode({
+        'type': 30039,
+        'sn': 'X',
+        'msg': {
+          'uid': '20261110153903FFA95',
+          'leg': 1,
+          'time_start': '2026/11/10 15:39:03',
+          'call_from': '+493075425583',
+          'call_to': 'RING_SKILLWORKS<6300>',
+          'status': 'ANSWERED',
+          'ring_duration': 4,
+          'talk_duration': 27,
+        },
+      }),
+    );
     pbx.events!.add(
       jsonEncode({
         'type': 30008,
@@ -695,6 +712,7 @@ void main() {
     expect(conn.eventsConnected, isTrue);
     expect(conn.eventsStatus, 'Eventi in tempo reale attivi');
     expect(conn.callStatus['301'], BlfStatus.ringing);
+    expect(conn.callTimelines['20261110153903FFA95']?.single.talk, 27);
     final jack = phone.allExtensions.firstWhere((e) => e.number == '350');
     expect(phone.presenceOf(jack), 'do_not_disturb');
     // Il token resta solo nell'URL del WebSocket, mai nello stato mostrato.

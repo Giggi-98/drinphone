@@ -123,24 +123,42 @@ Regole:
   Termina `busy` sempre a destra (desktop) o al centro in basso (telefono).
 - **Badge**: pillola `label`; non letti in `busy`, "nuovo" in `primary`.
 - **Tabella chiamate** (registro di questo PC e CDR del PBX): intestazione
-  `label` in `muted` su riga da 36 con bordo `line`; righe da 52 separate da
-  `line`, hover `raised` con raggio riga; Ora in `number` con il giorno sotto
-  in `detail`; nomi `heading` con numero sotto in `number`; "risposto da" di
-  gruppi e code in `detail` con freccia `primary`; esito come pillola `label`
-  con spia (risposta `freeText`, persa/abbandonata/non riuscita `busyText`,
-  casella vocale `primary`, occupato e altro `away`, fondo al 14%); durate
-  allineate a destra in `number` (`m:ss`, `h:mm:ss`, "—" se zero); Richiama
-  all'hover. Sotto una certa larghezza spariscono prima Durata e Tipo, poi
-  Conversazione; i filtri vanno a capo sotto il titolo.
+  `label` in `muted` su riga da 36 con bordo `line` e la stessa spaziatura
+  orizzontale delle righe (`s3` a sinistra, `48` riservati a destra per
+  Richiama); righe da 52 separate da `line`, hover `raised` con raggio riga;
+  Ora in `number` con il giorno sotto in `detail`; nomi `heading` con numero
+  sotto in `number` (se manca il nome il numero è sulla prima riga in `number`,
+  mai in `heading`; se c'è anche la riga secondaria "risposto da" il numero
+  sta accanto al nome in `number` `muted`); "risposto da" di gruppi e code in
+  `detail` con freccia `primary`; esito come pillola `label` con spia
+  (risposta `freeText`, persa/abbandonata/non riuscita `busyText`, casella
+  vocale `primary`, occupato e altro `away`, fondo al 14%); durate allineate a
+  destra in `number` (`m:ss`, `h:mm:ss`, "—" se zero); Richiama all'hover.
+  Sotto una certa larghezza spariscono prima Durata e Tipo, poi Conversazione;
+  i filtri vanno a capo sotto il titolo.
   Nel CDR del PBX, come nella pagina CDR del PBX: intestazioni ordinabili
   (testo `primary` e freccia sulla colonna attiva, doppia freccia `muted`
-  sulle altre; di default Ora dalla più recente); sopra la tabella il numero
-  di chiamate in `label` `muted`, Aggiorna, scelta delle colonne (menu con
-  spunte) ed "Esporta CSV" (pulsante bordato); sotto le pagine con "righe
-  per pagina". Coda / gruppo / IVR con l'icona del passaggio in `primary`
-  (IVR, call flow, coda, gruppo) e "+n" in `label` `muted`. Clic sulla riga:
-  dialogo "Dettagli chiamata" con i campi in griglia (`label` `muted` sopra,
-  `body` sotto, "—" in `muted` se vuoti) e la tabella delle gambe.
+  sulle altre, allineate a destra sulle colonne numeriche; di default Ora
+  dalla più recente); sopra la tabella il numero di chiamate in `label`
+  `muted`, Aggiorna, scelta delle colonne (menu con spunte) ed "Esporta CSV"
+  (pulsante bordato); sotto le pagine con "righe per pagina". Coda / gruppo /
+  IVR con l'icona del passaggio in `primary` (IVR, call flow, coda, gruppo) e
+  "+n" in `label` `muted`. Clic sulla riga: dialogo **"Dettagli chiamata"** a
+  tre pannelli affiancati (impilati sotto 900 px):
+  1. **Riepilogo** (`raised`, a sinistra): `ID` e `Ora` in `number`, `Tipo`,
+     `Da`, `A` e `Ultimo partecipante` come pillole `panel` con avatar
+     circolare (`brand`/`primary`), `Esito` (`OutcomePill`), `Chiuso da` e i
+     soli campi aggiuntivi valorizzati (trunk, DID/DOD, registrazione).
+  2. **Timeline** (`raised`, al centro): cronologia verticale divisa per
+     `Leg 1`, `Leg 2`… con offset `mm:ss` in `number` `muted`, linea verticale
+     `line`, nodi con icona di stato (`primary` per avvio/instradamento,
+     `free` per risposta, `busy` per riaggancio), gruppo di interni che
+     squillano in parallelo espandibile/collassabile ("Assegnata a n interni")
+     e "Fine chiamata" in chiusura.
+  3. **Ripartizione tempi** (`raised`, a destra): `Durata totale`, `Squillo` e
+     `Conversazione` in `number` (`hh:mm:ss`), grafico ad anello (`free` per
+     attesa/squillo, `squillo` per conversazione, `brand` per attesa in linea)
+     e legenda con durate e percentuali.
 - **Filtro a pillola** (sopra le tabelle): alto 36, raggio `pill`, testo
   `label` "Etichetta: valore" con freccia; a riposo fondo `raised` e bordo
   `line`, etichetta `muted`, valore `ink`; con un valore diverso dal

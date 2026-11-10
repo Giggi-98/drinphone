@@ -34,6 +34,7 @@ class CdrRecord {
     this.segments = 0,
     this.hasRecording = false,
     this.legs = const [],
+    this.timeline = const [],
   });
 
   /// Identificativo della chiamata (lega `cdr_basic` alle gambe).
@@ -70,6 +71,9 @@ class CdrRecord {
   /// Gambe della chiamata, in ordine di tempo (vuoto sulla tabella `cdr`).
   final List<CdrLeg> legs;
 
+  /// Tratte ed eventi ricevuti dall'evento API 30039 (`Call End Timeline Notification`).
+  final List<CdrTimelineLeg> timeline;
+
   bool get answered => disposition.toUpperCase() == 'ANSWERED';
 
   /// Primo valore non vuoto tra le gambe.
@@ -81,7 +85,10 @@ class CdrRecord {
   String get did => _fromLegs((l) => l.did);
   String get dod => _fromLegs((l) => l.dod);
 
-  CdrRecord withLegs(List<CdrLeg> legs) => CdrRecord(
+  CdrRecord withLegs(
+    List<CdrLeg> legs, {
+    List<CdrTimelineLeg>? timeline,
+  }) => CdrRecord(
     uid: uid,
     time: time,
     src: src,
@@ -106,6 +113,7 @@ class CdrRecord {
     segments: segments,
     hasRecording: hasRecording,
     legs: legs,
+    timeline: timeline ?? this.timeline,
   );
 
   static CdrRecord fromRow(Map<String, String?> r) => CdrRecord(
@@ -206,10 +214,109 @@ class CdrLeg {
   );
 }
 
-DateTime? _time(String? s) =>
-    DateTime.tryParse((s ?? '').replaceFirst(' ', 'T'));
+DateTime? _time(String? s) => DateTime.tryParse(
+  (s ?? '').trim().replaceAll('/', '-').replaceFirst(' ', 'T'),
+);
 
 int _int(String? s) => int.tryParse(s ?? '') ?? 0;
+
+/// Un evento della timeline di chiamata (evento API 30039 `event_list`:
+/// `event-call-end-timeline-notification.html`).
+class CdrTimelineEvent {
+  const CdrTimelineEvent({
+    this.id = '',
+    required this.name,
+    this.type = '',
+    this.time,
+    this.content = const {},
+    this.rawContent = '',
+  });
+
+  final String id, name, type;
+  final DateTime? time;
+  final Map<String, String> content;
+  final String rawContent;
+
+  static CdrTimelineEvent fromJson(Map<String, dynamic> j) {
+    var raw = j['event_content'];
+    var map = <String, String>{};
+    var text = '';
+    if (raw is String && raw.trim().startsWith('{')) {
+      try {
+        raw = jsonDecode(raw);
+      } on FormatException {
+        text = raw.trim();
+      }
+    }
+    if (raw is Map) {
+      map = {
+        for (final e in raw.entries)
+          if (e.value != null && '${e.value}'.isNotEmpty)
+            '${e.key}': '${e.value}',
+      };
+    } else if (raw != null && text.isEmpty) {
+      text = '$raw'.trim();
+    }
+    return CdrTimelineEvent(
+      id: '${j['event_id'] ?? ''}',
+      name: '${j['event_name'] ?? ''}',
+      type: '${j['event_type'] ?? ''}',
+      time: _time('${j['event_ts'] ?? ''}'),
+      content: map,
+      rawContent: text,
+    );
+  }
+}
+
+/// Una tratta (`leg`) della timeline inviata dall'evento API 30039
+/// (`Call End Timeline Notification`).
+class CdrTimelineLeg {
+  const CdrTimelineLeg({
+    required this.uid,
+    required this.leg,
+    this.cdrId = '',
+    this.timeStart,
+    this.callFrom = '',
+    this.callTo = '',
+    this.srcTrunk = '',
+    this.dstTrunk = '',
+    this.status = '',
+    this.ring = 0,
+    this.talk = 0,
+    this.hold = 0,
+    this.events = const [],
+  });
+
+  final String uid, cdrId, callFrom, callTo, srcTrunk, dstTrunk, status;
+  final int leg, ring, talk, hold;
+  final DateTime? timeStart;
+  final List<CdrTimelineEvent> events;
+
+  static CdrTimelineLeg? fromEvent(Map<String, dynamic> msg) {
+    final uid = '${msg['uid'] ?? ''}'.trim();
+    if (uid.isEmpty) return null;
+    final list = msg['event_list'];
+    return CdrTimelineLeg(
+      uid: uid,
+      leg: _int('${msg['leg'] ?? 1}').clamp(1, 999),
+      cdrId: '${msg['cdr_id'] ?? ''}',
+      timeStart: _time('${msg['time_start'] ?? ''}'),
+      callFrom: '${msg['call_from'] ?? ''}',
+      callTo: '${msg['call_to'] ?? ''}',
+      srcTrunk: '${msg['src_trunk'] ?? ''}',
+      dstTrunk: '${msg['dst_trunk'] ?? ''}',
+      status: '${msg['status'] ?? ''}',
+      ring: _int('${msg['ring_duration'] ?? 0}'),
+      talk: _int('${msg['talk_duration'] ?? 0}'),
+      hold: _int('${msg['hold_duration'] ?? 0}'),
+      events: [
+        if (list is List)
+          for (final e in list.whereType<Map<String, dynamic>>())
+            CdrTimelineEvent.fromJson(e),
+      ],
+    );
+  }
+}
 
 /// Filtro per tipo, come nel CDR del PBX.
 enum CdrKind { all, inbound, outbound, internal }

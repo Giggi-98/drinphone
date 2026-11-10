@@ -85,7 +85,7 @@ class _HistoryViewState extends State<HistoryView> {
   Widget _partyField(TextEditingController ctl, String label) => Padding(
     padding: const EdgeInsets.only(right: DrinSpace.s2),
     child: SizedBox(
-      width: 180,
+      width: 148,
       height: 36,
       child: TextField(
         controller: ctl,

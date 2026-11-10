@@ -77,8 +77,11 @@ spikes/f0a/                         spike F0-A (non prodotto)
   `main` = chiave storica), account ↔ connessione PBX in Preferenze > Utente.
 - **Eventi PBX in tempo reale** (`IMPLEMENTATO`, `DA VALIDARE` sul pilota) —
   `PbxConnection.setRealtime`: WebSocket `wss://…/openapi/v1.0/subscribe`, topic
-  30007/30008/30009/30011/30022, heartbeat, riconnessione; interruttore in
-  Preferenze > Integrazione PBX. Presenza via 30009 `VERIFICATA` sul pilota.
+  30007/30008/30009/30011/30022/30039 (`Call End Timeline Notification`),
+  heartbeat, riconnessione; interruttore in Preferenze > Integrazione PBX.
+  Presenza via 30009 `VERIFICATA` sul pilota; evento 30039 (`DA VALIDARE` sul
+  pilota) salvato in memoria in `PbxConnection.callTimelines` (per `uid`, max
+  200 chiamate) e agganciato alle righe CDR lette in `readCdr`.
 - **Live Calls** (`IMPLEMENTATO`; eventi osservati sul pilota, riaggancio `DA VALIDARE`) —
   `PbxConnection.liveCalls`: evento 30011 (membri per identità — interno per numero,
   tratte per estremi — perché `channel_id` cambia; i `BYE` escono; dopo un BYE con al
@@ -191,7 +194,11 @@ spikes/f0a/                         spike F0-A (non prodotto)
   `cdrCsv` esporta con le colonne dell'esportazione del PBX. Vista: Registro
   chiamate, fonte "Questo PC" / "PBX" / "Tutto il PBX"; il CDR in `CdrView`
   (`features/history/cdr_view.dart`: totale, pagine, ordinamento,
-  colonne a scelta, dettaglio con le gambe, Esporta CSV) sopra `CallTable`
+  colonne a scelta, Esporta CSV, dialogo "Dettagli chiamata" a 3 pannelli:
+  `Riepilogo`, `Timeline` verticale per `Leg 1`/`Leg 2` alimentata dall'evento
+  WebSocket `30039` `CdrTimelineLeg` o ricostruita da `cdr_basic` + `cdr_clip`
+  con elenco comprimibile degli interni assegnati, e `Ripartizione tempi` con
+  grafico a ciambella) sopra `CallTable`
   (`features/history/call_table.dart`, DESIGN.md "Tabella chiamate").
 - **Ricerca** — il campo in alto filtra la griglia per nome/numero; Invio chiama
   il numero o l'unico interno trovato.
