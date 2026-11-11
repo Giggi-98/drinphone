@@ -9,6 +9,7 @@ import 'package:flutter/services.dart' show rootBundle;
 import 'app/l10n.dart';
 import 'app/phone_controller.dart';
 import 'app/theme.dart';
+import 'app/zoom.dart';
 import 'core/app_paths.dart';
 import 'core/call_history.dart';
 import 'core/install_id.dart';
@@ -140,7 +141,7 @@ class DrinPhoneApp extends StatelessWidget {
     // Cambio lingua o tema dal menu dell'account: l'interfaccia si aggiorna
     // dov'è (stessa sezione, stesso dialogo aperto), senza ripartire.
     return ListenableBuilder(
-      listenable: Listenable.merge([appLang, appThemeMode]),
+      listenable: Listenable.merge([appLang, appThemeMode, appZoom]),
       builder: (_, _) => MaterialApp(
         title: 'DrinPhone',
         debugShowCheckedModeBanner: false,
@@ -148,10 +149,14 @@ class DrinPhoneApp extends StatelessWidget {
         themeMode: appThemeMode.value,
         theme: buildTheme(Brightness.light),
         darkTheme: buildTheme(Brightness.dark),
-        // Desktop: interfaccia in scala con la finestra (DrinScale).
+        // Desktop: interfaccia in scala con la finestra (DrinScale) e con lo
+        // zoom scelto dall'utente (Ctrl +/−/0).
         builder: (_, child) =>
             Platform.isWindows || Platform.isLinux || Platform.isMacOS
-            ? DrinScaled(child: _Relocalize(child: child!))
+            ? ZoomKeys(
+                onZoom: phone.setZoom,
+                child: DrinScaled(child: _Relocalize(child: child!)),
+              )
             : _Relocalize(child: child!),
         home: HomeScreen(phone: phone),
       ),

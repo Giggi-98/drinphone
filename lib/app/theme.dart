@@ -220,8 +220,17 @@ abstract final class DrinScale {
   static const base = 1366.0;
   static const min = 0.9, max = 1.3;
 
-  static double of(double width) => (width / base).clamp(min, max);
+  static double of(double width) =>
+      (width / base).clamp(min, max) * appZoom.value;
+
+  /// Zoom utente (Ctrl +/−/0): passi del 10 %, da 70 % a 160 %.
+  static const zoomMin = 0.7, zoomMax = 1.6, zoomStep = 0.1;
+  static double clampZoom(double z) =>
+      (z.clamp(zoomMin, zoomMax) * 10).roundToDouble() / 10;
 }
+
+/// Zoom dell'interfaccia scelto dall'utente, salvato con le impostazioni.
+final appZoom = ValueNotifier<double>(1.0);
 
 /// Applica [DrinScale] a [child]: lo impagina a `larghezza / k` e lo
 /// ingrandisce di k, con MediaQuery coerente (dialoghi e menu inclusi).

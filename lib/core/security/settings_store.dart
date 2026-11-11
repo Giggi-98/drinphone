@@ -100,6 +100,7 @@ class Settings {
     this.pbx = const [],
     this.lang = 'it',
     this.theme = 'system',
+    this.zoom = 1.0,
     this.closeToTray = true,
     this.voicemailCode = '*2',
     this.favorites = const [],
@@ -133,6 +134,9 @@ class Settings {
 
   /// Tema dell'interfaccia: `system`, `light`, `dark`.
   final String theme;
+
+  /// Zoom dell'interfaccia scelto dall'utente (Ctrl +/−), moltiplica [DrinScale].
+  final double zoom;
 
   /// Chiudendo la finestra l'app resta nella barra di sistema (Windows).
   final bool closeToTray;
@@ -206,6 +210,7 @@ class Settings {
       pbx: t.pbx,
       lang: lang,
       theme: theme,
+      zoom: zoom,
       closeToTray: closeToTray,
       voicemailCode: t.voicemailCode,
       favorites: t.favorites,
@@ -236,6 +241,7 @@ class Settings {
       pbx: a.pbx,
       lang: lang,
       theme: theme,
+      zoom: zoom,
       closeToTray: closeToTray,
       voicemailCode: a.voicemailCode,
       favorites: a.favorites,
@@ -258,6 +264,7 @@ class Settings {
     List<PbxConnectionInfo>? pbx,
     String? lang,
     String? theme,
+    double? zoom,
     bool? closeToTray,
     String? voicemailCode,
     List<String>? favorites,
@@ -278,6 +285,7 @@ class Settings {
     pbx: pbx ?? this.pbx,
     lang: lang ?? this.lang,
     theme: theme ?? this.theme,
+    zoom: zoom ?? this.zoom,
     closeToTray: closeToTray ?? this.closeToTray,
     voicemailCode: voicemailCode ?? this.voicemailCode,
     favorites: favorites ?? this.favorites,
@@ -418,6 +426,7 @@ class SettingsStore {
       extensions: active?.extensions ?? const [],
       lang: j['lang'] as String? ?? 'it',
       theme: j['theme'] as String? ?? 'system',
+      zoom: (j['zoom'] as num?)?.toDouble() ?? 1.0,
       closeToTray: j['closeToTray'] as bool? ?? true,
       voicemailCode: active?.voicemailCode ?? '*2',
       favorites: active?.favorites ?? const [],
@@ -532,6 +541,7 @@ class SettingsStore {
         'debugLog': s.debugLog,
         'lang': s.lang,
         'theme': s.theme,
+        'zoom': s.zoom,
         'closeToTray': s.closeToTray,
         'audioCapture': s.audio.$1,
         'audioPlayback': s.audio.$2,

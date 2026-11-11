@@ -7,7 +7,9 @@ import 'package:drinphone/core/platform/call_links.dart';
 import 'package:drinphone/core/security/settings_store.dart';
 import 'package:drinphone/core/sip/sip_engine.dart';
 import 'package:drinphone/main.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -358,6 +360,81 @@ void main() {
     await tester.pump(const Duration(milliseconds: 300));
     expect(find.text('Diagnostics'), findsWidgets);
     expect((await tester.runAsync(store.load))!.theme, 'dark');
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('Ctrl +/−/0 cambiano lo zoom dell interfaccia e lo salvano', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1366, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    addTearDown(() => appZoom.value = 1.0);
+    late PhoneController p;
+    await tester.runAsync(() async {
+      await store.save(const Settings(accounts: [_account]));
+      p = PhoneController(
+        engine,
+        store,
+        engineDataDir: tmp.path,
+        logDir: tmp.path,
+      );
+      await p.init();
+    });
+    await tester.pumpWidget(DrinPhoneApp(phone: p));
+    await tester.pump(const Duration(milliseconds: 300));
+
+    Future<void> ctrl(LogicalKeyboardKey k) async {
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+      await tester.sendKeyEvent(k);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+      // Meno del ritardo di salvataggio: il file si scrive solo alla fine.
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+
+    await ctrl(LogicalKeyboardKey.equal);
+    expect(appZoom.value, 1.1);
+    expect(find.text('110 %'), findsOneWidget);
+    await ctrl(LogicalKeyboardKey.minus);
+    await ctrl(LogicalKeyboardKey.numpadSubtract);
+    expect(appZoom.value, 0.9);
+    for (var i = 0; i < 3; i++) {
+      await ctrl(LogicalKeyboardKey.minus);
+    }
+    expect(appZoom.value, DrinScale.zoomMin);
+    await ctrl(LogicalKeyboardKey.digit0);
+    expect(appZoom.value, 1.0);
+    // Senza Ctrl il tasto resta al campo di testo.
+    await tester.sendKeyEvent(LogicalKeyboardKey.equal);
+    expect(appZoom.value, 1.0);
+
+    // Ctrl + rotella: su ingrandisce, giù riduce; senza Ctrl niente zoom.
+    final mouse = TestPointer(1, PointerDeviceKind.mouse);
+    await tester.sendEventToBinding(mouse.hover(const Offset(700, 400)));
+    Future<void> wheel(double dy, {bool ctrl = true}) async {
+      if (ctrl) await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+      await tester.sendEventToBinding(mouse.scroll(Offset(0, dy)));
+      if (ctrl) await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+
+    await wheel(-100);
+    expect(appZoom.value, 1.1);
+    await tester.runAsync(
+      () => Future.delayed(const Duration(milliseconds: 100)),
+    );
+    await wheel(100);
+    expect(appZoom.value, 1.0);
+    await wheel(-100, ctrl: false);
+    expect(appZoom.value, 1.0);
+
+    // Salvato una volta sola, dopo l'ultima pressione.
+    await tester.runAsync(() async {
+      p.setZoom(1.3);
+      await Future.delayed(const Duration(milliseconds: 900));
+    });
+    expect((await tester.runAsync(store.load))!.zoom, 1.3);
+    await tester.pump(const Duration(milliseconds: 1500));
     await tester.pumpWidget(const SizedBox());
   });
 }

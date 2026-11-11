@@ -7,7 +7,7 @@ import 'package:flutter/material.dart' show ThemeMode;
 import '../core/call_history.dart';
 import '../core/contacts/personal_contacts.dart';
 import 'l10n.dart';
-import 'theme.dart' show appThemeMode;
+import 'theme.dart' show DrinScale, appThemeMode, appZoom;
 import '../core/pbx/pbx_cache.dart';
 import '../core/pbx/pbx_cdr.dart';
 import '../core/platform/video_surface.dart';
@@ -185,6 +185,7 @@ class PhoneController extends ChangeNotifier {
 
   /// Ridisegno raggruppato per gli aggiornamenti a raffica (BLF, eventi PBX).
   Timer? _notifyTimer;
+  Timer? _zoomSave;
   void _notifySoon() {
     _notifyTimer ??= Timer(const Duration(milliseconds: 100), () {
       _notifyTimer = null;
@@ -197,6 +198,7 @@ class PhoneController extends ChangeNotifier {
     appLang.value = AppLang.fromCode(settings.lang);
     appThemeMode.value =
         ThemeMode.values.asNameMap()[settings.theme] ?? ThemeMode.system;
+    appZoom.value = DrinScale.clampZoom(settings.zoom);
     await _splitProfiles();
     _subs.add(_engine.registrations.listen(_onRegistration));
     _subs.add(_engine.calls.listen(_onCall));
@@ -633,6 +635,19 @@ class PhoneController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Zoom dell'interfaccia (Ctrl +/−/0): si applica subito, si salva una
+  /// volta sola quando si smette di premere (niente scritture sovrapposte).
+  void setZoom(double zoom) {
+    final z = DrinScale.clampZoom(zoom);
+    if (z == appZoom.value) return;
+    appZoom.value = z;
+    settings = settings.copyWith(zoom: z);
+    _zoomSave?.cancel();
+    _zoomSave = Timer(const Duration(milliseconds: 500), () {
+      _store.save(settings);
+    });
+  }
+
   Future<void> setVoicemailCode(String code) async {
     settings = settings.copyWith(voicemailCode: code.trim());
     await _store.save(settings);
@@ -687,6 +702,7 @@ class PhoneController extends ChangeNotifier {
         debugLog: settings.debugLog,
         lang: settings.lang,
         theme: settings.theme,
+        zoom: settings.zoom,
         closeToTray: settings.closeToTray,
         audio: settings.audio,
         callOptions: settings.callOptions,
@@ -745,6 +761,7 @@ class PhoneController extends ChangeNotifier {
             debugLog: settings.debugLog,
             lang: settings.lang,
             theme: settings.theme,
+            zoom: settings.zoom,
             closeToTray: settings.closeToTray,
             audio: settings.audio,
             callOptions: settings.callOptions,
@@ -1542,6 +1559,7 @@ class PhoneController extends ChangeNotifier {
   @override
   void dispose() {
     _notifyTimer?.cancel();
+    _zoomSave?.cancel();
     for (final c in connections) {
       c.stop();
     }

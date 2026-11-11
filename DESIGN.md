@@ -174,8 +174,12 @@ corso su telefono occupa lo schermo intero.
 Su desktop l'interfaccia è in scala con la finestra (`DrinScale`): fattore
 `larghezza / 1366`, tra 0,9 e 1,3, applicato a tutto (testo, icone, spazi,
 colonne), così i caratteri seguono la larghezza e i contenuti occupano
-l'intera finestra. Le larghezze di soglia qui sopra si misurano dopo la
-scala. I contenuti non hanno larghezza massima: schede e campi si
+l'intera finestra. Al fattore si moltiplica lo **zoom utente** (`appZoom`):
+`Ctrl` + `+` / `Ctrl` + `−` (o `Ctrl` + rotella, che allora non fa scorrere
+le liste) a passi del 10 %, da 70 % a 160 %, `Ctrl` + `0` torna al 100 %; vale con la finestra a fuoco, si salva nelle impostazioni e
+mostra per 1,2 s una pillola `surface` con la percentuale in `number`
+(comparsa `base`). Le larghezze di soglia qui sopra si misurano dopo la
+scala e lo zoom. I contenuti non hanno larghezza massima: schede e campi si
 allargano fino al bordo.
 
 ## 8. Come si verifica
