@@ -208,6 +208,18 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _setupLater = false;
 
   Future<void> _logout() async {
+    if (!await confirmDanger(
+      context,
+      title: tr('Uscire dall’account?'),
+      body: tr(
+        'L’interno si scollega dal PBX: le chiamate non arrivano più qui '
+        'finché non rientri.',
+      ),
+      action: tr('Esci (logout)'),
+    )) {
+      return;
+    }
+    if (!mounted) return;
     if (!await p.logout() && mounted) {
       ScaffoldMessenger.of(
         context,
@@ -824,6 +836,9 @@ class _ExtensionsViewState extends State<_ExtensionsView> {
   String? _pageGroup;
   BlfStatus? _blfFilter;
 
+  /// Vista a righe dense invece delle schede; resta scelta tra le sezioni.
+  static bool _compact = false;
+
   PhoneController get phone => widget.phone;
 
   /// Schede per pagina: abbastanza per riempire uno schermo grande.
@@ -1045,6 +1060,20 @@ class _ExtensionsViewState extends State<_ExtensionsView> {
                     count: ringingCount,
                   ),
                 IconButton(
+                  tooltip: _compact
+                      ? tr('Vista a schede')
+                      : tr('Vista a righe'),
+                  visualDensity: VisualDensity.compact,
+                  onPressed: () => setState(() => _compact = !_compact),
+                  icon: Icon(
+                    _compact
+                        ? Icons.grid_view_rounded
+                        : Icons.view_list_rounded,
+                    size: 18,
+                    color: c.muted,
+                  ),
+                ),
+                IconButton(
                   tooltip: tr('Legenda degli stati'),
                   visualDensity: VisualDensity.compact,
                   onPressed: () => showStatusLegend(context),
@@ -1113,19 +1142,26 @@ class _ExtensionsViewState extends State<_ExtensionsView> {
                       ),
                     )
                   : GridView.builder(
-                      key: ValueKey(('grid', _pageGroup, _blfFilter, _page)),
-                      gridDelegate:
-                          const SliverGridDelegateWithMaxCrossAxisExtent(
-                            maxCrossAxisExtent: 300,
-                            // Due righe: identità e stato, poi i pulsanti.
-                            mainAxisExtent: 114,
-                            crossAxisSpacing: 10,
-                            mainAxisSpacing: 10,
-                          ),
+                      key: ValueKey((
+                        'grid',
+                        _pageGroup,
+                        _blfFilter,
+                        _page,
+                        _compact,
+                      )),
+                      // Schede (due righe: identità, poi pulsanti) o righe
+                      // dense da 52 su più colonne (densità Centralino).
+                      gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
+                        maxCrossAxisExtent: _compact ? 520 : 300,
+                        mainAxisExtent: _compact ? 52 : 114,
+                        crossAxisSpacing: 10,
+                        mainAxisSpacing: _compact ? 6 : 10,
+                      ),
                       itemCount: slice.length,
                       itemBuilder: (_, i) {
                         final e = slice[i];
                         return _ExtensionTile(
+                          compact: _compact,
                           ext: e,
                           callable: phone.isCallable(e),
                           canDial: phone.canDial,
@@ -1193,7 +1229,11 @@ class _ExtensionTile extends StatefulWidget {
     required this.onCall,
     this.onVideoCall,
     required this.onRemove,
+    this.compact = false,
   });
+
+  /// Riga densa (vista "righe"): tutto su una riga alta 52, azioni a destra.
+  final bool compact;
   final Extension ext;
   final bool callable;
   final bool canDial;
@@ -1222,6 +1262,61 @@ class _ExtensionTileState extends State<_ExtensionTile> {
     final ext = w.ext, blf = w.blf, onRemove = w.onRemove;
     final callable = w.callable, canDial = w.canDial, onCall = w.onCall;
     final favorite = w.favorite, onFavorite = w.onFavorite;
+    final identity = Row(
+      children: [
+        StatusAvatar(
+          name: ext.name,
+          blf: blf,
+          stale: w.blfStale,
+          presence: w.presence,
+          size: w.compact ? 32 : 40,
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (nameIsNumber(ext.name, ext.number))
+                // Senza nome vero: il numero una volta sola.
+                Text(
+                  ext.number,
+                  style: mono(blf == BlfStatus.offline ? c.muted : c.text),
+                )
+              else ...[
+                Text(
+                  ext.name,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    color: blf == BlfStatus.offline ? c.muted : c.text,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(ext.number, style: mono(c.muted, size: 12)),
+              ],
+            ],
+          ),
+        ),
+        if (onRemove != null)
+          Tooltip(
+            message: tr('Inserito a mano · tasto destro per rimuovere'),
+            child: Icon(Icons.push_pin_outlined, size: 14, color: c.muted),
+          ),
+        if (favorite || _hover)
+          IconButton(
+            tooltip: favorite
+                ? tr('Togli dai preferiti')
+                : tr('Aggiungi ai preferiti'),
+            visualDensity: VisualDensity.compact,
+            onPressed: onFavorite,
+            icon: Icon(
+              favorite ? Icons.star_rounded : Icons.star_border_rounded,
+              size: 20,
+              color: favorite ? c.brand : c.muted,
+            ),
+          ),
+      ],
+    );
     return MouseRegion(
       onEnter: (_) => setState(() => _hover = true),
       onExit: (_) => setState(() => _hover = false),
@@ -1263,77 +1358,19 @@ class _ExtensionTileState extends State<_ExtensionTile> {
                 ],
               ]),
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
+            padding: w.compact
+                ? const EdgeInsets.fromLTRB(10, 0, 6, 0)
+                : const EdgeInsets.fromLTRB(12, 10, 8, 10),
+            child: Flex(
+              direction: w.compact ? Axis.horizontal : Axis.vertical,
+              crossAxisAlignment: w.compact
+                  ? CrossAxisAlignment.center
+                  : CrossAxisAlignment.stretch,
               children: [
-                Row(
-                  children: [
-                    StatusAvatar(
-                      name: ext.name,
-                      blf: blf,
-                      stale: w.blfStale,
-                      presence: w.presence,
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          if (nameIsNumber(ext.name, ext.number))
-                            // Senza nome vero: il numero una volta sola.
-                            Text(
-                              ext.number,
-                              style: mono(
-                                blf == BlfStatus.offline ? c.muted : c.text,
-                              ),
-                            )
-                          else ...[
-                            Text(
-                              ext.name,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                fontWeight: FontWeight.w600,
-                                color: blf == BlfStatus.offline
-                                    ? c.muted
-                                    : c.text,
-                              ),
-                            ),
-                            const SizedBox(height: 2),
-                            Text(ext.number, style: mono(c.muted, size: 12)),
-                          ],
-                        ],
-                      ),
-                    ),
-                    if (onRemove != null)
-                      Tooltip(
-                        message: tr(
-                          'Inserito a mano · tasto destro per rimuovere',
-                        ),
-                        child: Icon(
-                          Icons.push_pin_outlined,
-                          size: 14,
-                          color: c.muted,
-                        ),
-                      ),
-                    if (favorite || _hover)
-                      IconButton(
-                        tooltip: favorite
-                            ? tr('Togli dai preferiti')
-                            : tr('Aggiungi ai preferiti'),
-                        visualDensity: VisualDensity.compact,
-                        onPressed: onFavorite,
-                        icon: Icon(
-                          favorite
-                              ? Icons.star_rounded
-                              : Icons.star_border_rounded,
-                          size: 20,
-                          color: favorite ? c.brand : c.muted,
-                        ),
-                      ),
-                  ],
-                ),
-                const Spacer(),
+                // Riga: l'identità occupa lo spazio fino alle azioni; scheda:
+                // alta quanto serve, i pulsanti vanno in fondo (Spacer).
+                if (w.compact) Expanded(child: identity) else identity,
+                if (!w.compact) const Spacer(),
                 // Pulsanti su una riga a parte: chiamata e videochiamata.
                 Row(
                   mainAxisAlignment: MainAxisAlignment.end,

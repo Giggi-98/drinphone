@@ -205,6 +205,10 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Esci (logout)'), findsOneWidget);
     await tester.tap(find.text('Esci (logout)'));
+    await tester.pumpAndSettle();
+    // Conferma prima di scollegare l'interno.
+    expect(find.text('Uscire dall’account?'), findsOneWidget);
+    await tester.tap(find.widgetWithText(FilledButton, 'Esci (logout)'));
     await tester.runAsync(() => Future<void>.delayed(Duration.zero));
     await tester.pumpAndSettle();
     expect(two.loggedIn, isFalse);
@@ -488,6 +492,49 @@ void main() {
       ),
     );
     expect(field.focusNode.hasFocus, isTrue);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('Interni: vista a righe e legenda senza overflow', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1366, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    late PhoneController p;
+    await tester.runAsync(() async {
+      await store.save(
+        const Settings(
+          accounts: [_account],
+          extensions: [
+            Extension('Margherita Talenti', '200'),
+            Extension('208', '208'),
+            Extension('211 211', '211'),
+          ],
+        ),
+      );
+      p = PhoneController(
+        engine,
+        store,
+        engineDataDir: tmp.path,
+        logDir: tmp.path,
+      );
+      await p.init();
+    });
+    await tester.pumpWidget(DrinPhoneApp(phone: p));
+    await tester.pump(const Duration(milliseconds: 300));
+    // Nome uguale al numero: il numero una volta sola.
+    expect(find.text('211 211'), findsNothing);
+
+    await tester.tap(find.byTooltip('Vista a righe'));
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(tester.takeException(), isNull);
+    expect(find.text('Margherita Talenti'), findsWidgets);
+
+    await tester.tap(find.byTooltip('Legenda degli stati'));
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.text('Anello: stato della linea'), findsOneWidget);
+    expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());
   });
 }

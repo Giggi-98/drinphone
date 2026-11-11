@@ -76,29 +76,61 @@ class _LiveCallsViewState extends State<LiveCallsView> {
                 _header(c, conn),
                 if (!conn.eventsConnected) _eventsBanner(c, conn),
                 const SizedBox(height: 12),
-                Expanded(
-                  child: _CallsTable(
-                    phone: p,
-                    title: tr('Entranti e interne'),
-                    icon: Icons.call_received_rounded,
-                    calls: [
-                      for (final x in calls)
-                        if (!x.outbound) x,
-                    ],
+                // Nessun traffico: un solo stato vuoto, non due tabelle vuote
+                // a tutta altezza.
+                if (calls.isEmpty)
+                  Expanded(
+                    child: Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.phone_disabled_rounded,
+                            size: 40,
+                            color: c.muted,
+                          ),
+                          const SizedBox(height: DrinSpace.s3),
+                          Text(
+                            tr('Nessuna chiamata in corso'),
+                            style: DrinText.title.copyWith(color: c.ink),
+                          ),
+                          const SizedBox(height: DrinSpace.s1),
+                          Text(
+                            tr(
+                              'Le chiamate del PBX compaiono qui appena '
+                              'iniziano, divise tra entranti e uscenti.',
+                            ),
+                            style: DrinText.detail.copyWith(color: c.muted),
+                          ),
+                        ],
+                      ),
+                    ),
+                  )
+                else ...[
+                  Expanded(
+                    child: _CallsTable(
+                      phone: p,
+                      title: tr('Entranti e interne'),
+                      icon: Icons.call_received_rounded,
+                      calls: [
+                        for (final x in calls)
+                          if (!x.outbound) x,
+                      ],
+                    ),
                   ),
-                ),
-                const SizedBox(height: 12),
-                Expanded(
-                  child: _CallsTable(
-                    phone: p,
-                    title: tr('Uscenti'),
-                    icon: Icons.call_made_rounded,
-                    calls: [
-                      for (final x in calls)
-                        if (x.outbound) x,
-                    ],
+                  const SizedBox(height: 12),
+                  Expanded(
+                    child: _CallsTable(
+                      phone: p,
+                      title: tr('Uscenti'),
+                      icon: Icons.call_made_rounded,
+                      calls: [
+                        for (final x in calls)
+                          if (x.outbound) x,
+                      ],
+                    ),
                   ),
-                ),
+                ],
               ],
             ),
           ),

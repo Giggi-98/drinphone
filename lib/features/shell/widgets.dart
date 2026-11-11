@@ -489,3 +489,38 @@ Future<void> showStatusLegend(BuildContext context) => showDialog<void>(
     );
   },
 );
+
+/// Conferma prima di un'azione che non si annulla: pulsante in `busy`.
+Future<bool> confirmDanger(
+  BuildContext context, {
+  required String title,
+  required String body,
+  required String action,
+}) async {
+  final ok = await showDialog<bool>(
+    context: context,
+    builder: (ctx) {
+      final c = ctx.drin;
+      return AlertDialog(
+        icon: Icon(Icons.warning_amber_rounded, color: c.busy),
+        title: Text(title),
+        content: Text(body),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(tr('Annulla')),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: c.busy,
+              foregroundColor: c.onBusy,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(action),
+          ),
+        ],
+      );
+    },
+  );
+  return ok ?? false;
+}

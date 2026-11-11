@@ -17,7 +17,11 @@ class VoicemailView extends StatelessWidget {
     final c = context.drin;
     Widget counter(String label, int n, Color color, IconData icon) => Expanded(
       child: Container(
-        padding: const EdgeInsets.all(20),
+        // Schede basse: il numero conta, non lo spazio.
+        padding: const EdgeInsets.symmetric(
+          horizontal: DrinSpace.s4,
+          vertical: DrinSpace.s3,
+        ),
         decoration: BoxDecoration(
           color: c.card,
           border: Border.all(color: c.border),
@@ -25,21 +29,16 @@ class VoicemailView extends StatelessWidget {
         ),
         child: Row(
           children: [
-            Icon(icon, size: 28, color: color),
-            const SizedBox(width: 16),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  '$n',
-                  style: TextStyle(
-                    fontSize: 32,
-                    fontWeight: FontWeight.w700,
-                    color: c.text,
-                  ),
-                ),
-                Text(label, style: TextStyle(color: c.muted)),
-              ],
+            Icon(icon, size: 24, color: color),
+            const SizedBox(width: DrinSpace.s3),
+            Text('$n', style: DrinText.numberLarge.copyWith(color: c.ink)),
+            const SizedBox(width: DrinSpace.s3),
+            Flexible(
+              child: Text(
+                label,
+                overflow: TextOverflow.ellipsis,
+                style: DrinText.body.copyWith(color: c.muted),
+              ),
             ),
           ],
         ),
@@ -108,9 +107,20 @@ class VoicemailView extends StatelessWidget {
             Expanded(
               child: phone.voicemailMessages!.isEmpty
                   ? Center(
-                      child: Text(
-                        tr('Nessun messaggio in casella.'),
-                        style: TextStyle(color: c.muted),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.voicemail_rounded,
+                            size: 40,
+                            color: c.muted,
+                          ),
+                          const SizedBox(height: DrinSpace.s3),
+                          Text(
+                            tr('Nessun messaggio in casella.'),
+                            style: DrinText.heading.copyWith(color: c.muted),
+                          ),
+                        ],
                       ),
                     )
                   : ListView.separated(

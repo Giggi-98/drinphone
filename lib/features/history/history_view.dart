@@ -402,7 +402,19 @@ class _HistoryViewState extends State<HistoryView> {
                 if (local && p.history.isNotEmpty)
                   IconButton(
                     tooltip: tr('Svuota registro'),
-                    onPressed: p.clearHistory,
+                    onPressed: () async {
+                      if (await confirmDanger(
+                        context,
+                        title: tr('Svuotare il registro?'),
+                        body: tr(
+                          'Si cancellano le chiamate registrate su questo PC. '
+                          'Il CDR del PBX non cambia.',
+                        ),
+                        action: tr('Svuota'),
+                      )) {
+                        await p.clearHistory();
+                      }
+                    },
                     icon: Icon(Icons.delete_sweep_outlined, color: c.muted),
                   ),
               ];

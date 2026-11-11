@@ -352,7 +352,21 @@ ThemeData buildTheme(Brightness b) {
         textStyle: DrinText.label.copyWith(fontSize: 13),
       ),
     ),
+    // Interruttori: pallino `onPrimary` su `primary` (il pallino scuro sul blu
+    // si leggeva male), spento `muted` su `panel` con bordo `line`.
+    switchTheme: SwitchThemeData(
+      thumbColor: WidgetStateProperty.resolveWith(
+        (s) => s.contains(WidgetState.selected) ? c.onPrimary : c.muted,
+      ),
+      trackColor: WidgetStateProperty.resolveWith(
+        (s) => s.contains(WidgetState.selected) ? c.primary : c.panel,
+      ),
+      trackOutlineColor: WidgetStateProperty.resolveWith(
+        (s) => s.contains(WidgetState.selected) ? c.primary : c.line,
+      ),
+    ),
     snackBarTheme: SnackBarThemeData(
+      width: 440,
       behavior: SnackBarBehavior.floating,
       backgroundColor: c.ink,
       contentTextStyle: t(DrinText.body, c.surface),

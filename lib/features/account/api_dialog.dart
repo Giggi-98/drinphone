@@ -10,6 +10,7 @@ import '../../core/pbx/pbx_connection.dart';
 import '../../core/pbx/pbx_sync.dart';
 import '../../core/security/api_credential_store.dart';
 import '../../core/security/cdr_db_store.dart';
+import '../shell/widgets.dart';
 
 /// Connessione API al PBX dell'account (al più una), usata in Preferenze >
 /// Integrazione PBX e nella procedura guidata.
@@ -203,7 +204,19 @@ class _ConnectionTile extends StatelessWidget {
                     label: Text(tr('Database CDR')),
                   ),
                 TextButton.icon(
-                  onPressed: () => phone.removeConnection(conn),
+                  onPressed: () async {
+                    if (await confirmDanger(
+                      context,
+                      title: tr('Rimuovere il collegamento al PBX?'),
+                      body: tr(
+                        'Si cancellano le credenziali API e i dati letti dal '
+                        'PBX su questo PC. L’account SIP resta.',
+                      ),
+                      action: tr('Rimuovi'),
+                    )) {
+                      await phone.removeConnection(conn);
+                    }
+                  },
                   icon: Icon(Icons.delete_outline, size: 16, color: c.busyText),
                   label: Text(
                     tr('Rimuovi'),
