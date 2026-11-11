@@ -773,3 +773,89 @@ class _LiveChipState extends State<LiveChip> {
     );
   }
 }
+
+/// Segnalino del menu "Chiamate in corso": spia con alone e numero delle
+/// conversazioni contemporanee sul PBX (`busy`); se ci sono solo squilli,
+/// il numero degli squilli in `squilloLine`. Niente se il sistema è quieto.
+class LiveBadge extends StatelessWidget {
+  const LiveBadge({super.key, required this.talking, required this.ringing});
+  final int talking;
+  final int ringing;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.drin;
+    final n = talking > 0 ? talking : ringing;
+    final color = talking > 0 ? c.busy : c.squilloLine;
+    final tip = [
+      if (talking > 0)
+        talking == 1
+            ? tr('1 conversazione in corso')
+            : tr('{n} conversazioni in corso', {'n': talking}),
+      if (ringing > 0)
+        ringing == 1
+            ? tr('1 chiamata squilla')
+            : tr('{n} chiamate squillano', {'n': ringing}),
+    ].join(' · ');
+    return AnimatedSwitcher(
+      duration: DrinMotion.of(context, DrinMotion.base),
+      transitionBuilder: (child, anim) => FadeTransition(
+        opacity: anim,
+        child: ScaleTransition(
+          scale: Tween(begin: 0.7, end: 1.0).animate(anim),
+          child: child,
+        ),
+      ),
+      child: n == 0
+          ? const SizedBox.shrink(key: ValueKey('quiet'))
+          : Tooltip(
+              key: ValueKey((n, talking > 0)),
+              message: tip,
+              child: Container(
+                padding: const EdgeInsets.fromLTRB(6, 1, 8, 1),
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.14),
+                  border: Border.all(color: color.withValues(alpha: 0.6)),
+                  borderRadius: BorderRadius.circular(DrinRadius.pill),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Spia "dal vivo" con alone (DESIGN §4), ferma.
+                    Container(
+                      width: 7,
+                      height: 7,
+                      decoration: BoxDecoration(
+                        color: color,
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(
+                            color: color.withValues(alpha: 0.6),
+                            blurRadius: 6,
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 5),
+                    Text(
+                      '$n',
+                      style: DrinText.label.copyWith(
+                        color: c.ink,
+                        fontFeatures: const [FontFeature.tabularFigures()],
+                      ),
+                    ),
+                    if (talking > 0 && ringing > 0) ...[
+                      const SizedBox(width: 4),
+                      Icon(
+                        Icons.ring_volume_rounded,
+                        size: 11,
+                        color: c.squilloLine,
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+    );
+  }
+}

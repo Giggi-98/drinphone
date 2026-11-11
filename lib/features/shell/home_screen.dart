@@ -9,7 +9,7 @@ import '../../app/l10n.dart';
 import '../../app/phone_controller.dart';
 import '../../app/theme.dart';
 import '../../core/pbx/yeastar_api.dart' show YeastarApiException;
-import '../../core/pbx/pbx_connection.dart' show ExtensionLive;
+import '../../core/pbx/pbx_connection.dart' show ExtensionLive, LiveCall;
 import '../../core/platform/call_links.dart';
 import '../../core/platform/window_attention.dart';
 import '../../core/security/settings_store.dart';
@@ -295,7 +295,8 @@ class _HomeScreenState extends State<HomeScreen> {
             missed: p.missedUnseen,
             voicemailNew: p.voicemailUnseen,
             showLive: p.hasLiveCalls,
-            live: p.connections.fold(0, (n, x) => n + x.visibleCalls.length),
+            // Conversazioni e squilli in corso su tutti i PBX collegati.
+            live: [for (final x in p.connections) ...x.visibleCalls],
             update: p.updater?.available?.version,
             onUpdate: () => showUpdateDialog(context, p, p.updater!),
             menu: _menu,
@@ -699,7 +700,7 @@ class _Sidebar extends StatelessWidget {
   final bool showLive;
 
   /// Chiamate in corso sul PBX (badge neutro: è un'informazione, non un avviso).
-  final int live;
+  final List<LiveCall> live;
 
   /// Ordine delle sezioni per Ctrl+1…5 (mostrato nel tooltip).
   final List<_Section> menu;
@@ -843,7 +844,10 @@ class _Sidebar extends StatelessWidget {
               section == _Section.live,
               () => onSection(_Section.live),
               of: _Section.live,
-              trailing: CountBadge(live),
+              trailing: LiveBadge(
+                talking: live.where((x) => !x.ringing).length,
+                ringing: live.where((x) => x.ringing).length,
+              ),
             ),
           item(
             Icons.import_contacts_rounded,

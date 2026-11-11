@@ -218,6 +218,11 @@ Regole:
   chiamando `primary`, in attesa `away`) al 14%, nome dell'altro capo in
   `label` e durata che scorre in `number`; nelle liste strette solo simbolo
   e durata. Stessi simboli e colori nella tabella Chiamate in corso.
+- **Segnalino "Chiamate in corso"** (menu laterale): pillola con spia ferma
+  con alone e numero delle conversazioni contemporanee sul PBX (`busy` al
+  14%, bordo al 60%); con soli squilli il loro numero in `squilloLine`;
+  campanella accanto se ci sono anche squilli; dettaglio nel tooltip;
+  sparisce quando il sistema è quieto.
 - **Stato vuoto**: icona 40 `muted`, titolo `title`, una riga `detail`; mai
   tabelle vuote a tutta altezza.
 
