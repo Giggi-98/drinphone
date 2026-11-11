@@ -1,9 +1,12 @@
 // Componenti condivisi: avatar con stato linea + presenza, paginatore, badge.
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../app/l10n.dart';
 import '../../app/theme.dart';
+import '../../core/pbx/pbx_connection.dart' show ExtensionLive, LiveState;
 import '../../core/sip/sip_engine.dart';
 
 /// Iniziali delle parole che cominciano con una lettera ('' per "305", "*2").
@@ -664,6 +667,109 @@ class SkeletonRows extends StatelessWidget {
             ),
           ),
       ],
+    );
+  }
+}
+
+/// Simbolo, colore e parola di uno stato di chiamata dal vivo.
+(IconData, Color, String) liveLook(DrinColors c, LiveState s) => switch (s) {
+  LiveState.talking => (Icons.call_rounded, c.busy, tr('In conversazione')),
+  LiveState.hold => (Icons.pause_rounded, c.away, tr('In attesa')),
+  LiveState.ringing => (
+    Icons.ring_volume_rounded,
+    c.squilloLine,
+    tr('Squilla'),
+  ),
+  LiveState.calling => (
+    Icons.call_made_rounded,
+    c.primary,
+    tr('Sta chiamando'),
+  ),
+};
+
+/// Segnalino "sta parlando con…" (eventi 30011): pillola col colore dello
+/// stato, nome dell'altro capo e durata che scorre; [dense] = solo simbolo e
+/// durata (liste strette).
+class LiveChip extends StatefulWidget {
+  const LiveChip(
+    this.live, {
+    super.key,
+    this.otherName = '',
+    this.dense = false,
+  });
+  final ExtensionLive live;
+  final String otherName;
+  final bool dense;
+
+  @override
+  State<LiveChip> createState() => _LiveChipState();
+}
+
+class _LiveChipState extends State<LiveChip> {
+  Timer? _tick;
+
+  @override
+  void initState() {
+    super.initState();
+    _tick = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _tick?.cancel();
+    super.dispose();
+  }
+
+  static String _two(int n) => n.toString().padLeft(2, '0');
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.drin;
+    final l = widget.live;
+    final (icon, color, word) = liveLook(c, l.state);
+    final d = DateTime.now().difference(l.since);
+    final time = d.inHours > 0
+        ? '${d.inHours}:${_two(d.inMinutes % 60)}:${_two(d.inSeconds % 60)}'
+        : '${_two(d.inMinutes)}:${_two(d.inSeconds % 60)}';
+    final who = widget.otherName.isNotEmpty
+        ? (l.other.isNotEmpty && widget.otherName != l.other
+              ? '${widget.otherName} (${l.other})'
+              : widget.otherName)
+        : l.other;
+    return Tooltip(
+      message: who.isEmpty ? '$word · $time' : '$word · $who · $time',
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: DrinSpace.s2),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.14),
+          border: Border.all(color: color.withValues(alpha: 0.5)),
+          borderRadius: BorderRadius.circular(DrinRadius.pill),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 12, color: color),
+            if (!widget.dense && who.isNotEmpty) ...[
+              const SizedBox(width: DrinSpace.s1),
+              Flexible(
+                child: Text(
+                  who,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: DrinText.label.copyWith(color: c.ink),
+                ),
+              ),
+            ],
+            const SizedBox(width: DrinSpace.s1),
+            Text(
+              time,
+              style: DrinText.number.copyWith(fontSize: 11, color: c.ink),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

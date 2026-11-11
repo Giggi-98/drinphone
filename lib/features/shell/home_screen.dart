@@ -9,6 +9,7 @@ import '../../app/l10n.dart';
 import '../../app/phone_controller.dart';
 import '../../app/theme.dart';
 import '../../core/pbx/yeastar_api.dart' show YeastarApiException;
+import '../../core/pbx/pbx_connection.dart' show ExtensionLive;
 import '../../core/platform/call_links.dart';
 import '../../core/platform/window_attention.dart';
 import '../../core/security/settings_store.dart';
@@ -1052,6 +1053,9 @@ class _ExtensionsViewState extends State<_ExtensionsView> {
     final ringingCount = allInGroup
         .where((e) => phone.blfOf(e) == BlfStatus.ringing)
         .length;
+    // Chi è in chiamata adesso, per connessione (calcolato una volta).
+    final lives = {for (final x in phone.connections) x.id: x.extensionCalls};
+    final primaryId = phone.primaryConnection?.id ?? '';
     final list = _blfFilter == null
         ? allInGroup
         : allInGroup.where((e) => phone.blfOf(e) == _blfFilter).toList();
@@ -1238,7 +1242,15 @@ class _ExtensionsViewState extends State<_ExtensionsView> {
                         final dir = phone.primaryConnection?.directory
                             .where((x) => x.number == e.number)
                             .firstOrNull;
+                        final live =
+                            lives[e.source.isEmpty
+                                ? primaryId
+                                : e.source]?[e.number];
                         return _ExtensionTile(
+                          live: live,
+                          liveName: live == null
+                              ? ''
+                              : phone.nameFor(live.other),
                           details: [
                             if ((dir?.email ?? '').isNotEmpty)
                               (Icons.alternate_email_rounded, dir!.email),
@@ -1315,7 +1327,13 @@ class _ExtensionTile extends StatefulWidget {
     required this.onRemove,
     this.compact = false,
     this.details = const [],
+    this.live,
+    this.liveName = '',
   });
+
+  /// In chiamata adesso (eventi 30011) e nome dell'altro capo.
+  final ExtensionLive? live;
+  final String liveName;
 
   /// Email e cellulare dall'elenco del PBX, per la scheda al passaggio.
   final List<(IconData, String)> details;
@@ -1350,6 +1368,18 @@ class _ExtensionTileState extends State<_ExtensionTile> {
     final ext = w.ext, blf = w.blf, onRemove = w.onRemove;
     final callable = w.callable, canDial = w.canDial, onCall = w.onCall;
     final favorite = w.favorite, onFavorite = w.onFavorite;
+    final live = w.live;
+    final liveChip = live == null
+        ? null
+        : Flexible(
+            child: Padding(
+              padding: const EdgeInsets.only(left: DrinSpace.s2),
+              child: FadeIn(
+                key: ValueKey(live.state),
+                child: LiveChip(live, otherName: w.liveName),
+              ),
+            ),
+          );
     final identity = Row(
       children: [
         StatusAvatar(
@@ -1367,9 +1397,14 @@ class _ExtensionTileState extends State<_ExtensionTile> {
             children: [
               if (nameIsNumber(ext.name, ext.number))
                 // Senza nome vero: il numero una volta sola.
-                Text(
-                  ext.number,
-                  style: mono(blf == BlfStatus.offline ? c.muted : c.text),
+                Row(
+                  children: [
+                    Text(
+                      ext.number,
+                      style: mono(blf == BlfStatus.offline ? c.muted : c.text),
+                    ),
+                    ?liveChip,
+                  ],
                 )
               else ...[
                 Text(
@@ -1381,7 +1416,13 @@ class _ExtensionTileState extends State<_ExtensionTile> {
                   ),
                 ),
                 const SizedBox(height: 2),
-                Text(ext.number, style: mono(c.muted, size: 12)),
+                // Numero e, se è in chiamata, con chi e da quanto.
+                Row(
+                  children: [
+                    Text(ext.number, style: mono(c.muted, size: 12)),
+                    ?liveChip,
+                  ],
+                ),
               ],
             ],
           ),

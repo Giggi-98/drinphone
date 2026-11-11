@@ -670,6 +670,7 @@ const en = <String, String>{
   'Copia numero': 'Copy number',
   'Richiama': 'Call back',
   'Legenda degli stati': 'Status legend',
+  'Sta chiamando': 'Calling',
   'PBX del tuo interno': 'Your extension’s PBX',
   '{n} tolto dai preferiti': '{n} removed from favourites',
   '{n} contatti': '{n} contacts',

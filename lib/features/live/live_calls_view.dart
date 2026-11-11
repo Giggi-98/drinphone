@@ -351,19 +351,15 @@ class _CallsTableState extends State<_CallsTable> {
                         Divider(color: c.border, height: 1),
                     itemBuilder: (_, i) {
                       final x = rows[i];
-                      final (icon, color, label) = x.ringing
-                          ? (
-                              Icons.ring_volume_rounded,
-                              c.ringing,
-                              tr('Squilla'),
-                            )
-                          : x.onHold
-                          ? (
-                              Icons.pause_circle_outline,
-                              c.muted,
-                              tr('In attesa'),
-                            )
-                          : (Icons.call_rounded, c.ok, tr('In conversazione'));
+                      // Stessi simboli e colori del segnalino sugli interni.
+                      final (icon, color, label) = liveLook(
+                        c,
+                        x.ringing
+                            ? LiveState.ringing
+                            : x.onHold
+                            ? LiveState.hold
+                            : LiveState.talking,
+                      );
                       final details = [
                         if (x.trunk.isNotEmpty) x.trunk,
                         if (x.path.isNotEmpty) x.path,
@@ -411,7 +407,24 @@ class _CallsTableState extends State<_CallsTable> {
                                           999,
                                         ),
                                       ),
-                                      child: Icon(icon, size: 16, color: color),
+                                      // Simbolo e parola: lo stato si legge
+                                      // senza passarci sopra.
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Icon(icon, size: 14, color: color),
+                                          const SizedBox(width: 6),
+                                          Flexible(
+                                            child: Text(
+                                              label,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: DrinText.label.copyWith(
+                                                color: c.ink,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
                                     ),
                                   ),
                                 ),
@@ -596,7 +609,8 @@ class _BlfColumnState extends State<_BlfColumn> {
                           : Column(
                               crossAxisAlignment: CrossAxisAlignment.stretch,
                               children: [
-                                for (final e in list) _BlfRow(phone: p, ext: e),
+                                for (final e in list)
+                                  _BlfRow(phone: p, ext: e, conn: widget.conn),
                               ],
                             ),
                     ),
@@ -612,9 +626,10 @@ class _BlfColumnState extends State<_BlfColumn> {
 }
 
 class _BlfRow extends StatelessWidget {
-  const _BlfRow({required this.phone, required this.ext});
+  const _BlfRow({required this.phone, required this.ext, required this.conn});
   final PhoneController phone;
   final Extension ext;
+  final PbxConnection conn;
 
   @override
   Widget build(BuildContext context) {
@@ -628,6 +643,7 @@ class _BlfRow extends StatelessWidget {
       _ => c.border,
     }.withValues(alpha: stale ? 0.35 : 1);
     final pr = presenceOf(c, phone.presenceOf(ext));
+    final live = conn.extensionCalls[ext.number];
     final callable = phone.isCallable(ext) && phone.canDial;
     return Tooltip(
       message: [
@@ -659,6 +675,12 @@ class _BlfRow extends StatelessWidget {
                   style: TextStyle(color: c.text),
                 ),
               ),
+              // In chiamata adesso: simbolo e durata.
+              if (live != null)
+                Padding(
+                  padding: const EdgeInsets.only(left: 6),
+                  child: LiveChip(live, dense: true),
+                ),
               if (pr != null) Icon(pr.$1, size: 14, color: pr.$2),
             ],
           ),

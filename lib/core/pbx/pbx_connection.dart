@@ -17,6 +17,17 @@ import 'pbx_cdr.dart';
 import 'pbx_sync.dart';
 import 'yeastar_api.dart';
 
+/// Stato di un interno in una chiamata in corso (eventi 30011).
+enum LiveState { ringing, calling, talking, hold }
+
+/// Cosa sta facendo un interno adesso: stato, con chi, da quando.
+class ExtensionLive {
+  const ExtensionLive(this.state, this.other, this.since);
+  final LiveState state;
+  final String other;
+  final DateTime since;
+}
+
 /// Chiamata in corso sul PBX (Live Calls).
 class LiveCall {
   LiveCall(this.id, this.members) : seen = DateTime.now();
@@ -27,11 +38,42 @@ class LiveCall {
   final DateTime seen;
   DateTime? answered;
 
-  bool get ringing =>
-      members.any((m) => m.status == 'RING' || m.status == 'ALERT');
-  bool get onHold => members.any((m) => m.status == 'HOLD');
+  /// Stato della chiamata intera. Prima "in conversazione": il PBX non
+  /// rimanda sempre ogni membro dopo la risposta, e un capo rimasto in
+  /// RING/ALERT faceva vedere "squilla" a una conversazione di minuti.
   bool get talking =>
       members.any((m) => m.status == 'ANSWER' || m.status == 'ANSWERED');
+  bool get onHold => members.any((m) => m.status == 'HOLD');
+  bool get ringing =>
+      !talking &&
+      members.any(
+        (m) =>
+            m.status == 'RING' ||
+            m.status == 'ALERT' ||
+            m.status == 'EARLYMEDIA',
+      );
+
+  /// Stato di un interno in questa chiamata (null se non ci partecipa).
+  /// RING = gli squilla; ALERT/EARLYMEDIA = sta chiamando (sente il ritorno
+  /// di chiamata), ma se qualcuno ha già risposto il chiamante parla.
+  LiveState? stateOf(String ext) {
+    final m = members
+        .where((m) => m.kind == 'extension' && m.number == ext)
+        .firstOrNull;
+    if (m == null) return null;
+    return switch (m.status) {
+      'HOLD' => LiveState.hold,
+      'ANSWER' || 'ANSWERED' => LiveState.talking,
+      'RING' => LiveState.ringing,
+      'ALERT' ||
+      'EARLYMEDIA' => talking ? LiveState.talking : LiveState.calling,
+      _ => null,
+    };
+  }
+
+  /// L'altro capo visto da [ext]: il chiamato se [ext] chiama, altrimenti il
+  /// chiamante.
+  String otherOf(String ext) => ext == caller ? callee : caller;
 
   /// Tipo da `call/query` (`inbound`, `outbound`, `internal`); vuoto finché
   /// la chiamata è nota solo dagli eventi.
@@ -198,6 +240,36 @@ class PbxConnection {
       }
     }
     return byPair.values.toList()..sort((a, b) => a.seen.compareTo(b.seen));
+  }
+
+  /// Interno → chiamata in cui si trova adesso. Con più chiamate (avviso di
+  /// chiamata, più dispositivi) vince la conversazione, poi l'attesa, poi
+  /// lo squillo.
+  Map<String, ExtensionLive> get extensionCalls {
+    const rank = {
+      LiveState.talking: 3,
+      LiveState.hold: 2,
+      LiveState.calling: 1,
+      LiveState.ringing: 0,
+    };
+    final out = <String, ExtensionLive>{};
+    for (final c in liveCalls.values) {
+      for (final m in c.members) {
+        if (m.kind != 'extension' || m.number.isEmpty) continue;
+        final st = c.stateOf(m.number);
+        if (st == null) continue;
+        final prev = out[m.number];
+        if (prev != null && rank[prev.state]! >= rank[st]!) continue;
+        out[m.number] = ExtensionLive(
+          st,
+          c.otherOf(m.number),
+          st == LiveState.talking || st == LiveState.hold
+              ? c.answered ?? c.seen
+              : c.seen,
+        );
+      }
+    }
+    return out;
   }
 
   /// Stato leggibile del canale eventi; vuoto se spento.
@@ -819,7 +891,8 @@ class PbxConnection {
         if (leg != null) {
           final list = [
             for (final l in callTimelines[leg.uid] ?? const <CdrTimelineLeg>[])
-              if (l.leg != leg.leg || (l.cdrId != leg.cdrId && leg.cdrId.isNotEmpty))
+              if (l.leg != leg.leg ||
+                  (l.cdrId != leg.cdrId && leg.cdrId.isNotEmpty))
                 l,
             leg,
           ]..sort((a, b) => a.leg.compareTo(b.leg));
