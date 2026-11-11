@@ -199,6 +199,10 @@ Regole:
   dello spinner nelle tabelle; elementi nuovi in lista con `FadeIn`
   (dissolvenza + 4 px in `base`, una volta); badge che cambiano numero con
   una piccola scala; pulsanti di chiamata con pressione a molla (0,94).
+- **Barra Salva / Annulla** (Preferenze): fissa in fondo al pannello, compare
+  in `base` solo con modifiche in sospeso o un errore; resta visibile mentre
+  si scorre. La navigazione delle Preferenze resta la colonna a sinistra (non
+  anche le schede orizzontali).
 - **Stato vuoto**: icona 40 `muted`, titolo `title`, una riga `detail`; mai
   tabelle vuote a tutta altezza.
 

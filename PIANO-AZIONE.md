@@ -136,13 +136,15 @@ badge Chiamate in corso, Sì/No e chip in Preferenze, scorciatoie Ctrl + F1,
 tasto destro su interni/numeri/righe, conferme pericolose, interruttori,
 stato vuoto di Chiamate in corso e Casella vocale, vista a righe di Interni,
 griglia a 2 colonne in Preferenze, lucchetto unico in Rubrica, perse non più
-rosse. RESTA: header con registrazione + presenza fusi e cambio presenza in un
-clic (scrive sul PBX: serve audit §9), popover sulla scheda interno, avvisi con
-"Annulla", `DrinButton` con pressione a molla, scheletri di caricamento,
-contatori animati, ingresso animato delle righe live, transizione condivisa
-verso la finestra di chiamata, Rubrica continua con indice A–Z, filtri del CDR
-su una riga, colonna Tipo a sola icona, barra Salva/Annulla fissa, schede
-orizzontali in Preferenze.
+rosse.
+v0.1.9: cambio presenza in un clic dal chip dell'header (audit
+`docs/sicurezza/2026-11-11-presenza-dall-header.md`), scheda al passaggio
+sull'avatar, "Annulla" sui preferiti, pressione a molla, badge animati, righe
+live in dissolvenza, segnaposto di caricamento nel CDR, Rubrica continua con
+indice A–Z, colonna Tipo a sola icona, filtri del CDR su una riga, barra
+Salva/Annulla fissa in Preferenze. Preferenze: resta la colonna a sinistra
+(niente schede orizzontali, una sola navigazione). RESTA: transizione
+condivisa scheda → finestra di chiamata; run della skill security-audit.
 - **Presenza Yeastar**, oggi un generico ✓ verde per tutti: Disponibile ✓
   `free`, Assente orologio `away`, Non disturbare ⛔ `busy`, Pranzo posate,
   Trasferta aereo, Fuori ufficio luna (`away`). Stesso set in header, schede

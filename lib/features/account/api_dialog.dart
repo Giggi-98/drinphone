@@ -123,9 +123,17 @@ class _ConnectionTile extends StatelessWidget {
                         color: c.keyBtn,
                         borderRadius: BorderRadius.circular(999),
                       ),
-                      child: Text(
-                        tr('Account SIP'),
-                        style: TextStyle(fontSize: 11, color: c.accent),
+                      // Questo PBX è quello dell'interno registrato.
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.link_rounded, size: 13, color: c.accent),
+                          const SizedBox(width: 4),
+                          Text(
+                            tr('PBX del tuo interno'),
+                            style: TextStyle(fontSize: 11, color: c.accent),
+                          ),
+                        ],
                       ),
                     ),
                   ),

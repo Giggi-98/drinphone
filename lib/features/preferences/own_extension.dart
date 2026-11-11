@@ -43,6 +43,34 @@ mixin _OwnExtensionDraft<T extends StatefulWidget> on State<T> {
 
   PbxExtensionDetail? get detail => _draft ?? phone.ownDetail;
 
+  ValueNotifier<Widget?>? _slot;
+
+  /// Ultima barra messa nel posto da questa sezione.
+  Widget? _published;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _slot = _BarSlot.of(context);
+  }
+
+  @override
+  void dispose() {
+    final slot = _slot;
+    // Dopo il frame: la barra appartiene a questa sezione, che se ne va.
+    if (slot != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        try {
+          // Solo la propria: la sezione nuova può averci già messo la sua.
+          if (identical(slot.value, _published)) slot.value = null;
+        } on FlutterError {
+          // Preferenze già chiuse: il posto non esiste più.
+        }
+      });
+    }
+    super.dispose();
+  }
+
   bool get dirty {
     final d = _draft, o = phone.ownDetail;
     return d != null && o != null && d.changesFrom(o).isNotEmpty;
@@ -87,11 +115,23 @@ mixin _OwnExtensionDraft<T extends StatefulWidget> on State<T> {
     if (mounted) setState(() => _saving = false);
   }
 
+  /// Nelle Preferenze la barra va nel posto fisso in basso; altrove (test,
+  /// dialoghi) resta qui in cima.
   Widget saveBar(DrinColors c) {
-    if (!dirty && _error == null) return const SizedBox.shrink();
+    final bar = _buildSaveBar(c);
+    final slot = _slot;
+    if (slot == null) return bar ?? const SizedBox.shrink();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) slot.value = _published = bar;
+    });
+    return const SizedBox.shrink();
+  }
+
+  Widget? _buildSaveBar(DrinColors c) {
+    if (!dirty && _error == null) return null;
     final why = invalid;
     return Container(
-      margin: const EdgeInsets.only(bottom: 16),
+      margin: const EdgeInsets.only(top: 12, bottom: 16),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       decoration: BoxDecoration(
         color: c.accent.withValues(alpha: 0.10),

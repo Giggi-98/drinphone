@@ -31,6 +31,15 @@ class PreferencesView extends StatefulWidget {
 class _PreferencesViewState extends State<PreferencesView> {
   late int _index = _mapInitialTab(widget.initialTab);
 
+  /// Barra "Salva / Annulla" della sezione aperta, fissa in basso.
+  final _bar = ValueNotifier<Widget?>(null);
+
+  @override
+  void dispose() {
+    _bar.dispose();
+    super.dispose();
+  }
+
   int _mapInitialTab(int tab) {
     // 5 era "Integrazione PBX", ora unificata nella prima sezione con Account SIP.
     if (tab == 5 || tab == 0) return 0;
@@ -181,11 +190,36 @@ class _PreferencesViewState extends State<PreferencesView> {
             ),
           ),
           Expanded(
-            child: AnimatedSectionSwitch(
-              child: SingleChildScrollView(
-                key: ValueKey('pref-scroll-$idx'),
-                padding: const EdgeInsets.all(20),
-                child: all[idx].$3,
+            child: _BarSlot(
+              bar: _bar,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Expanded(
+                    child: AnimatedSectionSwitch(
+                      child: SingleChildScrollView(
+                        key: ValueKey('pref-scroll-$idx'),
+                        padding: const EdgeInsets.all(20),
+                        child: all[idx].$3,
+                      ),
+                    ),
+                  ),
+                  // Modifiche in sospeso: la barra resta visibile mentre si
+                  // scorre, e compare/scompare in `base`.
+                  ValueListenableBuilder<Widget?>(
+                    valueListenable: _bar,
+                    builder: (context, bar, _) => AnimatedSize(
+                      duration: DrinMotion.of(context, DrinMotion.base),
+                      curve: DrinMotion.curve,
+                      child: bar == null
+                          ? const SizedBox(width: double.infinity)
+                          : Padding(
+                              padding: const EdgeInsets.fromLTRB(20, 0, 20, 0),
+                              child: bar,
+                            ),
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
@@ -195,6 +229,19 @@ class _PreferencesViewState extends State<PreferencesView> {
   }
 
   static const IconData trIconAccount = Icons.hub_rounded;
+}
+
+/// Posto della barra "Salva / Annulla" in fondo alle Preferenze: la sezione
+/// aperta ci mette la sua (vedi `_OwnExtensionDraft.saveBar`).
+class _BarSlot extends InheritedWidget {
+  const _BarSlot({required this.bar, required super.child});
+  final ValueNotifier<Widget?> bar;
+
+  static ValueNotifier<Widget?>? of(BuildContext context) =>
+      context.getInheritedWidgetOfExactType<_BarSlot>()?.bar;
+
+  @override
+  bool updateShouldNotify(_BarSlot old) => bar != old.bar;
 }
 
 /// Riquadro con titolo, come le sezioni delle preferenze di Linkus.
