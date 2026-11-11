@@ -203,6 +203,17 @@ Regole:
   in `base` solo con modifiche in sospeso o un errore; resta visibile mentre
   si scorre. La navigazione delle Preferenze resta la colonna a sinistra (non
   anche le schede orizzontali).
+- **Intervallo di date**: dialogo (non pagina intera) largo fino a 760;
+  scorciatoie a sinistra (Oggi, Ieri, Ultimi 7 giorni, Questa settimana,
+  Settimana scorsa, Ultimi 30 giorni, Questo mese, Mese scorso, Ultimi 90
+  giorni), due mesi affiancati con settimana da lunedì; estremi pieni
+  `primary`, fascia `primary` al 14%, oggi con anello, giorni futuri spenti;
+  sotto le date scelte in `number`, Annulla e Applica.
+- **Segnalino dal vivo** (interni in chiamata, eventi 30011): pillola col
+  colore dello stato (in conversazione `busy`, squilla `squilloLine`, sta
+  chiamando `primary`, in attesa `away`) al 14%, nome dell'altro capo in
+  `label` e durata che scorre in `number`; nelle liste strette solo simbolo
+  e durata. Stessi simboli e colori nella tabella Chiamate in corso.
 - **Stato vuoto**: icona 40 `muted`, titolo `title`, una riga `detail`; mai
   tabelle vuote a tutta altezza.
 

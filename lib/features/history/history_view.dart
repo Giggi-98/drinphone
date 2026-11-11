@@ -7,6 +7,7 @@ import '../../core/call_history.dart';
 import '../../core/pbx/pbx_cdr.dart';
 import '../../core/sip/sip_engine.dart';
 import '../shell/widgets.dart';
+import 'range_picker.dart';
 import 'call_table.dart';
 import 'cdr_view.dart';
 
@@ -113,14 +114,7 @@ class _HistoryViewState extends State<HistoryView> {
       });
       return;
     }
-    final now = DateTime.now();
-    final r = await showDateRangePicker(
-      context: context,
-      firstDate: DateTime(2015),
-      lastDate: now,
-      initialDateRange: _range,
-      helpText: tr('Intervallo di date'),
-    );
+    final r = await showRangePicker(context, initial: _range);
     if (r == null || !mounted) return;
     setState(() {
       _range = r;
