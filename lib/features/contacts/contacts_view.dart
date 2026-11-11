@@ -23,13 +23,29 @@ class _ContactsViewState extends State<ContactsView> {
 
   /// Rubrica (phonebook) selezionata; null = tutte.
   String? _book;
-  int _page = 0;
-  static const pageSize = 50;
+
+  /// Lista continua (niente pagine): righe da 58 + divisore da 1.
+  final _scroll = ScrollController();
+  static const _rowExtent = 59.0;
 
   @override
   void dispose() {
     _filter.dispose();
+    _scroll.dispose();
     super.dispose();
+  }
+
+  /// Filtro o rubrica cambiati: si riparte dall'inizio.
+  void _top() {
+    if (_scroll.hasClients) _scroll.jumpTo(0);
+  }
+
+  /// Lettera dell'indice per un nome: A–Z, altrimenti "#".
+  static String _letter(String name) {
+    final t = name.trim().toUpperCase();
+    if (t.isEmpty) return '#';
+    final ch = t[0];
+    return RegExp('[A-Z]').hasMatch(ch) ? ch : '#';
   }
 
   static IconData _iconFor(String label) => label.startsWith(tr('Cellulare'))
@@ -122,7 +138,7 @@ class _ContactsViewState extends State<ContactsView> {
     );
     setState(() {
       _book = PhoneController.personalBook;
-      _page = 0;
+      _top();
     });
   }
 
@@ -140,9 +156,12 @@ class _ContactsViewState extends State<ContactsView> {
       for (final x in all)
         if (_book == null || x.$2.phonebooks.contains(_book)) x,
     ];
-    final pages = (list.length + pageSize - 1) ~/ pageSize;
-    if (_page >= pages && pages > 0) _page = pages - 1;
-    final slice = Pager.slice(list, _page, pageSize);
+    final slice = list;
+    // Prima riga di ogni lettera, per l'indice A–Z a destra.
+    final firstOf = <String, int>{};
+    for (var i = 0; i < list.length; i++) {
+      firstOf.putIfAbsent(_letter(list[i].$2.name), () => i);
+    }
     final multi = p.connections.length > 1;
 
     return Container(
@@ -196,7 +215,7 @@ class _ContactsViewState extends State<ContactsView> {
                   ],
                   onChanged: (v) => setState(() {
                     _book = v;
-                    _page = 0;
+                    _top();
                   }),
                 ),
               ],
@@ -205,7 +224,7 @@ class _ContactsViewState extends State<ContactsView> {
                 width: 280,
                 child: TextField(
                   controller: _filter,
-                  onChanged: (_) => setState(() => _page = 0),
+                  onChanged: (_) => setState(_top),
                   decoration: InputDecoration(
                     prefixIcon: const Icon(Icons.filter_list_rounded, size: 18),
                     hintText: tr('Filtra per nome, azienda o numero'),
@@ -243,131 +262,160 @@ class _ContactsViewState extends State<ContactsView> {
                       style: TextStyle(color: c.muted),
                     ),
                   )
-                : ListView.separated(
-                    itemCount: slice.length,
-                    separatorBuilder: (_, _) =>
-                        Divider(color: c.border, height: 1),
-                    itemBuilder: (_, i) {
-                      final (conn, x, own) = slice[i];
-                      final sub = [
-                        if (x.company.isNotEmpty) x.company,
-                        if (x.jobTitle.isNotEmpty) x.jobTitle,
-                        if (own != null &&
-                            x.company.isEmpty &&
-                            x.email.isNotEmpty)
-                          x.email,
-                        if (multi && conn != null) conn.label,
-                      ].join(' · ');
-                      return SizedBox(
-                        height: 58,
-                        child: Row(
-                          children: [
-                            StatusAvatar(name: x.name, size: 34),
-                            if (own != null)
-                              Padding(
-                                padding: const EdgeInsets.only(left: 6),
-                                child: Tooltip(
-                                  message: tr('Contatto personale'),
-                                  child: Icon(
-                                    Icons.person_outline_rounded,
-                                    size: 14,
-                                    color: c.accent,
-                                  ),
+                : Row(
+                    children: [
+                      Expanded(
+                        child: ListView.builder(
+                          controller: _scroll,
+                          itemExtent: _rowExtent,
+                          itemCount: slice.length,
+                          itemBuilder: (_, i) {
+                            final (conn, x, own) = slice[i];
+                            final sub = [
+                              if (x.company.isNotEmpty) x.company,
+                              if (x.jobTitle.isNotEmpty) x.jobTitle,
+                              if (own != null &&
+                                  x.company.isEmpty &&
+                                  x.email.isNotEmpty)
+                                x.email,
+                              if (multi && conn != null) conn.label,
+                            ].join(' · ');
+                            return DecoratedBox(
+                              decoration: BoxDecoration(
+                                border: Border(
+                                  bottom: BorderSide(color: c.border),
                                 ),
                               ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                crossAxisAlignment: CrossAxisAlignment.start,
+                              child: Row(
                                 children: [
-                                  Text(
-                                    x.name,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.w600,
-                                      color: c.text,
-                                    ),
-                                  ),
-                                  if (sub.isNotEmpty)
-                                    Text(
-                                      sub,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: TextStyle(
-                                        fontSize: 12,
-                                        color: c.muted,
+                                  StatusAvatar(name: x.name, size: 34),
+                                  if (own != null)
+                                    Padding(
+                                      padding: const EdgeInsets.only(left: 6),
+                                      child: Tooltip(
+                                        message: tr('Contatto personale'),
+                                        child: Icon(
+                                          Icons.person_outline_rounded,
+                                          size: 14,
+                                          color: c.accent,
+                                        ),
                                       ),
                                     ),
-                                ],
-                              ),
-                            ),
-                            for (final (label, number) in x.numbers)
-                              Padding(
-                                padding: const EdgeInsets.only(left: 6),
-                                child: Tooltip(
-                                  message: '${tr(label)} · $number',
-                                  child: GestureDetector(
-                                    onSecondaryTapDown: (d) => showActionsMenu(
-                                      context,
-                                      d.globalPosition,
-                                      [
-                                        (
-                                          Icons.call_rounded,
-                                          tr('Chiama'),
-                                          p.canDial
-                                              ? () => widget.onCall(number)
-                                              : null,
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Column(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.center,
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          x.name,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.w600,
+                                            color: c.text,
+                                          ),
                                         ),
-                                        copyAction(context, number),
+                                        if (sub.isNotEmpty)
+                                          Text(
+                                            sub,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              color: c.muted,
+                                            ),
+                                          ),
                                       ],
                                     ),
-                                    child: OutlinedButton.icon(
-                                      style: OutlinedButton.styleFrom(
-                                        visualDensity: VisualDensity.compact,
-                                        side: BorderSide(color: c.border),
-                                      ),
-                                      onPressed: p.canDial
-                                          ? () => widget.onCall(number)
-                                          : null,
-                                      icon: Icon(
-                                        _iconFor(tr(label)),
-                                        size: 16,
-                                        color: c.accent,
-                                      ),
-                                      label: Text(
-                                        number,
-                                        style: mono(c.text, size: 12),
+                                  ),
+                                  for (final (label, number) in x.numbers)
+                                    Padding(
+                                      padding: const EdgeInsets.only(left: 6),
+                                      child: Tooltip(
+                                        message: '${tr(label)} · $number',
+                                        child: GestureDetector(
+                                          onSecondaryTapDown: (d) =>
+                                              showActionsMenu(
+                                                context,
+                                                d.globalPosition,
+                                                [
+                                                  (
+                                                    Icons.call_rounded,
+                                                    tr('Chiama'),
+                                                    p.canDial
+                                                        ? () => widget.onCall(
+                                                            number,
+                                                          )
+                                                        : null,
+                                                  ),
+                                                  copyAction(context, number),
+                                                ],
+                                              ),
+                                          child: OutlinedButton.icon(
+                                            style: OutlinedButton.styleFrom(
+                                              visualDensity:
+                                                  VisualDensity.compact,
+                                              side: BorderSide(color: c.border),
+                                            ),
+                                            onPressed: p.canDial
+                                                ? () => widget.onCall(number)
+                                                : null,
+                                            icon: Icon(
+                                              _iconFor(tr(label)),
+                                              size: 16,
+                                              color: c.accent,
+                                            ),
+                                            label: Text(
+                                              number,
+                                              style: mono(c.text, size: 12),
+                                            ),
+                                          ),
+                                        ),
                                       ),
                                     ),
-                                  ),
-                                ),
-                              ),
-                            if (own != null)
-                              PopupMenuButton<String>(
-                                tooltip: '',
-                                icon: Icon(Icons.more_vert, color: c.muted),
-                                onSelected: (v) => v == 'edit'
-                                    ? _edit(context, own)
-                                    : _delete(context, own),
-                                itemBuilder: (_) => [
-                                  PopupMenuItem(
-                                    value: 'edit',
-                                    child: Text(tr('Modifica')),
-                                  ),
-                                  PopupMenuItem(
-                                    value: 'delete',
-                                    child: Text(tr('Elimina')),
-                                  ),
+                                  if (own != null)
+                                    PopupMenuButton<String>(
+                                      tooltip: '',
+                                      icon: Icon(
+                                        Icons.more_vert,
+                                        color: c.muted,
+                                      ),
+                                      onSelected: (v) => v == 'edit'
+                                          ? _edit(context, own)
+                                          : _delete(context, own),
+                                      itemBuilder: (_) => [
+                                        PopupMenuItem(
+                                          value: 'edit',
+                                          child: Text(tr('Modifica')),
+                                        ),
+                                        PopupMenuItem(
+                                          value: 'delete',
+                                          child: Text(tr('Elimina')),
+                                        ),
+                                      ],
+                                    )
+                                  else
+                                    // Sola lettura: detto una volta sotto la lista,
+                                    // qui solo lo spazio del menu per allineare.
+                                    const SizedBox(width: 48),
                                 ],
-                              )
-                            else
-                              // Sola lettura: detto una volta sotto la lista,
-                              // qui solo lo spazio del menu per allineare.
-                              const SizedBox(width: 48),
-                          ],
+                              ),
+                            );
+                          },
                         ),
-                      );
-                    },
+                      ),
+                      // Indice A–Z: salta alla prima riga della lettera.
+                      if (firstOf.length > 1)
+                        _AlphaIndex(
+                          letters: firstOf.keys.toList(),
+                          onLetter: (l) => _scroll.animateTo(
+                            firstOf[l]! * _rowExtent,
+                            duration: DrinMotion.of(context, DrinMotion.base),
+                            curve: DrinMotion.curve,
+                          ),
+                        ),
+                    ],
                   ),
           ),
           const SizedBox(height: 8),
@@ -382,13 +430,10 @@ class _ContactsViewState extends State<ContactsView> {
                 ),
                 const SizedBox(width: DrinSpace.s4),
               ],
-              Expanded(
-                child: Pager(
-                  total: list.length,
-                  page: _page,
-                  pageSize: pageSize,
-                  onPage: (i) => setState(() => _page = i),
-                ),
+              const Spacer(),
+              Text(
+                tr('{n} contatti', {'n': list.length}),
+                style: DrinText.detail.copyWith(color: c.muted),
               ),
             ],
           ),
@@ -530,6 +575,45 @@ class _ContactDialogState extends State<_ContactDialog> {
         ),
         FilledButton(onPressed: _save, child: Text(tr('Salva'))),
       ],
+    );
+  }
+}
+
+/// Colonna di lettere a destra della rubrica; si rimpicciolisce se la
+/// finestra è bassa.
+class _AlphaIndex extends StatelessWidget {
+  const _AlphaIndex({required this.letters, required this.onLetter});
+  final List<String> letters;
+  final ValueChanged<String> onLetter;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.drin;
+    return Padding(
+      padding: const EdgeInsets.only(left: DrinSpace.s2),
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        alignment: Alignment.topCenter,
+        child: Column(
+          children: [
+            for (final l in letters)
+              InkWell(
+                borderRadius: BorderRadius.circular(DrinRadius.control),
+                onTap: () => onLetter(l),
+                child: SizedBox(
+                  width: 24,
+                  height: 20,
+                  child: Center(
+                    child: Text(
+                      l,
+                      style: DrinText.label.copyWith(color: c.primary),
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
     );
   }
 }

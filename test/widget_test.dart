@@ -9,6 +9,7 @@ import 'package:drinphone/core/sip/sip_engine.dart';
 import 'package:drinphone/features/history/history_view.dart';
 import 'package:drinphone/features/contacts/contacts_view.dart';
 import 'package:drinphone/features/shell/search_box.dart';
+import 'package:drinphone/core/contacts/personal_contacts.dart';
 import 'package:drinphone/main.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -534,6 +535,48 @@ void main() {
     await tester.tap(find.byTooltip('Legenda degli stati'));
     await tester.pump(const Duration(milliseconds: 400));
     expect(find.text('Anello: stato della linea'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('Rubrica: lista continua con indice A–Z', (tester) async {
+    tester.view.physicalSize = const Size(1366, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    late PhoneController p;
+    await tester.runAsync(() async {
+      await store.save(const Settings(accounts: [_account]));
+      p = PhoneController(
+        engine,
+        store,
+        engineDataDir: tmp.path,
+        logDir: tmp.path,
+      );
+      await p.init();
+      for (final (i, n) in const [
+        'Anna Rossi',
+        'Bruno Verdi',
+        'Carlo Neri',
+      ].indexed) {
+        await p.savePersonal(
+          PersonalContact(
+            id: 'c$i',
+            name: n,
+            numbers: [('Cellulare', '33300000$i')],
+          ),
+        );
+      }
+    });
+    await tester.pumpWidget(DrinPhoneApp(phone: p));
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.digit2);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.text('3 contatti'), findsOneWidget);
+    expect(find.text('C'), findsOneWidget);
+    await tester.tap(find.text('C'));
+    await tester.pump(const Duration(milliseconds: 400));
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());
   });

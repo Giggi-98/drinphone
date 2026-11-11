@@ -187,6 +187,10 @@ Regole:
 - **Scorciatoie**: tutte con Ctrl (vedi `shortcuts.dart`), F1 le elenca con
   tasti disegnati (`panel`, bordo `line`, `number`); i tooltip del menu
   laterale mostrano la propria.
+- **Rubrica**: lista continua (righe da 58 + divisore), niente pagine;
+  indice A–Z a destra con le sole lettere presenti in `label` `primary`
+  (le cifre e il resto sotto "#"), salto animato in `base`; sotto la lista
+  "sola lettura dal PBX" e il numero di contatti.
 - **Stato vuoto**: icona 40 `muted`, titolo `title`, una riga `detail`; mai
   tabelle vuote a tutta altezza.
 
