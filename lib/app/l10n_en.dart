@@ -670,6 +670,7 @@ const en = <String, String>{
   'Copia numero': 'Copy number',
   'Richiama': 'Call back',
   'Legenda degli stati': 'Status legend',
+  'Recenti': 'Recent',
   'Senza reparto': 'No department',
   'Tutte insieme': 'All together',
   'Raggruppa per reparto': 'Group by department',

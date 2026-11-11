@@ -809,4 +809,52 @@ void main() {
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());
   });
+
+  testWidgets('Ctrl+K a campo vuoto: recenti e preferiti', (tester) async {
+    tester.view.physicalSize = const Size(1366, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    late PhoneController p;
+    await tester.runAsync(() async {
+      await store.save(
+        const Settings(
+          accounts: [_account],
+          extensions: [Extension('Sala Riunioni', '300')],
+        ),
+      );
+      p = PhoneController(
+        engine,
+        store,
+        engineDataDir: tmp.path,
+        logDir: tmp.path,
+      );
+      await p.init();
+      await p.toggleFavorite(p.allExtensions.single);
+    });
+    final now = DateTime.now();
+    p.history = [
+      for (final n in ['250', '250', '3427104505'])
+        CallRecord(
+          number: n,
+          name: '',
+          direction: CallDirection.outgoing,
+          start: now,
+          seconds: 10,
+          answered: true,
+        ),
+    ];
+    await tester.pumpWidget(DrinPhoneApp(phone: p));
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyK);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.text('Recenti'), findsOneWidget);
+    // 250 una volta sola (numeri distinti), poi il cellulare.
+    expect(find.text('250'), findsOneWidget);
+    expect(find.text('3427104505'), findsOneWidget);
+    expect(find.text('Interno 300'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+  });
 }

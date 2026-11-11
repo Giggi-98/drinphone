@@ -4,6 +4,9 @@ import 'package:flutter/services.dart';
 import '../../app/l10n.dart';
 import '../../app/phone_controller.dart';
 import '../../app/theme.dart';
+import '../../core/call_history.dart';
+import '../../core/security/settings_store.dart' show Extension;
+import '../../core/sip/sip_engine.dart' show CallDirection;
 import '../call/keypad.dart';
 import 'widgets.dart';
 
@@ -42,13 +45,47 @@ class _SearchBoxState extends State<SearchBox> {
   String get _typed => _text.text.trim();
   bool get _offerNumber =>
       _dialable.hasMatch(_typed) && !_hits.any((h) => h.number == _typed);
-  int get _rows => _hits.length + (_offerNumber ? 1 : 0);
+  int get _rows =>
+      _typed.isEmpty ? _quick.length : _hits.length + (_offerNumber ? 1 : 0);
+
+  /// A campo vuoto: ultimi 5 numeri del registro, poi i preferiti.
+  List<(bool, String, String, Extension?, CallRecord?)> get _quick {
+    final out = <(bool, String, String, Extension?, CallRecord?)>[];
+    final seen = <String>{};
+    for (final r in p.history) {
+      if (out.length == 5) break;
+      if (r.number.isEmpty || !seen.add(r.number)) continue;
+      out.add((
+        true,
+        r.number,
+        r.name.isNotEmpty ? r.name : p.nameFor(r.number),
+        null,
+        r,
+      ));
+    }
+    for (final e in p.favorites.take(8)) {
+      out.add((false, e.number, e.name, e, null));
+    }
+    return out;
+  }
+
+  /// Fuoco nel campo vuoto: compaiono recenti e preferiti.
+  void _showQuick() {
+    if (_typed.isEmpty && _quick.isNotEmpty) {
+      setState(() => _selected = 0);
+      _results.show();
+    }
+  }
 
   @override
   void initState() {
     super.initState();
     _focus.addListener(() {
-      if (!_focus.hasFocus) _results.hide();
+      if (!_focus.hasFocus) {
+        _results.hide();
+      } else {
+        _showQuick();
+      }
       if (mounted) setState(() {});
     });
   }
@@ -65,7 +102,13 @@ class _SearchBoxState extends State<SearchBox> {
       _hits = p.search(v);
       _selected = 0;
     });
-    _typed.isEmpty ? _results.hide() : _results.show();
+    if (_typed.isNotEmpty) {
+      _results.show();
+    } else if (_focus.hasFocus && _quick.isNotEmpty) {
+      _results.show();
+    } else {
+      _results.hide();
+    }
   }
 
   void _call(String number) {
@@ -76,6 +119,16 @@ class _SearchBoxState extends State<SearchBox> {
   }
 
   void _activate(int i) {
+    if (_typed.isEmpty) {
+      final q = _quick;
+      if (i >= q.length) return;
+      final (_, number, _, e, _) = q[i];
+      if (e == null) return _call(number);
+      if (!p.isCallable(e)) return;
+      p.dial(number, via: e);
+      _results.hide();
+      return;
+    }
     if (_offerNumber) {
       if (i == 0) return _call(_typed);
       i--;
@@ -145,6 +198,7 @@ class _SearchBoxState extends State<SearchBox> {
     String title,
     String sub, {
     bool enabled = true,
+    Widget? trailing,
   }) {
     final on = index == _selected;
     return Material(
@@ -183,6 +237,10 @@ class _SearchBoxState extends State<SearchBox> {
                   ],
                 ),
               ),
+              if (trailing != null) ...[
+                trailing,
+                const SizedBox(width: DrinSpace.s2),
+              ],
               Icon(
                 Icons.call_rounded,
                 size: 18,
@@ -195,7 +253,66 @@ class _SearchBoxState extends State<SearchBox> {
     );
   }
 
+  /// Recenti (con la direzione) e preferiti (con stato e segnalino dal vivo).
+  Widget _quickList(DrinColors c) {
+    final q = _quick;
+    Widget head(String t) => Padding(
+      padding: const EdgeInsets.fromLTRB(10, 6, 10, 4),
+      child: Text(t, style: DrinText.label.copyWith(color: c.muted)),
+    );
+    final rows = <Widget>[];
+    for (var i = 0; i < q.length; i++) {
+      final (recent, number, name, e, r) = q[i];
+      if (i == 0 && recent) rows.add(head(tr('Recenti')));
+      if (!recent && (i == 0 || q[i - 1].$1)) rows.add(head(tr('Preferiti')));
+      final title = name.isEmpty || name == number ? number : name;
+      if (recent) {
+        final icon = r!.missed
+            ? (Icons.call_missed_rounded, c.busyText)
+            : r.direction == CallDirection.incoming
+            ? (Icons.call_received_rounded, c.freeText)
+            : (Icons.call_made_rounded, c.primary);
+        rows.add(
+          _row(
+            c,
+            i,
+            CircleAvatar(
+              radius: 20,
+              backgroundColor: c.keyBtn,
+              child: Icon(icon.$1, size: 18, color: icon.$2),
+            ),
+            title,
+            title == number ? '' : number,
+          ),
+        );
+      } else {
+        final live = p.primaryConnection?.extensionCalls[number];
+        rows.add(
+          _row(
+            c,
+            i,
+            StatusAvatar(
+              name: e!.name,
+              blf: p.blfOf(e),
+              presence: p.presenceOf(e),
+            ),
+            title,
+            '${tr('Interno')} $number',
+            enabled: p.isCallable(e),
+            trailing: live == null ? null : LiveChip(live, dense: true),
+          ),
+        );
+      }
+    }
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: rows,
+    );
+  }
+
   Widget _resultsList(DrinColors c) {
+    if (_typed.isEmpty) return _quickList(c);
     final rows = <Widget>[];
     var i = 0;
     if (_offerNumber) {
@@ -299,7 +416,7 @@ class _SearchBoxState extends State<SearchBox> {
                         focusNode: _focus,
                         onChanged: _changed,
                         onTap: () {
-                          if (_typed.isNotEmpty) _results.show();
+                          _typed.isNotEmpty ? _results.show() : _showQuick();
                         },
                         onSubmitted: (_) {
                           _activate(_selected);
