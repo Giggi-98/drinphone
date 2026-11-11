@@ -580,4 +580,37 @@ void main() {
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());
   });
+
+  testWidgets('header: ricerca e account contro il bordo destro', (
+    tester,
+  ) async {
+    for (final w in [1100.0, 1920.0]) {
+      tester.view.physicalSize = Size(w, 900);
+      tester.view.devicePixelRatio = 1;
+      late PhoneController p;
+      await tester.runAsync(() async {
+        await store.save(const Settings(accounts: [_account]));
+        p = PhoneController(
+          engine,
+          store,
+          engineDataDir: tmp.path,
+          logDir: tmp.path,
+        );
+        await p.init();
+      });
+      await tester.pumpWidget(DrinPhoneApp(phone: p));
+      await tester.pump(const Duration(milliseconds: 300));
+      final chevron = tester.getRect(
+        find.descendant(
+          of: find.byTooltip('Account'),
+          matching: find.byIcon(Icons.expand_more_rounded),
+        ),
+      );
+      final right = tester.getRect(find.byType(Scaffold).first).right;
+      // Solo il margine dell'header e del pulsante (meno di 40) a destra.
+      expect(right - chevron.right, lessThan(40), reason: 'larghezza $w');
+      await tester.pumpWidget(const SizedBox());
+    }
+    tester.view.reset();
+  });
 }

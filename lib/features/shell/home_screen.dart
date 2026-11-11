@@ -527,9 +527,18 @@ class _HomeScreenState extends State<HomeScreen> {
               ]),
             ),
           ],
-          const Spacer(),
-          Flexible(
-            child: SearchBox(phone: p, onCall: _call, focusNode: _searchFocus),
+          // Ricerca e account sempre contro il bordo destro: prima Spacer e
+          // Flexible si dividevano lo spazio e, con la ricerca al massimo di
+          // 420, l'avanzo finiva dopo l'account (vuoto a destra).
+          Expanded(
+            child: Align(
+              alignment: Alignment.centerRight,
+              child: SearchBox(
+                phone: p,
+                onCall: _call,
+                focusNode: _searchFocus,
+              ),
+            ),
           ),
           const SizedBox(width: 12),
           // Account in uso (DECISIONS "Un account vivo alla volta").
