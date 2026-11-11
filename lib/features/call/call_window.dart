@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../app/l10n.dart';
 import '../../app/phone_controller.dart';
 import '../../app/theme.dart';
+import '../../app/zoom.dart' show lastPress;
 import '../../core/sip/sip_engine.dart';
 import '../shell/widgets.dart';
 import 'keypad.dart';
@@ -70,14 +71,62 @@ class _CallWindowState extends State<CallWindow> {
   @override
   Widget build(BuildContext context) {
     final call = p.call;
-    if (call == null) return const SizedBox.shrink();
-    // Chiamata nuova: si riparte dalla finestra normale, senza pannelli.
-    if (_callId != call.id) {
+    // Chiamata nuova: si riparte dalla finestra normale, senza pannelli
+    // (prima della chiave della forma, che dipende da _mode).
+    if (call != null && _callId != call.id) {
       _callId = call.id;
       _panel = _Panel.none;
       _dtmf = '';
       if (_mode == _Mode.full) _mode = _Mode.normal;
     }
+    // Comparsa, cambio di forma (normale, ridotta, schermo intero) e chiusura
+    // animati: la finestra uscente si dissolve mentre entra la nuova.
+    return Positioned.fill(
+      child: AnimatedSwitcher(
+        duration: DrinMotion.of(context, DrinMotion.wide),
+        switchInCurve: DrinMotion.emphasized,
+        switchOutCurve: Curves.easeInCubic,
+        transitionBuilder: (child, anim) => FadeTransition(
+          opacity: anim,
+          child: ScaleTransition(
+            scale: Tween(begin: 0.96, end: 1.0).animate(anim),
+            child: child,
+          ),
+        ),
+        layoutBuilder: (current, previous) =>
+            Stack(children: [...previous, ?current]),
+        child: call == null
+            ? const SizedBox.shrink(key: ValueKey('none'))
+            : Stack(
+                key: ValueKey(
+                  call.phase == CallPhase.incoming ? 'incoming' : _mode,
+                ),
+                children: [_content(call)],
+              ),
+      ),
+    );
+  }
+
+  /// Punto da cui far crescere la finestra: il clic che ha avviato la
+  /// chiamata, se recente; altrimenti il centro.
+  Alignment _origin() {
+    final press = lastPress.value;
+    final box = context.findRenderObject() as RenderBox?;
+    if (press == null ||
+        box == null ||
+        !box.hasSize ||
+        DateTime.now().difference(press.$2) > const Duration(seconds: 2)) {
+      return Alignment.center;
+    }
+    final at = box.globalToLocal(press.$1);
+    final s = box.size;
+    return Alignment(
+      (at.dx / s.width * 2 - 1).clamp(-1.0, 1.0),
+      (at.dy / s.height * 2 - 1).clamp(-1.0, 1.0),
+    );
+  }
+
+  Widget _content(CallEvent call) {
     if (call.phase == CallPhase.incoming) {
       return Positioned(right: 24, bottom: 24, child: _incoming(call));
     }
@@ -86,14 +135,19 @@ class _CallWindowState extends State<CallWindow> {
     }
     final full = _mode == _Mode.full;
     return Positioned.fill(
-      child: Padding(
-        padding: EdgeInsets.all(full ? 0 : 28),
-        child: Center(
-          child: ConstrainedBox(
-            constraints: full
-                ? const BoxConstraints.expand()
-                : const BoxConstraints(maxWidth: 1080, maxHeight: 720),
-            child: _window(call, full),
+      child: _Grow(
+        // Una volta per chiamata: dal punto premuto alla finestra intera.
+        key: ValueKey(('grow', call.id)),
+        from: _origin(),
+        child: Padding(
+          padding: EdgeInsets.all(full ? 0 : 28),
+          child: Center(
+            child: ConstrainedBox(
+              constraints: full
+                  ? const BoxConstraints.expand()
+                  : const BoxConstraints(maxWidth: 1080, maxHeight: 720),
+              child: _window(call, full),
+            ),
           ),
         ),
       ),
@@ -974,6 +1028,30 @@ class _RoundButtonState extends State<_RoundButton> {
       ),
     );
   }
+}
+
+/// La finestra di chiamata cresce dal punto [from] (scala 0,2 → 1 e
+/// dissolvenza, [DrinMotion.wide]); niente con "riduci movimento".
+class _Grow extends StatelessWidget {
+  const _Grow({super.key, required this.from, required this.child});
+  final Alignment from;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => TweenAnimationBuilder<double>(
+    tween: Tween(begin: 0, end: 1),
+    duration: DrinMotion.of(context, DrinMotion.wide),
+    curve: DrinMotion.emphasized,
+    builder: (context, t, child) => Opacity(
+      opacity: t.clamp(0.0, 1.0),
+      child: Transform.scale(
+        scale: 0.2 + 0.8 * t,
+        alignment: from,
+        child: child,
+      ),
+    ),
+    child: child,
+  );
 }
 
 /// Comparsa della scheda in arrivo: dissolvenza e 4 px di salita ([DrinMotion.wide]).

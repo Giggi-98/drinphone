@@ -314,6 +314,20 @@ void main() {
     await tester.tap(find.byTooltip('Espandi'));
     await tester.pump();
     expect(find.text('Termina'), findsOneWidget);
+
+    // Fine chiamata: la finestra si dissolve e sparisce.
+    engine.callsCtl.add(
+      const CallEvent(
+        phase: CallPhase.ended,
+        direction: CallDirection.incoming,
+        remoteNumber: '205',
+        remoteName: 'Magazzino',
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(find.text('Termina'), findsNothing);
+    expect(tester.takeException(), isNull);
   });
 
   test('una registrazione per account: salvarne una sostituisce', () async {

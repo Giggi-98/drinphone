@@ -6,6 +6,10 @@ import 'package:flutter/services.dart';
 
 import 'theme.dart';
 
+/// Ultimo punto premuto nella finestra (coordinate globali) e quando: la
+/// finestra di chiamata che si apre subito dopo cresce da lì.
+final lastPress = ValueNotifier<(Offset, DateTime)?>(null);
+
 /// Zoom dell'interfaccia (desktop): `Ctrl` + `+` o rotella in su ingrandisce,
 /// `Ctrl` + `−` o rotella in giù riduce, `Ctrl` + `0` torna al 100 %. Vale con
 /// la finestra a fuoco, anche dentro un campo di testo. Mostra per un attimo
@@ -101,6 +105,7 @@ class _ZoomKeysState extends State<ZoomKeys> {
         Listener(
           behavior: HitTestBehavior.translucent,
           onPointerSignal: _onSignal,
+          onPointerDown: (e) => lastPress.value = (e.position, DateTime.now()),
           child: ScrollConfiguration(
             behavior: const _ZoomScrollBehavior(),
             child: widget.child,

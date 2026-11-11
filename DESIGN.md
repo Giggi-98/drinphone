@@ -107,6 +107,10 @@ Regole:
 - Ovunque: pressione dei pulsanti (leggera molla), comparsa/scomparsa
   (dissolvenza + 4 px), cambio sezione (dissolvenza `base`), apertura della
   chiamata (`wide`).
+- Finestra di chiamata: cresce (scala 0,2 → 1 e dissolvenza, `wide`
+  enfatizzata) dal punto premuto che l'ha avviata, se recente (2 s),
+  altrimenti dal centro; passaggi normale/ridotta/schermo intero e chiusura
+  in dissolvenza con scala 0,96.
 - Con "riduci movimento" del sistema (`MediaQuery.disableAnimations`) tutto
   diventa immediato e lo squillo resta solo colore.
 
