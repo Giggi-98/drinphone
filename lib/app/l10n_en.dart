@@ -670,6 +670,7 @@ const en = <String, String>{
   'Copia numero': 'Copy number',
   'Richiama': 'Call back',
   'Legenda degli stati': 'Status legend',
+  '{n} tolto dai preferiti': '{n} removed from favourites',
   '{n} contatti': '{n} contacts',
   'In arrivo, persa': 'Incoming, missed',
   'Impostazioni di presenza…': 'Presence settings…',

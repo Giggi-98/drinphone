@@ -368,62 +368,71 @@ class _CallsTableState extends State<_CallsTable> {
                         if (x.trunk.isNotEmpty) x.trunk,
                         if (x.path.isNotEmpty) x.path,
                       ].join(' · ');
-                      return Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 10,
-                        ),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              flex: 3,
-                              child: Text(
-                                _who(x.caller),
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(color: c.text),
+                      // Chiamata nuova: entra in dissolvenza (una volta).
+                      return FadeIn(
+                        key: ValueKey(x.id),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 10,
+                          ),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                flex: 3,
+                                child: Text(
+                                  _who(x.caller),
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(color: c.text),
+                                ),
                               ),
-                            ),
-                            Expanded(
-                              flex: 3,
-                              child: Text(
-                                _who(x.callee),
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(color: c.text),
+                              Expanded(
+                                flex: 3,
+                                child: Text(
+                                  _who(x.callee),
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(color: c.text),
+                                ),
                               ),
-                            ),
-                            Expanded(
-                              flex: 2,
-                              child: Align(
-                                alignment: Alignment.centerLeft,
-                                child: Tooltip(
-                                  message: label,
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 8,
-                                      vertical: 4,
+                              Expanded(
+                                flex: 2,
+                                child: Align(
+                                  alignment: Alignment.centerLeft,
+                                  child: Tooltip(
+                                    message: label,
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 8,
+                                        vertical: 4,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: color.withValues(alpha: 0.14),
+                                        borderRadius: BorderRadius.circular(
+                                          999,
+                                        ),
+                                      ),
+                                      child: Icon(icon, size: 16, color: color),
                                     ),
-                                    decoration: BoxDecoration(
-                                      color: color.withValues(alpha: 0.14),
-                                      borderRadius: BorderRadius.circular(999),
-                                    ),
-                                    child: Icon(icon, size: 16, color: color),
                                   ),
                                 ),
                               ),
-                            ),
-                            Expanded(
-                              flex: 1,
-                              child: Text(_elapsed(x), style: mono(c.text)),
-                            ),
-                            Expanded(
-                              flex: 2,
-                              child: Text(
-                                details.isEmpty ? '—' : details,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(fontSize: 12, color: c.muted),
+                              Expanded(
+                                flex: 1,
+                                child: Text(_elapsed(x), style: mono(c.text)),
                               ),
-                            ),
-                          ],
+                              Expanded(
+                                flex: 2,
+                                child: Text(
+                                  details.isEmpty ? '—' : details,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: c.muted,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       );
                     },

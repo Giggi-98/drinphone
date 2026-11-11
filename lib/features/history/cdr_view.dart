@@ -398,10 +398,10 @@ class _CdrViewState extends State<CdrView> {
     );
     final Widget body;
     if (_data.rows.isEmpty) {
-      body = Center(
-        child: _loading
-            ? const CircularProgressIndicator()
-            : Column(
+      body = _loading
+          ? const Align(alignment: Alignment.topCenter, child: SkeletonRows())
+          : Center(
+              child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
@@ -424,7 +424,7 @@ class _CdrViewState extends State<CdrView> {
                   ],
                 ],
               ),
-      );
+            );
     } else {
       final cells = [for (final x in cols) x.$2];
       body = CallTable(

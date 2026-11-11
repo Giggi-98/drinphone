@@ -191,6 +191,14 @@ Regole:
   indice A–Z a destra con le sole lettere presenti in `label` `primary`
   (le cifre e il resto sotto "#"), salto animato in `base`; sotto la lista
   "sola lettura dal PBX" e il numero di contatti.
+- **Scheda al passaggio** (avatar di un interno): tooltip ricco con nome in
+  `heading`, stato linea e presenza, email e cellulare dal PBX con icona.
+- **Avviso con Annulla**: per le azioni che tolgono qualcosa senza conferma
+  (togliere un preferito); l'avviso offre "Annulla" per qualche secondo.
+- **Caricamento**: righe segnaposto `panel` ferme (`SkeletonRows`) al posto
+  dello spinner nelle tabelle; elementi nuovi in lista con `FadeIn`
+  (dissolvenza + 4 px in `base`, una volta); badge che cambiano numero con
+  una piccola scala; pulsanti di chiamata con pressione a molla (0,94).
 - **Stato vuoto**: icona 40 `muted`, titolo `title`, una riga `detail`; mai
   tabelle vuote a tutta altezza.
 

@@ -889,6 +889,24 @@ class _ExtensionsView extends StatefulWidget {
 }
 
 class _ExtensionsViewState extends State<_ExtensionsView> {
+  /// Togliere un preferito si annulla dall'avviso (aggiungerlo si vede).
+  void _toggleFavorite(Extension e) {
+    final was = phone.isFavorite(e);
+    phone.toggleFavorite(e);
+    if (!was) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(tr('{n} tolto dai preferiti', {'n': e.number})),
+          action: SnackBarAction(
+            label: tr('Annulla'),
+            onPressed: () => phone.toggleFavorite(e),
+          ),
+        ),
+      );
+  }
+
   int _page = 0;
   String? _pageGroup;
   BlfStatus? _blfFilter;
@@ -1217,7 +1235,16 @@ class _ExtensionsViewState extends State<_ExtensionsView> {
                       itemCount: slice.length,
                       itemBuilder: (_, i) {
                         final e = slice[i];
+                        final dir = phone.primaryConnection?.directory
+                            .where((x) => x.number == e.number)
+                            .firstOrNull;
                         return _ExtensionTile(
+                          details: [
+                            if ((dir?.email ?? '').isNotEmpty)
+                              (Icons.alternate_email_rounded, dir!.email),
+                            if ((dir?.mobile ?? '').isNotEmpty)
+                              (Icons.smartphone_rounded, dir!.mobile),
+                          ],
                           compact: _compact,
                           ext: e,
                           callable: phone.isCallable(e),
@@ -1226,7 +1253,7 @@ class _ExtensionsViewState extends State<_ExtensionsView> {
                           blfStale: phone.blfStale(e),
                           presence: phone.presenceOf(e),
                           favorite: phone.isFavorite(e),
-                          onFavorite: () => phone.toggleFavorite(e),
+                          onFavorite: () => _toggleFavorite(e),
                           // Tramite l'account SIP del PBX dell'interno.
                           onCall: () => phone.dial(e.number, via: e),
                           onVideoCall: phone.videoEnabled
@@ -1287,7 +1314,11 @@ class _ExtensionTile extends StatefulWidget {
     this.onVideoCall,
     required this.onRemove,
     this.compact = false,
+    this.details = const [],
   });
+
+  /// Email e cellulare dall'elenco del PBX, per la scheda al passaggio.
+  final List<(IconData, String)> details;
 
   /// Riga densa (vista "righe"): tutto su una riga alta 52, azioni a destra.
   final bool compact;
@@ -1327,6 +1358,7 @@ class _ExtensionTileState extends State<_ExtensionTile> {
           stale: w.blfStale,
           presence: w.presence,
           size: w.compact ? 32 : 40,
+          details: w.details,
         ),
         const SizedBox(width: 12),
         Expanded(

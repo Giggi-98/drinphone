@@ -80,9 +80,14 @@ class StatusAvatar extends StatelessWidget {
     this.presence = '',
     this.size = 40,
     this.stale = false,
+    this.details = const [],
   });
   final String name;
   final BlfStatus? blf;
+
+  /// Righe in più nella scheda che compare al passaggio (email, cellulare):
+  /// con queste il tooltip diventa una piccola scheda con nome e stato.
+  final List<(IconData, String)> details;
 
   /// Ultimo stato noto, non ancora confermato dal PBX: anello attenuato.
   final bool stale;
@@ -105,8 +110,32 @@ class StatusAvatar extends StatelessWidget {
       if (stale) tr('da confermare'),
       if (p != null) p.$3,
     ].join(' · ');
+    final ink = DrinText.detail.copyWith(color: c.ink);
     return Tooltip(
-      message: label,
+      message: details.isEmpty ? label : null,
+      richMessage: details.isEmpty
+          ? null
+          : TextSpan(
+              style: ink,
+              children: [
+                TextSpan(
+                  text: name,
+                  style: DrinText.heading.copyWith(color: c.ink),
+                ),
+                if (label.isNotEmpty) TextSpan(text: '\n$label'),
+                for (final (icon, text) in details) ...[
+                  const TextSpan(text: '\n'),
+                  WidgetSpan(
+                    alignment: PlaceholderAlignment.middle,
+                    child: Padding(
+                      padding: const EdgeInsets.only(right: DrinSpace.s1),
+                      child: Icon(icon, size: 14, color: c.muted),
+                    ),
+                  ),
+                  TextSpan(text: text),
+                ],
+              ],
+            ),
       child: Semantics(
         label: label,
         child: SizedBox(
@@ -575,4 +604,66 @@ Future<bool> confirmDanger(
     },
   );
   return ok ?? false;
+}
+
+/// Comparsa (DESIGN §5): dissolvenza + 4 px dal basso in `base`, una volta
+/// sola quando l'elemento nasce (es. una chiamata nuova in una lista).
+class FadeIn extends StatelessWidget {
+  const FadeIn({super.key, required this.child});
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => TweenAnimationBuilder<double>(
+    tween: Tween(begin: 0, end: 1),
+    duration: DrinMotion.of(context, DrinMotion.base),
+    curve: DrinMotion.curve,
+    builder: (_, t, child) => Opacity(
+      opacity: t,
+      child: Transform.translate(offset: Offset(0, 4 * (1 - t)), child: child),
+    ),
+    child: child,
+  );
+}
+
+/// Segnaposto di caricamento: righe `panel` ferme (niente luccichio in loop,
+/// DESIGN §5) al posto dello spinner, così la tabella non "salta".
+class SkeletonRows extends StatelessWidget {
+  const SkeletonRows({super.key, this.rows = 8});
+  final int rows;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.drin;
+    Widget bar(double w) => Container(
+      width: w,
+      height: 12,
+      decoration: BoxDecoration(
+        color: c.panel,
+        borderRadius: BorderRadius.circular(DrinRadius.pill),
+      ),
+    );
+    return Column(
+      children: [
+        for (var i = 0; i < rows; i++)
+          Container(
+            height: 52,
+            padding: const EdgeInsets.symmetric(horizontal: DrinSpace.s3),
+            decoration: BoxDecoration(
+              border: Border(bottom: BorderSide(color: c.line)),
+            ),
+            child: Row(
+              children: [
+                bar(72),
+                const SizedBox(width: DrinSpace.s6),
+                bar(i.isEven ? 180 : 140),
+                const Spacer(),
+                bar(64),
+                const SizedBox(width: DrinSpace.s5),
+                bar(40),
+              ],
+            ),
+          ),
+      ],
+    );
+  }
 }
