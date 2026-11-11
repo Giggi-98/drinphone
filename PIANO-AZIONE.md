@@ -131,6 +131,18 @@ DA VALIDARE a schermo
   `Dettagli chiamata`; finestra di chiamata e video compresi.
 
 **C. Simboli per ogni stato** (un'icona + un colore + tooltip con il nome)
+Stato 2026-11-11 (v0.1.8), blocchi C–H: FATTO (da validare a schermo) legenda,
+badge Chiamate in corso, Sì/No e chip in Preferenze, scorciatoie Ctrl + F1,
+tasto destro su interni/numeri/righe, conferme pericolose, interruttori,
+stato vuoto di Chiamate in corso e Casella vocale, vista a righe di Interni,
+griglia a 2 colonne in Preferenze, lucchetto unico in Rubrica, perse non più
+rosse. RESTA: header con registrazione + presenza fusi e cambio presenza in un
+clic (scrive sul PBX: serve audit §9), popover sulla scheda interno, avvisi con
+"Annulla", `DrinButton` con pressione a molla, scheletri di caricamento,
+contatori animati, ingresso animato delle righe live, transizione condivisa
+verso la finestra di chiamata, Rubrica continua con indice A–Z, filtri del CDR
+su una riga, colonna Tipo a sola icona, barra Salva/Annulla fissa, schede
+orizzontali in Preferenze.
 - **Presenza Yeastar**, oggi un generico ✓ verde per tutti: Disponibile ✓
   `free`, Assente orologio `away`, Non disturbare ⛔ `busy`, Pranzo posate,
   Trasferta aereo, Fuori ufficio luna (`away`). Stesso set in header, schede

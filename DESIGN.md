@@ -165,6 +165,28 @@ Regole:
   `line`, etichetta `muted`, valore `ink`; con un valore diverso dal
   predefinito bordo e valore `primary`, fondo `primary` al 14%. Accanto,
   "Azzera filtri" (pulsante testo) solo se un filtro è attivo.
+- **Menu** (account, tasto destro): fondo `surface`, bordo `line`, raggio
+  `panel`, ombra; righe da 40 con icona `muted` a sinistra, testo `body`,
+  spunta `primary` a destra per la voce scelta. Il tasto destro su interni,
+  numeri e righe del registro offre sempre Chiama/Richiama e Copia numero
+  (avviso "Copiato").
+- **Conferma pericolosa**: dialogo con icona di avviso `busy`, Annulla
+  (testo) e azione in `busy`/`onBusy`. Obbligatoria per ciò che non si
+  annulla (rimuovere il PBX, svuotare il registro, uscire dall'account).
+- **Legenda degli stati**: dialogo dal "?" accanto ai filtri; anello
+  dell'avatar = linea (`free`, `busy`, `squillo`, `line` se non registrato),
+  simbolo = presenza.
+- **Vista a righe degli interni**: righe da 52 su più colonne (larghe fino a
+  520), avatar 32, azioni a destra; alternativa alla vista a schede.
+- **Sezione a griglia** (Preferenze, dati in sola lettura): campi su 2
+  colonne sopra i 640 px, 1 sotto; stessa larghezza; sì/no come ✓ `freeText`
+  / ✕ `muted`, elenchi brevi come chip `panel` in `label`; valore troncato
+  intero nel tooltip.
+- **Scorciatoie**: tutte con Ctrl (vedi `shortcuts.dart`), F1 le elenca con
+  tasti disegnati (`panel`, bordo `line`, `number`); i tooltip del menu
+  laterale mostrano la propria.
+- **Stato vuoto**: icona 40 `muted`, titolo `title`, una riga `detail`; mai
+  tabelle vuote a tutta altezza.
 
 ## 7. Struttura adattiva
 
