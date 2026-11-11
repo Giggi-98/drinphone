@@ -761,4 +761,52 @@ void main() {
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());
   });
+
+  testWidgets('Rubrica: raggruppa per azienda, scelta salvata', (tester) async {
+    tester.view.physicalSize = const Size(1366, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    late PhoneController p;
+    await tester.runAsync(() async {
+      await store.save(const Settings(accounts: [_account]));
+      p = PhoneController(
+        engine,
+        store,
+        engineDataDir: tmp.path,
+        logDir: tmp.path,
+      );
+      await p.init();
+      for (final (i, (n, co)) in const [
+        ('Anna Rossi', 'Fonica Srl'),
+        ('Bruno Verdi', 'Econnet'),
+        ('Carlo Neri', 'Fonica Srl'),
+        ('Dario', ''),
+      ].indexed) {
+        await p.savePersonal(
+          PersonalContact(
+            id: 'c$i',
+            name: n,
+            company: co,
+            numbers: [('Cellulare', '33300000$i')],
+          ),
+        );
+      }
+    });
+    await tester.pumpWidget(DrinPhoneApp(phone: p));
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.digit2);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await tester.pump(const Duration(milliseconds: 400));
+
+    await tester.tap(find.byTooltip('Raggruppa per azienda'));
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(p.settings.view['contacts.byCompany'], '1');
+    expect(find.text('Senza azienda'), findsOneWidget);
+    // Intestazione "Fonica Srl" sopra i suoi due referenti.
+    final head = tester.getTopLeft(find.text('Fonica Srl').first).dy;
+    expect(tester.getTopLeft(find.text('Anna Rossi')).dy, greaterThan(head));
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+  });
 }

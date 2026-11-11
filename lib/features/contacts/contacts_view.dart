@@ -5,6 +5,8 @@ import '../../app/l10n.dart';
 import '../../app/phone_controller.dart';
 import '../../app/theme.dart';
 import '../../core/contacts/personal_contacts.dart';
+import '../../core/pbx/pbx_connection.dart' show PbxConnection;
+import '../../core/pbx/yeastar_api.dart' show PbxContact;
 import '../shell/widgets.dart';
 
 /// Rubrica: contatti personali del profilo (modificabili, importabili da CSV
@@ -156,11 +158,52 @@ class _ContactsViewState extends State<ContactsView> {
       for (final x in all)
         if (_book == null || x.$2.phonebooks.contains(_book)) x,
     ];
-    final slice = list;
-    // Prima riga di ogni lettera, per l'indice A–Z a destra.
+    // Per azienda (scelta salvata): ordinati per azienda e nome, con
+    // un'intestazione per azienda; senza azienda in fondo.
+    final byCompany = p.viewFlag('contacts.byCompany');
+    final List<Object> slice;
+    if (byCompany) {
+      final sorted = [...list]
+        ..sort((a, b) {
+          final ca = a.$2.company.trim().toLowerCase();
+          final cb = b.$2.company.trim().toLowerCase();
+          if (ca.isEmpty != cb.isEmpty) return ca.isEmpty ? 1 : -1;
+          final r = ca.compareTo(cb);
+          return r != 0
+              ? r
+              : a.$2.name.toLowerCase().compareTo(b.$2.name.toLowerCase());
+        });
+      slice = [];
+      String? last;
+      for (final x in sorted) {
+        final co = x.$2.company.trim();
+        if (co.toLowerCase() != last) {
+          last = co.toLowerCase();
+          final n = sorted
+              .where((y) => y.$2.company.trim().toLowerCase() == last)
+              .length;
+          slice.add((co.isEmpty ? tr('Senza azienda') : co, n));
+        }
+        slice.add(x);
+      }
+    } else {
+      slice = list;
+    }
+    // Prima riga di ogni lettera (del nome, o dell'azienda se raggruppati),
+    // per l'indice A–Z a destra.
     final firstOf = <String, int>{};
-    for (var i = 0; i < list.length; i++) {
-      firstOf.putIfAbsent(_letter(list[i].$2.name), () => i);
+    for (var i = 0; i < slice.length; i++) {
+      final e = slice[i];
+      if (byCompany) {
+        if (e is (String, int)) firstOf.putIfAbsent(_letter(e.$1), () => i);
+      } else {
+        firstOf.putIfAbsent(
+          _letter(
+            (e as (PbxConnection?, PbxContact, PersonalContact?)).$2.name,
+          ),
+          () => i,
+        );
+      }
     }
     final multi = p.connections.length > 1;
 
@@ -234,6 +277,16 @@ class _ContactsViewState extends State<ContactsView> {
               ),
               const SizedBox(width: 8),
               IconButton(
+                tooltip: byCompany
+                    ? tr('Elenco alfabetico')
+                    : tr('Raggruppa per azienda'),
+                isSelected: byCompany,
+                onPressed: () =>
+                    p.setViewFlag('contacts.byCompany', !byCompany),
+                icon: Icon(Icons.domain_rounded, color: c.muted),
+                selectedIcon: Icon(Icons.domain_rounded, color: c.primary),
+              ),
+              IconButton(
                 tooltip: tr('Importa contatti (CSV, vCard)'),
                 onPressed: () => _import(context),
                 icon: Icon(Icons.upload_file_rounded, color: c.muted),
@@ -270,7 +323,17 @@ class _ContactsViewState extends State<ContactsView> {
                           itemExtent: _rowExtent,
                           itemCount: slice.length,
                           itemBuilder: (_, i) {
-                            final (conn, x, own) = slice[i];
+                            final e = slice[i];
+                            if (e is (String, int)) {
+                              return _CompanyHeader(name: e.$1, count: e.$2);
+                            }
+                            final (conn, x, own) =
+                                e
+                                    as (
+                                      PbxConnection?,
+                                      PbxContact,
+                                      PersonalContact?,
+                                    );
                             final sub = [
                               if (x.company.isNotEmpty) x.company,
                               if (x.jobTitle.isNotEmpty) x.jobTitle,
@@ -421,7 +484,7 @@ class _ContactsViewState extends State<ContactsView> {
           const SizedBox(height: 8),
           Row(
             children: [
-              if (slice.any((e) => e.$3 == null)) ...[
+              if (list.any((e) => e.$3 == null)) ...[
                 Icon(Icons.lock_outline, size: 14, color: c.muted),
                 const SizedBox(width: DrinSpace.s1),
                 Text(
@@ -613,6 +676,41 @@ class _AlphaIndex extends StatelessWidget {
               ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// Intestazione di un'azienda nella rubrica raggruppata (alta come una riga,
+/// così l'indice A–Z resta preciso).
+class _CompanyHeader extends StatelessWidget {
+  const _CompanyHeader({required this.name, required this.count});
+  final String name;
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.drin;
+    return Container(
+      alignment: Alignment.bottomLeft,
+      padding: const EdgeInsets.only(bottom: DrinSpace.s2),
+      decoration: BoxDecoration(
+        border: Border(bottom: BorderSide(color: c.line)),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.domain_rounded, size: 16, color: c.primary),
+          const SizedBox(width: DrinSpace.s2),
+          Flexible(
+            child: Text(
+              name,
+              overflow: TextOverflow.ellipsis,
+              style: DrinText.heading.copyWith(color: c.ink),
+            ),
+          ),
+          const SizedBox(width: DrinSpace.s2),
+          CountBadge(count),
+        ],
       ),
     );
   }
