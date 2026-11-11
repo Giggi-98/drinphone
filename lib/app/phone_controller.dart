@@ -1468,6 +1468,57 @@ class PhoneController extends ChangeNotifier {
     _notifySoon();
   }
 
+  // ─── PERCHÉ NON BASTA aspettare il BYE del PBX ───
+  // Dai log del 10/11/2026: l'altro capo chiude, l'audio in arrivo va a zero
+  // ma il PBX non manda il BYE e la chiamata resta aperta qui. Senza audio in
+  // arrivo per [noAudioTimeout] (chiamata attiva, non in attesa) la si chiude
+  // e lo si dice; il resto (timer di sessione, BYE) resta al PBX.
+  /// 20 s nell'app; più corto solo nei test.
+  @visibleForTesting
+  Duration noAudioTimeout = const Duration(seconds: 20);
+  Timer? _watchdog;
+  final _silentFor = <int, int>{};
+
+  void _watchAudio() {
+    if (_watchdog != null) return;
+    _watchdog = Timer.periodic(const Duration(seconds: 1), (_) async {
+      final active = calls.values
+          .where((c) => c.phase == CallPhase.active)
+          .toList();
+      if (calls.isEmpty) {
+        _watchdog?.cancel();
+        _watchdog = null;
+        _silentFor.clear();
+        return;
+      }
+      _silentFor.removeWhere((id, _) => !active.any((c) => c.id == id));
+      for (final c in active) {
+        double? kbps;
+        try {
+          kbps = await _engine.inboundAudioKbps(c.id);
+        } on Object {
+          kbps = null; // statistiche non leggibili: mai chiudere per questo
+        }
+        if (kbps == null || kbps >= 0.5) {
+          _silentFor.remove(c.id);
+          continue;
+        }
+        final n = (_silentFor[c.id] ?? 0) + 1;
+        _silentFor[c.id] = n;
+        if (n >= noAudioTimeout.inSeconds) {
+          _silentFor.remove(c.id);
+          debugPrint('[drinphone] chiamata ${c.id} chiusa: nessun audio');
+          await _engine.hangup(c.id);
+          notice = tr(
+            'Chiamata chiusa: nessun audio dall’altro capo da {s} secondi',
+            {'s': noAudioTimeout.inSeconds},
+          );
+          notifyListeners();
+        }
+      }
+    });
+  }
+
   void _onCall(CallEvent e) {
     debugPrint(
       '[drinphone] chiamata ${e.id} ${e.direction.name} ${e.phase.name} ${e.message}',
@@ -1495,6 +1546,7 @@ class PhoneController extends ChangeNotifier {
       }
     } else {
       final active = e.phase == CallPhase.active;
+      if (active) _watchAudio();
       _meta[e.id] = (
         start: m.start,
         connected: m.connected ?? (active ? DateTime.now() : null),
@@ -1578,6 +1630,7 @@ class PhoneController extends ChangeNotifier {
   void dispose() {
     _notifyTimer?.cancel();
     _zoomSave?.cancel();
+    _watchdog?.cancel();
     for (final c in connections) {
       c.stop();
     }

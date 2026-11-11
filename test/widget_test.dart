@@ -857,4 +857,35 @@ void main() {
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());
   });
+
+  test('chiamata senza audio dall’altro capo: chiusa dopo la soglia', () async {
+    phone.noAudioTimeout = const Duration(seconds: 2);
+    const active = CallEvent(
+      id: 7,
+      phase: CallPhase.active,
+      direction: CallDirection.outgoing,
+      remoteNumber: '3427104505',
+    );
+    // Con audio: resta aperta.
+    engine.inboundKbps = 80;
+    engine.callsCtl.add(active);
+    await Future<void>.delayed(const Duration(milliseconds: 3500));
+    expect(engine.log.where((l) => l.startsWith('hangup')), isEmpty);
+
+    // L'altro capo sparisce: niente audio oltre la soglia, si chiude e lo
+    // si dice.
+    engine.inboundKbps = 0;
+    await Future<void>.delayed(const Duration(milliseconds: 3500));
+    expect(engine.log, contains('hangup 7'));
+    expect(phone.notice, contains('nessun audio'));
+    engine.callsCtl.add(
+      const CallEvent(
+        id: 7,
+        phase: CallPhase.ended,
+        direction: CallDirection.outgoing,
+        remoteNumber: '3427104505',
+      ),
+    );
+    await Future<void>.delayed(const Duration(milliseconds: 1200));
+  });
 }

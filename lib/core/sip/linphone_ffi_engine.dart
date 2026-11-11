@@ -673,6 +673,18 @@ class LinphoneFfiEngine implements SipEngine {
   late final _callCurrentParams = _lib.lookupFunction<_PP, _PP>(
     'linphone_call_get_current_params',
   );
+  // Statistiche audio: copia da rilasciare con linphone_call_stats_unref.
+  late final _audioStats = _lib.lookupFunction<_PP, _PP>(
+    'linphone_call_get_audio_stats',
+  );
+  late final _statsDownload = _lib
+      .lookupFunction<
+        Float Function(Pointer<Void>),
+        double Function(Pointer<Void>)
+      >('linphone_call_stats_get_download_bandwidth');
+  late final _statsUnref = _lib.lookupFunction<_VoidP, _VoidPDart>(
+    'linphone_call_stats_unref',
+  );
   late final _callRemoteParams = _lib.lookupFunction<_PP, _PP>(
     'linphone_call_get_remote_params',
   );
@@ -1279,6 +1291,19 @@ class LinphoneFfiEngine implements SipEngine {
   @override
   Future<void> setMicMuted(bool muted) async =>
       _enableMic(_core, muted ? 0 : 1);
+
+  @override
+  Future<double?> inboundAudioKbps(int id) async {
+    final call = _ptr(id);
+    if (call == nullptr) return null;
+    final stats = _audioStats(call);
+    if (stats == nullptr) return null;
+    try {
+      return _statsDownload(stats);
+    } finally {
+      _statsUnref(stats);
+    }
+  }
 
   @override
   Future<void> sendDtmf(int id, String digit) async {

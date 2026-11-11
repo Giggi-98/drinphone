@@ -57,7 +57,11 @@ spikes/f0a/                         spike F0-A (non prodotto)
   locali casuali, video disattivato. Più chiamate contemporanee, per id.
 - **Macchina a stati chiamata** — `CallPhase`: incoming / outgoing / active /
   paused / ended / error, mappata dagli stati `LinphoneCallState`; `Released` libera
-  il puntatore. Attesa (`linphone_call_pause/resume`) e trasferimento cieco
+  il puntatore. **Chiamata senza audio** (`IMPLEMENTATO`, `DA VALIDARE` sul PBX):
+  `PhoneController` legge ogni secondo l'audio RTP ricevuto
+  (`SipEngine.inboundAudioKbps` → `linphone_call_get_audio_stats`) delle
+  chiamate attive non in attesa; dopo 20 s a zero riaggancia e avvisa
+  (DECISIONS 2026-11-11). Attesa (`linphone_call_pause/resume`) e trasferimento cieco
   (`linphone_call_transfer_to`, REFER) con esito dal callback transfer-state
   (`DA VALIDARE` sul PBX). **Più chiamate**: id = indirizzo del LinphoneCall; avviso
   di chiamata (rispondere mette in attesa la conversazione), scambio, trasferimento

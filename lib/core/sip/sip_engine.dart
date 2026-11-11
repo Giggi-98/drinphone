@@ -312,6 +312,10 @@ abstract class SipEngine {
   Future<void> setMicMuted(bool muted);
   Future<void> sendDtmf(int id, String digit);
 
+  /// Audio RTP ricevuto adesso nella chiamata [id], in kbit/s (null se non
+  /// noto): serve a riconoscere le chiamate rimaste aperte senza l'altro capo.
+  Future<double?> inboundAudioKbps(int id);
+
   /// Dispositivi audio disponibili (rilegge il sistema).
   List<SoundDevice> soundDevices();
 

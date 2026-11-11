@@ -6,6 +6,22 @@ aggiungi una voce nuova in cima che cita la vecchia. Il campo chiave è
 
 ---
 
+## 2026-11-11 · Chiamata chiusa dal client dopo 20 s senza audio in arrivo
+Segnalato da Luigi: se riaggancia l'altro capo o il PBX la chiamata resta
+aperta in DrinPhone. Dai log (10/11, 18:11): audio in arrivo a zero, nessun
+BYE dal PBX, il nostro BYE 4 s dopo riceve 200 OK; quando il BYE arriva il
+motore chiude bene (4 casi su 4). **Scelta:** watchdog nel `PhoneController`:
+ogni secondo legge i kbit/s RTP ricevuti (`linphone_call_get_audio_stats`);
+chiamata attiva e non in attesa a zero per 20 s → riaggancio e avviso
+"Chiamata chiusa: nessun audio dall'altro capo". Soglia scelta da Luigi.
+**Scartato:** `rtp/nortp_timeout` di liblinphone (comportamento e messaggio
+di fine non controllabili dall'app, nessun avviso chiaro); session timer più
+corto (rinnovo ogni N secondi, carico sul PBX e non aiuta se il PBX stesso
+tiene viva la sessione); attendere solo il BYE (il bug).
+**Da rivedere se:** si trova perché il PBX non manda il BYE (allora va
+corretto lì); codec con soppressione del silenzio (Opus DTX, CN) o reti con
+buchi lunghi chiudono chiamate vive; chiamate solo video.
+
 ## 2026-10-30 · CDR come la pagina del PBX: pagine e ordinamento sul server
 Cita "CDR: `cdr_basic` (CDR Advanced) prima di `cdr`". **Scelta:** il CDR
 nell'app ricalca la pagina CDR del PBX: totale (`COUNT(*)` con lo stesso

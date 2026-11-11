@@ -670,6 +670,8 @@ const en = <String, String>{
   'Copia numero': 'Copy number',
   'Richiama': 'Call back',
   'Legenda degli stati': 'Status legend',
+  'Chiamata chiusa: nessun audio dall’altro capo da {s} secondi':
+      'Call ended: no audio from the other side for {s} seconds',
   'Recenti': 'Recent',
   'Senza reparto': 'No department',
   'Tutte insieme': 'All together',

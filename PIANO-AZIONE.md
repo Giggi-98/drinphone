@@ -96,9 +96,10 @@ non ancora visto, letto sia come testo sia come timestamp Unix.
   chiamata del 10/11 18:11 verso il cellulare l'audio in arrivo va a zero alle
   18:13:08, nessun BYE dal PBX, il nostro BYE alle 18:13:12 riceve **200 OK**
   (per il PBX la chiamata era ancora viva). Nessun timeout RTP né session timer
-  impostato da noi (Session-Expires 1800 del PBX). Prossimo passo: prova
-  controllata (interna e via trunk, riaggancio remoto, attesa 30 s) e poi
-  `rtp/nortp_timeout` esplicito + session timer più corto.
+  impostato da noi (Session-Expires 1800 del PBX). v0.1.11: watchdog lato
+  client, chiusura dopo 20 s senza audio con avviso (DECISIONS 2026-11-11).
+  DA VALIDARE: chiamata interna e via trunk con riaggancio remoto; rete
+  cattiva senza chiusure sbagliate.
 - `Dettagli chiamata` › Timeline: **tutti gli offset sono `00:00`** anche se la
   risposta arriva dopo 7 s (squillo 00:00:07). Capire perché `off(ev.time,
   legStart)` dà sempre zero (unità/fuso del campo `time`?) e coprirlo con un test.

@@ -144,6 +144,12 @@ class FakeSipEngine implements SipEngine {
       log.add('answer $id${video ? ' video' : ''}');
   @override
   Future<void> hangup(int id) async => log.add('hangup $id');
+
+  /// Audio in arrivo simulato (kbit/s); null = non noto.
+  double? inboundKbps = 80;
+
+  @override
+  Future<double?> inboundAudioKbps(int id) async => inboundKbps;
   @override
   Future<void> setMicMuted(bool muted) async => log.add('mute $muted');
   @override
