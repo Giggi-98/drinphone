@@ -648,6 +648,22 @@ class PhoneController extends ChangeNotifier {
     });
   }
 
+  /// Preferenza di vista salvata ([fallback] se mai scelta).
+  String viewPref(String key, String fallback) =>
+      settings.view[key] ?? fallback;
+  bool viewFlag(String key) => settings.view[key] == '1';
+
+  /// Salva una preferenza di vista (ordinamento, raggruppamento…).
+  Future<void> setViewPref(String key, String value) async {
+    if (settings.view[key] == value) return;
+    settings = settings.copyWith(view: {...settings.view, key: value});
+    notifyListeners();
+    await _store.save(settings);
+  }
+
+  Future<void> setViewFlag(String key, bool on) =>
+      setViewPref(key, on ? '1' : '0');
+
   Future<void> setVoicemailCode(String code) async {
     settings = settings.copyWith(voicemailCode: code.trim());
     await _store.save(settings);
@@ -703,6 +719,7 @@ class PhoneController extends ChangeNotifier {
         lang: settings.lang,
         theme: settings.theme,
         zoom: settings.zoom,
+        view: settings.view,
         closeToTray: settings.closeToTray,
         audio: settings.audio,
         callOptions: settings.callOptions,
@@ -762,6 +779,7 @@ class PhoneController extends ChangeNotifier {
             lang: settings.lang,
             theme: settings.theme,
             zoom: settings.zoom,
+            view: settings.view,
             closeToTray: settings.closeToTray,
             audio: settings.audio,
             callOptions: settings.callOptions,

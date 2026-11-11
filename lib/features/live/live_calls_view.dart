@@ -17,8 +17,12 @@ class LiveCallsView extends StatefulWidget {
     super.key,
     required this.phone,
     required this.onOpenPreferences,
+    this.focus,
   });
   final PhoneController phone;
+
+  /// Interno la cui chiamata va evidenziata (arrivando dal suo segnalino).
+  final String? focus;
 
   /// Apre Preferenze > Integrazione PBX (per attivare gli eventi).
   final VoidCallback onOpenPreferences;
@@ -110,6 +114,7 @@ class _LiveCallsViewState extends State<LiveCallsView> {
                   Expanded(
                     child: _CallsTable(
                       phone: p,
+                      focus: widget.focus,
                       title: tr('Entranti e interne'),
                       icon: Icons.call_received_rounded,
                       calls: [
@@ -122,6 +127,7 @@ class _LiveCallsViewState extends State<LiveCallsView> {
                   Expanded(
                     child: _CallsTable(
                       phone: p,
+                      focus: widget.focus,
                       title: tr('Uscenti'),
                       icon: Icons.call_made_rounded,
                       calls: [
@@ -220,11 +226,15 @@ class _CallsTable extends StatefulWidget {
     required this.title,
     required this.icon,
     required this.calls,
+    this.focus,
   });
   final PhoneController phone;
   final String title;
   final IconData icon;
   final List<LiveCall> calls;
+
+  /// Interno da evidenziare (le sue chiamate).
+  final String? focus;
 
   @override
   State<_CallsTable> createState() => _CallsTableState();
@@ -365,9 +375,29 @@ class _CallsTableState extends State<_CallsTable> {
                         if (x.path.isNotEmpty) x.path,
                       ].join(' · ');
                       // Chiamata nuova: entra in dissolvenza (una volta).
+                      // Arrivando dal segnalino di un interno: la sua chiamata
+                      // in evidenza (fondo `primary` al 14% e filo a sinistra).
+                      final hl =
+                          widget.focus != null &&
+                          x.members.any(
+                            (m) =>
+                                m.kind == 'extension' &&
+                                m.number == widget.focus,
+                          );
                       return FadeIn(
                         key: ValueKey(x.id),
-                        child: Padding(
+                        child: Container(
+                          decoration: hl
+                              ? BoxDecoration(
+                                  color: c.primary.withValues(alpha: 0.14),
+                                  border: Border(
+                                    left: BorderSide(
+                                      color: c.primary,
+                                      width: 3,
+                                    ),
+                                  ),
+                                )
+                              : null,
                           padding: const EdgeInsets.symmetric(
                             horizontal: 12,
                             vertical: 10,

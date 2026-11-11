@@ -101,6 +101,7 @@ class Settings {
     this.lang = 'it',
     this.theme = 'system',
     this.zoom = 1.0,
+    this.view = const {},
     this.closeToTray = true,
     this.voicemailCode = '*2',
     this.favorites = const [],
@@ -137,6 +138,10 @@ class Settings {
 
   /// Zoom dell'interfaccia scelto dall'utente (Ctrl +/−), moltiplica [DrinScale].
   final double zoom;
+
+  /// Preferenze di vista scelte dall'utente (ordinamenti, raggruppamenti,
+  /// righe/schede): chiave → valore, ognuna per conto suo.
+  final Map<String, String> view;
 
   /// Chiudendo la finestra l'app resta nella barra di sistema (Windows).
   final bool closeToTray;
@@ -211,6 +216,7 @@ class Settings {
       lang: lang,
       theme: theme,
       zoom: zoom,
+      view: view,
       closeToTray: closeToTray,
       voicemailCode: t.voicemailCode,
       favorites: t.favorites,
@@ -242,6 +248,7 @@ class Settings {
       lang: lang,
       theme: theme,
       zoom: zoom,
+      view: view,
       closeToTray: closeToTray,
       voicemailCode: a.voicemailCode,
       favorites: a.favorites,
@@ -265,6 +272,7 @@ class Settings {
     String? lang,
     String? theme,
     double? zoom,
+    Map<String, String>? view,
     bool? closeToTray,
     String? voicemailCode,
     List<String>? favorites,
@@ -286,6 +294,7 @@ class Settings {
     lang: lang ?? this.lang,
     theme: theme ?? this.theme,
     zoom: zoom ?? this.zoom,
+    view: view ?? this.view,
     closeToTray: closeToTray ?? this.closeToTray,
     voicemailCode: voicemailCode ?? this.voicemailCode,
     favorites: favorites ?? this.favorites,
@@ -427,6 +436,10 @@ class SettingsStore {
       lang: j['lang'] as String? ?? 'it',
       theme: j['theme'] as String? ?? 'system',
       zoom: (j['zoom'] as num?)?.toDouble() ?? 1.0,
+      view: {
+        for (final e in (j['view'] as Map? ?? const {}).entries)
+          '${e.key}': '${e.value}',
+      },
       closeToTray: j['closeToTray'] as bool? ?? true,
       voicemailCode: active?.voicemailCode ?? '*2',
       favorites: active?.favorites ?? const [],
@@ -503,7 +516,18 @@ class SettingsStore {
     ],
   };
 
-  Future<void> save(Settings s) async {
+  /// Salvataggi in coda: due scritture insieme dello stesso file su Windows
+  /// lo lasciano bloccato (cambi di vista o zoom ravvicinati). L'ultimo
+  /// salvataggio vince comunque, perché parte per ultimo.
+  Future<void> _queue = Future.value();
+
+  Future<void> save(Settings s) {
+    final next = _queue.then((_) => _save(s));
+    _queue = next.then((_) {}, onError: (Object _) {});
+    return next;
+  }
+
+  Future<void> _save(Settings s) async {
     // Password nello storage sicuro, per gli account di **tutti** i profili;
     // quelle di account rimossi vengono cancellate.
     final all = s.allAccounts;
@@ -542,6 +566,7 @@ class SettingsStore {
         'lang': s.lang,
         'theme': s.theme,
         'zoom': s.zoom,
+        'view': s.view,
         'closeToTray': s.closeToTray,
         'audioCapture': s.audio.$1,
         'audioPlayback': s.audio.$2,

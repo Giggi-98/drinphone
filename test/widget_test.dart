@@ -48,6 +48,19 @@ void main() {
 
   tearDown(() => tmp.delete(recursive: true));
 
+  test('preferenze di vista salvate; salvataggi ravvicinati in coda', () async {
+    await phone.setViewPref('ext.sort', 'name');
+    // Due scritture insieme: una dopo l'altra, vince l'ultima.
+    await Future.wait([
+      phone.setViewFlag('ext.byState', true),
+      phone.setViewFlag('ext.rows', true),
+    ]);
+    final saved = await store.load();
+    expect(saved.view['ext.sort'], 'name');
+    expect(saved.view['ext.byState'], '1');
+    expect(saved.view['ext.rows'], '1');
+  });
+
   test(
     'la password va nello storage sicuro, non nel file impostazioni',
     () async {
@@ -626,5 +639,59 @@ void main() {
       await tester.pumpWidget(const SizedBox());
     }
     tester.view.reset();
+  });
+
+  testWidgets('Interni: ordina per nome e raggruppa per stato, salvati', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1366, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    late PhoneController p;
+    await tester.runAsync(() async {
+      await store.save(
+        const Settings(
+          accounts: [_account],
+          extensions: [
+            Extension('Zeno', '200'),
+            Extension('Anna', '210'),
+            Extension('305', '305'),
+          ],
+        ),
+      );
+      p = PhoneController(
+        engine,
+        store,
+        engineDataDir: tmp.path,
+        logDir: tmp.path,
+      );
+      await p.init();
+    });
+    await tester.pumpWidget(DrinPhoneApp(phone: p));
+    await tester.pump(const Duration(milliseconds: 300));
+    double x(String t) => tester.getTopLeft(find.text(t).last).dx;
+    double y(String t) => tester.getTopLeft(find.text(t).last).dy;
+    // Predefinito per numero: Zeno (200) prima di Anna (210).
+    expect(x('Zeno') < x('Anna') || y('Zeno') < y('Anna'), isTrue);
+
+    await tester.tap(find.byTooltip('Ordina e raggruppa'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Ordina per nome'));
+    await tester.pumpAndSettle();
+    expect(x('Anna') < x('Zeno') || y('Anna') < y('Zeno'), isTrue);
+
+    await tester.tap(find.byTooltip('Ordina e raggruppa'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Raggruppa per stato'));
+    await tester.pumpAndSettle();
+    // Senza BLF né eventi: tutti in "Stato sconosciuto".
+    expect(find.text('Stato sconosciuto'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+
+    // Lascia finire le scritture partite dai tocchi, poi rilegge il file.
+    // Scelte applicate e tenute dal controller (il file: test a parte).
+    expect(p.settings.view['ext.sort'], 'name');
+    expect(p.settings.view['ext.byState'], '1');
+    await tester.pumpWidget(const SizedBox());
   });
 }

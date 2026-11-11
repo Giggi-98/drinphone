@@ -9,7 +9,8 @@ import '../../app/l10n.dart';
 import '../../app/phone_controller.dart';
 import '../../app/theme.dart';
 import '../../core/pbx/yeastar_api.dart' show YeastarApiException;
-import '../../core/pbx/pbx_connection.dart' show ExtensionLive, LiveCall;
+import '../../core/pbx/pbx_connection.dart'
+    show ExtensionLive, LiveCall, LiveState;
 import '../../core/platform/call_links.dart';
 import '../../core/platform/window_attention.dart';
 import '../../core/security/settings_store.dart';
@@ -49,6 +50,9 @@ class _HomeScreenState extends State<HomeScreen> {
   late final AppLifecycleListener _lifecycle;
   final _searchFocus = FocusNode();
 
+  /// Interno da evidenziare entrando in Chiamate in corso (clic sul segnalino).
+  String? _liveFocus;
+
   PhoneController get p => widget.phone;
 
   /// Sezioni nell'ordine del menu (Ctrl+1…5).
@@ -61,6 +65,8 @@ class _HomeScreenState extends State<HomeScreen> {
   ];
 
   void _go(_Section s) {
+    // Dal menu o da tastiera: nessuna chiamata da evidenziare.
+    if (s != _Section.live) _liveFocus = null;
     setState(() => _section = s);
     _markSeen();
   }
@@ -333,6 +339,12 @@ class _HomeScreenState extends State<HomeScreen> {
                             key: const ValueKey('sec_ext'),
                             phone: p,
                             onCall: _call,
+                            onShowLive: p.hasLiveCalls
+                                ? (ext) {
+                                    _liveFocus = ext;
+                                    _go(_Section.live);
+                                  }
+                                : null,
                           ),
                           _Section.contacts => ContactsView(
                             key: const ValueKey('sec_contacts'),
@@ -352,6 +364,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           _Section.live => LiveCallsView(
                             key: const ValueKey('sec_live'),
                             phone: p,
+                            focus: _liveFocus,
                             onOpenPreferences: () => _openPreferences(5),
                           ),
                           _Section.preferences => PreferencesView(
@@ -894,9 +907,17 @@ class _Sidebar extends StatelessWidget {
 }
 
 class _ExtensionsView extends StatefulWidget {
-  const _ExtensionsView({super.key, required this.phone, required this.onCall});
+  const _ExtensionsView({
+    super.key,
+    required this.phone,
+    required this.onCall,
+    this.onShowLive,
+  });
   final PhoneController phone;
   final ValueChanged<String> onCall;
+
+  /// Apre Chiamate in corso con la chiamata dell'interno in evidenza.
+  final ValueChanged<String>? onShowLive;
 
   @override
   State<_ExtensionsView> createState() => _ExtensionsViewState();
@@ -925,8 +946,42 @@ class _ExtensionsViewState extends State<_ExtensionsView> {
   String? _pageGroup;
   BlfStatus? _blfFilter;
 
-  /// Vista a righe dense invece delle schede; resta scelta tra le sezioni.
-  static bool _compact = false;
+  /// Preferenze di vista salvate (ognuna per conto suo, PIANO-AZIONE H).
+  bool get _compact => phone.viewFlag('ext.rows');
+  String get _sort => phone.viewPref('ext.sort', 'number');
+  bool get _byState => phone.viewFlag('ext.byState');
+
+  /// Numeri prima come numeri (2 < 10), poi come testo.
+  static int _byNumber(Extension a, Extension b) {
+    final x = int.tryParse(a.number), y = int.tryParse(b.number);
+    if (x != null && y != null) return x.compareTo(y);
+    return a.number.compareTo(b.number);
+  }
+
+  /// Gruppo di stato: 0 al telefono, 1 squilla, 2 libero, 3 altro,
+  /// 4 non registrato. Prima gli eventi dal vivo (30011), poi il BLF.
+  int _stateRank(Extension e, ExtensionLive? live) {
+    if (live != null) {
+      return live.state == LiveState.ringing || live.state == LiveState.calling
+          ? 1
+          : 0;
+    }
+    return switch (phone.blfOf(e)) {
+      BlfStatus.busy => 0,
+      BlfStatus.ringing => 1,
+      BlfStatus.idle => 2,
+      BlfStatus.offline => 4,
+      _ => 3,
+    };
+  }
+
+  List<String> get _stateTitles => [
+    tr('Al telefono'),
+    tr('Squillano'),
+    tr('Liberi'),
+    tr('Stato sconosciuto'),
+    tr('Non registrati'),
+  ];
 
   PhoneController get phone => widget.phone;
 
@@ -1048,6 +1103,74 @@ class _ExtensionsViewState extends State<_ExtensionsView> {
     );
   }
 
+  /// Schede (due righe: identità, poi pulsanti) o righe dense da 52 su più
+  /// colonne (densità Centralino).
+  SliverGridDelegate get _delegate => SliverGridDelegateWithMaxCrossAxisExtent(
+    maxCrossAxisExtent: _compact ? 520 : 300,
+    mainAxisExtent: _compact ? 52 : 114,
+    crossAxisSpacing: 10,
+    mainAxisSpacing: _compact ? 6 : 10,
+  );
+
+  /// Raggruppati per stato: intestazione con simbolo e conteggio, poi la
+  /// griglia del gruppo; tutti insieme, senza pagine.
+  Widget _groupedGrid(
+    DrinColors c,
+    List<Extension> list,
+    Widget Function(Extension) tile,
+    ExtensionLive? Function(Extension) liveOf,
+  ) {
+    final groups = List.generate(5, (_) => <Extension>[]);
+    for (final e in list) {
+      groups[_stateRank(e, liveOf(e))].add(e);
+    }
+    final colors = [c.busy, c.squilloLine, c.ok, c.muted, c.away];
+    final icons = [
+      Icons.call_rounded,
+      Icons.ring_volume_rounded,
+      Icons.check_circle_outline_rounded,
+      Icons.help_outline_rounded,
+      Icons.cloud_off_rounded,
+    ];
+    return CustomScrollView(
+      key: ValueKey(('groups', _pageGroup, _blfFilter, _compact, _sort)),
+      slivers: [
+        for (var g = 0; g < groups.length; g++)
+          if (groups[g].isNotEmpty) ...[
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: EdgeInsets.only(
+                  top: g == groups.indexWhere((x) => x.isNotEmpty)
+                      ? 0
+                      : DrinSpace.s4,
+                  bottom: DrinSpace.s2,
+                ),
+                child: Row(
+                  children: [
+                    Icon(icons[g], size: 16, color: colors[g]),
+                    const SizedBox(width: DrinSpace.s2),
+                    Text(
+                      _stateTitles[g],
+                      style: DrinText.heading.copyWith(color: c.ink),
+                    ),
+                    const SizedBox(width: DrinSpace.s2),
+                    CountBadge(groups[g].length),
+                  ],
+                ),
+              ),
+            ),
+            SliverGrid(
+              gridDelegate: _delegate,
+              delegate: SliverChildBuilderDelegate(
+                (_, i) => tile(groups[g][i]),
+                childCount: groups[g].length,
+              ),
+            ),
+          ],
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final c = context.drin;
@@ -1069,9 +1192,30 @@ class _ExtensionsViewState extends State<_ExtensionsView> {
     // Chi è in chiamata adesso, per connessione (calcolato una volta).
     final lives = {for (final x in phone.connections) x.id: x.extensionCalls};
     final primaryId = phone.primaryConnection?.id ?? '';
-    final list = _blfFilter == null
-        ? allInGroup
-        : allInGroup.where((e) => phone.blfOf(e) == _blfFilter).toList();
+    ExtensionLive? liveOf(Extension e) =>
+        lives[e.source.isEmpty ? primaryId : e.source]?[e.number];
+    final list =
+        (_blfFilter == null
+              ? [...allInGroup]
+              : allInGroup.where((e) => phone.blfOf(e) == _blfFilter).toList())
+          ..sort(switch (_sort) {
+            'name' => (a, b) {
+              // I soli numeri in fondo, il resto alfabetico.
+              final na = nameIsNumber(a.name, a.number);
+              final nb = nameIsNumber(b.name, b.number);
+              if (na != nb) return na ? 1 : -1;
+              final r = a.name.toLowerCase().compareTo(b.name.toLowerCase());
+              return r != 0 ? r : _byNumber(a, b);
+            },
+            'status' => (a, b) {
+              final r = _stateRank(
+                a,
+                liveOf(a),
+              ).compareTo(_stateRank(b, liveOf(b)));
+              return r != 0 ? r : _byNumber(a, b);
+            },
+            _ => _byNumber,
+          });
     final pages = (list.length + pageSize - 1) ~/ pageSize;
     if (_page >= pages && pages > 0) _page = pages - 1;
     final slice = Pager.slice(list, _page, pageSize);
@@ -1080,6 +1224,42 @@ class _ExtensionsViewState extends State<_ExtensionsView> {
       height: 8,
       decoration: BoxDecoration(color: color, shape: BoxShape.circle),
     );
+    Widget tile(Extension e) {
+      final dir = phone.primaryConnection?.directory
+          .where((x) => x.number == e.number)
+          .firstOrNull;
+      final live = lives[e.source.isEmpty ? primaryId : e.source]?[e.number];
+      return _ExtensionTile(
+        live: live,
+        liveName: live == null ? '' : phone.nameFor(live.other),
+        details: [
+          if ((dir?.email ?? '').isNotEmpty)
+            (Icons.alternate_email_rounded, dir!.email),
+          if ((dir?.mobile ?? '').isNotEmpty)
+            (Icons.smartphone_rounded, dir!.mobile),
+        ],
+        compact: _compact,
+        ext: e,
+        callable: phone.isCallable(e),
+        canDial: phone.canDial,
+        blf: phone.blfOf(e),
+        blfStale: phone.blfStale(e),
+        presence: phone.presenceOf(e),
+        favorite: phone.isFavorite(e),
+        onFavorite: () => _toggleFavorite(e),
+        // Tramite l'account SIP del PBX dell'interno.
+        onCall: () => phone.dial(e.number, via: e),
+        onVideoCall: phone.videoEnabled
+            ? () => phone.dial(e.number, via: e, video: true)
+            : null,
+        onRemove: phone.isManual(e) ? () => phone.removeExtension(e) : null,
+        // Clic sul segnalino: la chiamata in Chiamate in corso.
+        onLiveTap: live == null
+            ? null
+            : () => widget.onShowLive?.call(e.number),
+      );
+    }
+
     final grid = Container(
       margin: const EdgeInsets.all(16),
       padding: const EdgeInsets.all(16),
@@ -1151,12 +1331,71 @@ class _ExtensionsViewState extends State<_ExtensionsView> {
                     ),
                     count: ringingCount,
                   ),
+                PopupMenuButton<String>(
+                  tooltip: tr('Ordina e raggruppa'),
+                  icon: Icon(Icons.sort_rounded, size: 18, color: c.muted),
+                  position: PopupMenuPosition.under,
+                  onSelected: (v) => v == 'byState'
+                      ? phone.setViewFlag('ext.byState', !_byState)
+                      : phone.setViewPref('ext.sort', v),
+                  itemBuilder: (_) {
+                    PopupMenuItem<String> item(
+                      String v,
+                      IconData icon,
+                      String label,
+                      bool on,
+                    ) => PopupMenuItem(
+                      value: v,
+                      height: 40,
+                      child: Row(
+                        children: [
+                          Icon(icon, size: 18, color: c.muted),
+                          const SizedBox(width: DrinSpace.s3),
+                          Expanded(child: Text(label)),
+                          if (on)
+                            Icon(
+                              Icons.check_rounded,
+                              size: 18,
+                              color: c.primary,
+                            ),
+                        ],
+                      ),
+                    );
+                    return [
+                      item(
+                        'number',
+                        Icons.tag_rounded,
+                        tr('Ordina per numero'),
+                        _sort == 'number',
+                      ),
+                      item(
+                        'name',
+                        Icons.sort_by_alpha_rounded,
+                        tr('Ordina per nome'),
+                        _sort == 'name',
+                      ),
+                      item(
+                        'status',
+                        Icons.call_rounded,
+                        tr('Ordina per stato'),
+                        _sort == 'status',
+                      ),
+                      const PopupMenuDivider(),
+                      item(
+                        'byState',
+                        Icons.view_agenda_outlined,
+                        tr('Raggruppa per stato'),
+                        _byState,
+                      ),
+                    ];
+                  },
+                ),
                 IconButton(
                   tooltip: _compact
                       ? tr('Vista a schede')
                       : tr('Vista a righe'),
                   visualDensity: VisualDensity.compact,
-                  onPressed: () => setState(() => _compact = !_compact),
+                  onPressed: () => phone.setViewFlag('ext.rows', !_compact),
                   icon: Icon(
                     _compact
                         ? Icons.grid_view_rounded
@@ -1233,6 +1472,8 @@ class _ExtensionsViewState extends State<_ExtensionsView> {
                         style: TextStyle(color: c.muted),
                       ),
                     )
+                  : _byState
+                  ? _groupedGrid(c, list, tile, liveOf)
                   : GridView.builder(
                       key: ValueKey((
                         'grid',
@@ -1240,65 +1481,23 @@ class _ExtensionsViewState extends State<_ExtensionsView> {
                         _blfFilter,
                         _page,
                         _compact,
+                        _sort,
                       )),
-                      // Schede (due righe: identità, poi pulsanti) o righe
-                      // dense da 52 su più colonne (densità Centralino).
-                      gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
-                        maxCrossAxisExtent: _compact ? 520 : 300,
-                        mainAxisExtent: _compact ? 52 : 114,
-                        crossAxisSpacing: 10,
-                        mainAxisSpacing: _compact ? 6 : 10,
-                      ),
+                      gridDelegate: _delegate,
                       itemCount: slice.length,
-                      itemBuilder: (_, i) {
-                        final e = slice[i];
-                        final dir = phone.primaryConnection?.directory
-                            .where((x) => x.number == e.number)
-                            .firstOrNull;
-                        final live =
-                            lives[e.source.isEmpty
-                                ? primaryId
-                                : e.source]?[e.number];
-                        return _ExtensionTile(
-                          live: live,
-                          liveName: live == null
-                              ? ''
-                              : phone.nameFor(live.other),
-                          details: [
-                            if ((dir?.email ?? '').isNotEmpty)
-                              (Icons.alternate_email_rounded, dir!.email),
-                            if ((dir?.mobile ?? '').isNotEmpty)
-                              (Icons.smartphone_rounded, dir!.mobile),
-                          ],
-                          compact: _compact,
-                          ext: e,
-                          callable: phone.isCallable(e),
-                          canDial: phone.canDial,
-                          blf: phone.blfOf(e),
-                          blfStale: phone.blfStale(e),
-                          presence: phone.presenceOf(e),
-                          favorite: phone.isFavorite(e),
-                          onFavorite: () => _toggleFavorite(e),
-                          // Tramite l'account SIP del PBX dell'interno.
-                          onCall: () => phone.dial(e.number, via: e),
-                          onVideoCall: phone.videoEnabled
-                              ? () => phone.dial(e.number, via: e, video: true)
-                              : null,
-                          onRemove: phone.isManual(e)
-                              ? () => phone.removeExtension(e)
-                              : null,
-                        );
-                      },
+                      itemBuilder: (_, i) => tile(slice[i]),
                     ),
             ),
           ),
-          const SizedBox(height: 8),
-          Pager(
-            total: list.length,
-            page: _page,
-            pageSize: pageSize,
-            onPage: (i) => setState(() => _page = i),
-          ),
+          if (!_byState) ...[
+            const SizedBox(height: 8),
+            Pager(
+              total: list.length,
+              page: _page,
+              pageSize: pageSize,
+              onPage: (i) => setState(() => _page = i),
+            ),
+          ],
           if (phone.apiSummary.isNotEmpty)
             Padding(
               padding: const EdgeInsets.only(top: 6),
@@ -1342,11 +1541,13 @@ class _ExtensionTile extends StatefulWidget {
     this.details = const [],
     this.live,
     this.liveName = '',
+    this.onLiveTap,
   });
 
   /// In chiamata adesso (eventi 30011) e nome dell'altro capo.
   final ExtensionLive? live;
   final String liveName;
+  final VoidCallback? onLiveTap;
 
   /// Email e cellulare dall'elenco del PBX, per la scheda al passaggio.
   final List<(IconData, String)> details;
@@ -1389,7 +1590,15 @@ class _ExtensionTileState extends State<_ExtensionTile> {
               padding: const EdgeInsets.only(left: DrinSpace.s2),
               child: FadeIn(
                 key: ValueKey(live.state),
-                child: LiveChip(live, otherName: w.liveName),
+                child: GestureDetector(
+                  onTap: w.onLiveTap,
+                  child: MouseRegion(
+                    cursor: w.onLiveTap == null
+                        ? MouseCursor.defer
+                        : SystemMouseCursors.click,
+                    child: LiveChip(live, otherName: w.liveName),
+                  ),
+                ),
               ),
             ),
           );
