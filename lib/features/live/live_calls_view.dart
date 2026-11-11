@@ -115,6 +115,9 @@ class _LiveCallsViewState extends State<LiveCallsView> {
                     child: _CallsTable(
                       phone: p,
                       focus: widget.focus,
+                      deptOf: p.viewFlag('live.byDept') && conn.orgs.isNotEmpty
+                          ? conn.deptOfCall
+                          : null,
                       title: tr('Entranti e interne'),
                       icon: Icons.call_received_rounded,
                       calls: [
@@ -128,6 +131,9 @@ class _LiveCallsViewState extends State<LiveCallsView> {
                     child: _CallsTable(
                       phone: p,
                       focus: widget.focus,
+                      deptOf: p.viewFlag('live.byDept') && conn.orgs.isNotEmpty
+                          ? conn.deptOfCall
+                          : null,
                       title: tr('Uscenti'),
                       icon: Icons.call_made_rounded,
                       calls: [
@@ -164,6 +170,18 @@ class _LiveCallsViewState extends State<LiveCallsView> {
       const SizedBox(width: 12),
       CountBadge(conn.visibleCalls.length),
       const Spacer(),
+      // Raggruppa per reparto: scelta salvata, solo se il PBX dà i reparti.
+      if (conn.orgs.isNotEmpty)
+        IconButton(
+          tooltip: p.viewFlag('live.byDept')
+              ? tr('Tutte insieme')
+              : tr('Raggruppa per reparto'),
+          isSelected: p.viewFlag('live.byDept'),
+          onPressed: () =>
+              p.setViewFlag('live.byDept', !p.viewFlag('live.byDept')),
+          icon: Icon(Icons.groups_outlined, color: c.muted),
+          selectedIcon: Icon(Icons.groups_rounded, color: c.primary),
+        ),
       Tooltip(
         message: conn.eventsStatus,
         child: Icon(
@@ -227,7 +245,11 @@ class _CallsTable extends StatefulWidget {
     required this.icon,
     required this.calls,
     this.focus,
+    this.deptOf,
   });
+
+  /// Se dato, chiamate divise per reparto con un'intestazione per gruppo.
+  final String Function(LiveCall)? deptOf;
   final PhoneController phone;
   final String title;
   final IconData icon;
@@ -273,6 +295,30 @@ class _CallsTableState extends State<_CallsTable> {
             '${_who(x.caller)} ${_who(x.callee)}'.toLowerCase().contains(q))
           x,
     ];
+    // Per reparto (scelta salvata): intestazioni tra le chiamate; senza
+    // reparto in fondo.
+    final deptOf = widget.deptOf;
+    final List<Object> items;
+    if (deptOf == null) {
+      items = rows;
+    } else {
+      final sorted = [...rows]
+        ..sort((a, b) {
+          final da = deptOf(a), db = deptOf(b);
+          if (da.isEmpty != db.isEmpty) return da.isEmpty ? 1 : -1;
+          return da.compareTo(db);
+        });
+      items = [];
+      String? last;
+      for (final x in sorted) {
+        final d = deptOf(x);
+        if (d != last) {
+          last = d;
+          items.add(d.isEmpty ? tr('Senza reparto') : d);
+        }
+        items.add(x);
+      }
+    }
     Widget head(String t, int flex) => Expanded(
       flex: flex,
       child: Text(
@@ -356,11 +402,31 @@ class _CallsTableState extends State<_CallsTable> {
                     ),
                   )
                 : ListView.separated(
-                    itemCount: rows.length,
+                    itemCount: items.length,
                     separatorBuilder: (_, _) =>
                         Divider(color: c.border, height: 1),
                     itemBuilder: (_, i) {
-                      final x = rows[i];
+                      final item = items[i];
+                      if (item is String) {
+                        return Padding(
+                          padding: const EdgeInsets.fromLTRB(12, 12, 12, 6),
+                          child: Row(
+                            children: [
+                              Icon(
+                                Icons.groups_outlined,
+                                size: 16,
+                                color: c.primary,
+                              ),
+                              const SizedBox(width: DrinSpace.s2),
+                              Text(
+                                item,
+                                style: DrinText.heading.copyWith(color: c.ink),
+                              ),
+                            ],
+                          ),
+                        );
+                      }
+                      final x = item as LiveCall;
                       // Stessi simboli e colori del segnalino sugli interni.
                       final (icon, color, label) = liveLook(
                         c,

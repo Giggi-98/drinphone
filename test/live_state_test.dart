@@ -1,5 +1,6 @@
 import 'package:drinphone/core/pbx/pbx_connection.dart';
 import 'package:drinphone/core/pbx/yeastar_api.dart';
+import 'package:drinphone/core/security/api_credential_store.dart';
 import 'package:drinphone/app/theme.dart';
 import 'package:drinphone/features/shell/widgets.dart';
 import 'package:flutter/material.dart';
@@ -62,5 +63,32 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('2'), findsOneWidget);
     expect(find.byTooltip('2 chiamate squillano'), findsOneWidget);
+  });
+
+  test('reparto di una chiamata: il più specifico del primo interno', () {
+    final conn = PbxConnection(
+      id: 'a',
+      label: 'PBX',
+      store: ApiCredentialStore('nessun-file.dpapi'),
+      apiFactory: YeastarApi.new,
+      onUpdate: (_, _) {},
+    );
+    conn.directory = const [
+      PbxExtension(id: 1, number: '302', name: 'Patrizia'),
+      PbxExtension(id: 2, number: '303', name: 'Sandro'),
+    ];
+    conn.orgs = [
+      PbxOrg(id: 10, name: 'Skillworks Holding', depth: 0, extIds: {1, 2}),
+      PbxOrg(id: 11, parentId: 10, name: 'Econnet', depth: 1, extIds: {1}),
+    ];
+    expect(conn.deptOf('302'), 'Econnet');
+    expect(conn.deptOf('303'), 'Skillworks Holding');
+    expect(conn.deptOf('999'), '');
+    expect(
+      conn.deptOfCall(
+        LiveCall('1', [ext('302', 'ANSWER'), ext('303', 'ANSWER')]),
+      ),
+      'Econnet',
+    );
   });
 }

@@ -242,6 +242,30 @@ class PbxConnection {
     return byPair.values.toList()..sort((a, b) => a.seen.compareTo(b.seen));
   }
 
+  /// Reparto più specifico dell'interno [ext] ('' se nessuno).
+  String deptOf(String ext) {
+    final id = directory.where((e) => e.number == ext).firstOrNull?.id;
+    if (id == null) return '';
+    PbxOrg? best;
+    for (final o in orgs) {
+      if (o.extIds.contains(id) && (best == null || o.depth > best.depth)) {
+        best = o;
+      }
+    }
+    return best?.name ?? '';
+  }
+
+  /// Reparto di una chiamata: quello del primo interno coinvolto.
+  String deptOfCall(LiveCall c) {
+    for (final m in c.members) {
+      if (m.kind == 'extension' && m.number.isNotEmpty) {
+        final d = deptOf(m.number);
+        if (d.isNotEmpty) return d;
+      }
+    }
+    return '';
+  }
+
   /// Interno → chiamata in cui si trova adesso. Con più chiamate (avviso di
   /// chiamata, più dispositivi) vince la conversazione, poi l'attesa, poi
   /// lo squillo.
