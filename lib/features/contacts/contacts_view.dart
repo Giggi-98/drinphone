@@ -306,22 +306,38 @@ class _ContactsViewState extends State<ContactsView> {
                                 padding: const EdgeInsets.only(left: 6),
                                 child: Tooltip(
                                   message: '${tr(label)} · $number',
-                                  child: OutlinedButton.icon(
-                                    style: OutlinedButton.styleFrom(
-                                      visualDensity: VisualDensity.compact,
-                                      side: BorderSide(color: c.border),
+                                  child: GestureDetector(
+                                    onSecondaryTapDown: (d) => showActionsMenu(
+                                      context,
+                                      d.globalPosition,
+                                      [
+                                        (
+                                          Icons.call_rounded,
+                                          tr('Chiama'),
+                                          p.canDial
+                                              ? () => widget.onCall(number)
+                                              : null,
+                                        ),
+                                        copyAction(context, number),
+                                      ],
                                     ),
-                                    onPressed: p.canDial
-                                        ? () => widget.onCall(number)
-                                        : null,
-                                    icon: Icon(
-                                      _iconFor(tr(label)),
-                                      size: 16,
-                                      color: c.accent,
-                                    ),
-                                    label: Text(
-                                      number,
-                                      style: mono(c.text, size: 12),
+                                    child: OutlinedButton.icon(
+                                      style: OutlinedButton.styleFrom(
+                                        visualDensity: VisualDensity.compact,
+                                        side: BorderSide(color: c.border),
+                                      ),
+                                      onPressed: p.canDial
+                                          ? () => widget.onCall(number)
+                                          : null,
+                                      icon: Icon(
+                                        _iconFor(tr(label)),
+                                        size: 16,
+                                        color: c.accent,
+                                      ),
+                                      label: Text(
+                                        number,
+                                        style: mono(c.text, size: 12),
+                                      ),
                                     ),
                                   ),
                                 ),
@@ -345,17 +361,9 @@ class _ContactsViewState extends State<ContactsView> {
                                 ],
                               )
                             else
-                              Padding(
-                                padding: const EdgeInsets.only(left: 12),
-                                child: Tooltip(
-                                  message: tr('Sola lettura dal PBX'),
-                                  child: Icon(
-                                    Icons.lock_outline,
-                                    size: 16,
-                                    color: c.muted,
-                                  ),
-                                ),
-                              ),
+                              // Sola lettura: detto una volta sotto la lista,
+                              // qui solo lo spazio del menu per allineare.
+                              const SizedBox(width: 48),
                           ],
                         ),
                       );
@@ -363,11 +371,26 @@ class _ContactsViewState extends State<ContactsView> {
                   ),
           ),
           const SizedBox(height: 8),
-          Pager(
-            total: list.length,
-            page: _page,
-            pageSize: pageSize,
-            onPage: (i) => setState(() => _page = i),
+          Row(
+            children: [
+              if (slice.any((e) => e.$3 == null)) ...[
+                Icon(Icons.lock_outline, size: 14, color: c.muted),
+                const SizedBox(width: DrinSpace.s1),
+                Text(
+                  tr('Sola lettura dal PBX'),
+                  style: DrinText.detail.copyWith(color: c.muted),
+                ),
+                const SizedBox(width: DrinSpace.s4),
+              ],
+              Expanded(
+                child: Pager(
+                  total: list.length,
+                  page: _page,
+                  pageSize: pageSize,
+                  onPage: (i) => setState(() => _page = i),
+                ),
+              ),
+            ],
           ),
         ],
       ),

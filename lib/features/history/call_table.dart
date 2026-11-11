@@ -35,10 +35,19 @@ class CallColumn {
 
 /// Una riga: celle nell'ordine delle colonne, numero da richiamare.
 class CallRow {
-  const CallRow({required this.cells, this.call, this.callTooltip, this.onTap});
+  const CallRow({
+    required this.cells,
+    this.call,
+    this.callTooltip,
+    this.onTap,
+    this.number = '',
+  });
   final List<Widget> cells;
   final VoidCallback? call;
   final String? callTooltip;
+
+  /// Numero dell'altro capo, per "Copia numero" nel menu del tasto destro.
+  final String number;
 
   /// Clic sulla riga (dettaglio).
   final VoidCallback? onTap;
@@ -193,6 +202,13 @@ class _HoverRowState extends State<_HoverRow> {
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: row.onTap,
+        // Tasto destro: Richiama, Copia numero, Dettagli.
+        onSecondaryTapDown: (d) => showActionsMenu(context, d.globalPosition, [
+          (Icons.call_rounded, row.callTooltip ?? tr('Richiama'), row.call),
+          copyAction(context, row.number),
+          if (row.onTap != null)
+            (Icons.info_outline_rounded, tr('Dettagli chiamata'), row.onTap),
+        ]),
         child: AnimatedContainer(
           duration: fast,
           curve: DrinMotion.curve,

@@ -6,6 +6,9 @@ import 'package:drinphone/app/theme.dart';
 import 'package:drinphone/core/platform/call_links.dart';
 import 'package:drinphone/core/security/settings_store.dart';
 import 'package:drinphone/core/sip/sip_engine.dart';
+import 'package:drinphone/features/history/history_view.dart';
+import 'package:drinphone/features/contacts/contacts_view.dart';
+import 'package:drinphone/features/shell/search_box.dart';
 import 'package:drinphone/main.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -435,6 +438,56 @@ void main() {
     });
     expect((await tester.runAsync(store.load))!.zoom, 1.3);
     await tester.pump(const Duration(milliseconds: 1500));
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('scorciatoie: Ctrl+numero cambia sezione, F1 le elenca', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1366, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    late PhoneController p;
+    await tester.runAsync(() async {
+      await store.save(const Settings(accounts: [_account]));
+      p = PhoneController(
+        engine,
+        store,
+        engineDataDir: tmp.path,
+        logDir: tmp.path,
+      );
+      await p.init();
+    });
+    await tester.pumpWidget(DrinPhoneApp(phone: p));
+    await tester.pump(const Duration(milliseconds: 300));
+
+    Future<void> ctrl(LogicalKeyboardKey k) async {
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+      await tester.sendKeyEvent(k);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+      await tester.pump(const Duration(milliseconds: 400));
+    }
+
+    // Senza Live Calls: 1 Interni, 2 Rubrica, 3 Registro, 4 Casella vocale.
+    await ctrl(LogicalKeyboardKey.digit3);
+    expect(find.byType(HistoryView), findsOneWidget);
+    await ctrl(LogicalKeyboardKey.digit2);
+    expect(find.byType(ContactsView), findsOneWidget);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.f1);
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.text('Scorciatoie da tastiera'), findsOneWidget);
+    await tester.tap(find.text('Chiudi'));
+    await tester.pump(const Duration(milliseconds: 400));
+
+    await ctrl(LogicalKeyboardKey.keyK);
+    final field = tester.widget<EditableText>(
+      find.descendant(
+        of: find.byType(SearchBox),
+        matching: find.byType(EditableText),
+      ),
+    );
+    expect(field.focusNode.hasFocus, isTrue);
     await tester.pumpWidget(const SizedBox());
   });
 }

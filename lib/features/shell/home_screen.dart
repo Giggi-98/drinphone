@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:ui' show AppExitResponse;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../app/brand.dart';
 import '../../app/l10n.dart';
@@ -23,6 +24,7 @@ import '../update/release_notes_dialog.dart';
 import '../update/update_panel.dart';
 import 'desktop_shell.dart';
 import 'search_box.dart';
+import 'shortcuts.dart';
 import 'widgets.dart';
 
 /// Struttura a pannelli (proposta D): barra sezioni, ricerca con popup e
@@ -43,8 +45,69 @@ class _HomeScreenState extends State<HomeScreen> {
   /// Scheda iniziale delle Preferenze (5 = Integrazione PBX).
   int _prefsTab = 0;
   late final AppLifecycleListener _lifecycle;
+  final _searchFocus = FocusNode();
 
   PhoneController get p => widget.phone;
+
+  /// Sezioni nell'ordine del menu (Ctrl+1…5).
+  List<_Section> get _menu => [
+    _Section.extensions,
+    if (p.hasLiveCalls) _Section.live,
+    _Section.contacts,
+    _Section.history,
+    _Section.voicemail,
+  ];
+
+  void _go(_Section s) {
+    setState(() => _section = s);
+    _markSeen();
+  }
+
+  /// Scorciatoie globali (vedi shortcuts.dart): con Ctrl, attive con la
+  /// finestra a fuoco anche dentro un campo di testo.
+  bool _onKey(KeyEvent e) {
+    if (e is! KeyDownEvent) return false;
+    final k = e.logicalKey;
+    if (k == LogicalKeyboardKey.f1) {
+      if (ModalRoute.of(context)?.isCurrent ?? true) showShortcuts(context);
+      return true;
+    }
+    if (!ctrlOnly || !p.loggedIn) return false;
+    final incoming = p.calls.values
+        .where((c) => c.phase == CallPhase.incoming)
+        .firstOrNull;
+    final label = k.keyLabel.toLowerCase();
+    if (label == 'k' || label == 'f' || label == 'l') {
+      _searchFocus.requestFocus();
+    } else if (label == ',') {
+      _openPreferences();
+    } else if (k == LogicalKeyboardKey.enter ||
+        k == LogicalKeyboardKey.numpadEnter) {
+      if (incoming == null) return false;
+      p.answer(incoming.id);
+    } else if (label == 'e') {
+      if (incoming != null) {
+        p.hangup(incoming.id);
+      } else if (p.call != null) {
+        p.hangup();
+      } else {
+        return false;
+      }
+    } else if (label == 'm') {
+      if (p.call == null) return false;
+      p.toggleMute();
+    } else if (label == 'h') {
+      if (p.call == null) return false;
+      p.toggleHold();
+    } else if (digitOf(k) case final n?) {
+      // Ctrl+0 è lo zoom: qui solo 1…9.
+      if (n > _menu.length) return false;
+      _go(_menu[n - 1]);
+    } else {
+      return false;
+    }
+    return true;
+  }
 
   @override
   void initState() {
@@ -59,6 +122,7 @@ class _HomeScreenState extends State<HomeScreen> {
       _onCallLink();
     });
     pendingCallLink.addListener(_onCallLink);
+    HardwareKeyboard.instance.addHandler(_onKey);
     _lifecycle = AppLifecycleListener(
       // Rientro nella finestra: riallinea i dati PBX (saltato se letti da < 10 s).
       onResume: () => p.resync(force: false),
@@ -81,6 +145,8 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void dispose() {
     _lifecycle.dispose();
+    HardwareKeyboard.instance.removeHandler(_onKey);
+    _searchFocus.dispose();
     pendingCallLink.removeListener(_onCallLink);
     p.removeListener(_onPhone);
     p.updater?.removeListener(_onUpdater);
@@ -198,10 +264,8 @@ class _HomeScreenState extends State<HomeScreen> {
             showLive: p.hasLiveCalls,
             update: p.updater?.available?.version,
             onUpdate: () => showUpdateDialog(context, p, p.updater!),
-            onSection: (s) {
-              setState(() => _section = s);
-              _markSeen();
-            },
+            menu: _menu,
+            onSection: _go,
           ),
           Expanded(
             child: Stack(
@@ -394,7 +458,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ],
           const Spacer(),
           Flexible(
-            child: SearchBox(phone: p, onCall: _call),
+            child: SearchBox(phone: p, onCall: _call, focusNode: _searchFocus),
           ),
           const SizedBox(width: 12),
           // Account in uso (DECISIONS "Un account vivo alla volta").
@@ -543,6 +607,7 @@ class _Sidebar extends StatelessWidget {
     required this.missed,
     required this.voicemailNew,
     required this.showLive,
+    required this.menu,
     required this.onSection,
     this.update,
     this.onUpdate,
@@ -551,6 +616,9 @@ class _Sidebar extends StatelessWidget {
   final int missed;
   final int voicemailNew;
   final bool showLive;
+
+  /// Ordine delle sezioni per Ctrl+1…5 (mostrato nel tooltip).
+  final List<_Section> menu;
   final ValueChanged<_Section> onSection;
 
   /// Versione disponibile (aggiornamento non ancora installato).
@@ -560,13 +628,13 @@ class _Sidebar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = context.drin;
-    Widget item(
+    Widget sideItem(
       IconData icon,
       String label,
       bool selected,
-      VoidCallback? onTap, {
+      VoidCallback? onTap,
       Widget? trailing,
-    }) => Padding(
+    ) => Padding(
       padding: const EdgeInsets.only(bottom: 4),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 180),
@@ -618,6 +686,27 @@ class _Sidebar extends StatelessWidget {
         ),
       ),
     );
+
+    Widget item(
+      IconData icon,
+      String label,
+      bool selected,
+      VoidCallback? onTap, {
+      Widget? trailing,
+      _Section? of,
+    }) {
+      final n = of == null ? -1 : menu.indexOf(of);
+      final keys = of == _Section.preferences
+          ? 'Ctrl + ,'
+          : n < 0
+          ? null
+          : 'Ctrl + ${n + 1}';
+      final row = sideItem(icon, label, selected, onTap, trailing);
+      return keys == null
+          ? row
+          : Tooltip(message: '$label · $keys', preferBelow: false, child: row);
+    }
+
     return Container(
       width: 228,
       padding: const EdgeInsets.fromLTRB(12, 20, 12, 20),
@@ -661,6 +750,7 @@ class _Sidebar extends StatelessWidget {
             tr('Interni'),
             section == _Section.extensions,
             () => onSection(_Section.extensions),
+            of: _Section.extensions,
           ),
           if (showLive)
             item(
@@ -668,18 +758,21 @@ class _Sidebar extends StatelessWidget {
               tr('Chiamate in corso'),
               section == _Section.live,
               () => onSection(_Section.live),
+              of: _Section.live,
             ),
           item(
             Icons.import_contacts_rounded,
             tr('Rubrica'),
             section == _Section.contacts,
             () => onSection(_Section.contacts),
+            of: _Section.contacts,
           ),
           item(
             Icons.history_rounded,
             tr('Registro chiamate'),
             section == _Section.history,
             () => onSection(_Section.history),
+            of: _Section.history,
             trailing: CountBadge(missed, alert: true),
           ),
           item(
@@ -687,6 +780,7 @@ class _Sidebar extends StatelessWidget {
             tr('Casella vocale'),
             section == _Section.voicemail,
             () => onSection(_Section.voicemail),
+            of: _Section.voicemail,
             trailing: CountBadge(voicemailNew, alert: true),
           ),
           const Spacer(),
@@ -702,6 +796,7 @@ class _Sidebar extends StatelessWidget {
             tr('Preferenze'),
             section == _Section.preferences,
             () => onSection(_Section.preferences),
+            of: _Section.preferences,
           ),
         ],
       ),
@@ -1124,20 +1219,33 @@ class _ExtensionTileState extends State<_ExtensionTile> {
           borderRadius: BorderRadius.circular(12),
           // Doppio clic sulla scheda = chiama, come nei softphone desktop.
           onDoubleTap: canDial && callable ? onCall : null,
-          onSecondaryTapDown: onRemove == null
-              ? null
-              : (d) => showMenu<void>(
-                  context: context,
-                  position: RelativeRect.fromLTRB(
-                    d.globalPosition.dx,
-                    d.globalPosition.dy,
-                    d.globalPosition.dx,
-                    d.globalPosition.dy,
-                  ),
-                  items: [
-                    PopupMenuItem(onTap: onRemove, child: Text(tr('Rimuovi'))),
-                  ],
+          // Tasto destro: tutte le azioni sull'interno.
+          onSecondaryTapDown: (d) =>
+              showActionsMenu(context, d.globalPosition, [
+                (
+                  Icons.call_rounded,
+                  tr('Chiama'),
+                  canDial && callable ? onCall : null,
                 ),
+                if (w.onVideoCall != null)
+                  (
+                    Icons.videocam_rounded,
+                    tr('Videochiamata'),
+                    canDial && callable ? w.onVideoCall : null,
+                  ),
+                copyAction(context, ext.number),
+                (
+                  favorite ? Icons.star_rounded : Icons.star_outline_rounded,
+                  favorite
+                      ? tr('Togli dai preferiti')
+                      : tr('Aggiungi ai preferiti'),
+                  onFavorite,
+                ),
+                if (onRemove != null) ...[
+                  null,
+                  (Icons.delete_outline_rounded, tr('Rimuovi'), onRemove),
+                ],
+              ]),
           child: Padding(
             padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
             child: Column(

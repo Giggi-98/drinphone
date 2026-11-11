@@ -329,6 +329,7 @@ class _CdrViewState extends State<CdrView> {
     return CallRow(
       cells: [for (final f in cells) f(r)],
       callTooltip: tr('Richiama {n}', {'n': other}),
+      number: other,
       call: widget.canDial && other.isNotEmpty
           ? () => widget.onCall(other)
           : null,

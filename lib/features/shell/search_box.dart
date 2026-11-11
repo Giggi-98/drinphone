@@ -10,9 +10,17 @@ import 'widgets.dart';
 /// Campo "numero, interno o nome" con popup di risultati mentre si digita e
 /// tastierino a comparsa, entrambi agganciati sotto il campo.
 class SearchBox extends StatefulWidget {
-  const SearchBox({super.key, required this.phone, required this.onCall});
+  const SearchBox({
+    super.key,
+    required this.phone,
+    required this.onCall,
+    this.focusNode,
+  });
   final PhoneController phone;
   final ValueChanged<String> onCall;
+
+  /// Fuoco dall'esterno (Ctrl+K); se assente il campo ne crea uno suo.
+  final FocusNode? focusNode;
 
   @override
   State<SearchBox> createState() => _SearchBoxState();
@@ -20,7 +28,7 @@ class SearchBox extends StatefulWidget {
 
 class _SearchBoxState extends State<SearchBox> {
   final _text = TextEditingController();
-  final _focus = FocusNode();
+  late final FocusNode _focus = widget.focusNode ?? FocusNode();
   final _link = LayerLink();
   final _results = OverlayPortalController();
   final _keypad = OverlayPortalController();
@@ -48,7 +56,7 @@ class _SearchBoxState extends State<SearchBox> {
   @override
   void dispose() {
     _text.dispose();
-    _focus.dispose();
+    if (widget.focusNode == null) _focus.dispose();
     super.dispose();
   }
 

@@ -233,7 +233,7 @@ class _HistoryViewState extends State<HistoryView> {
         party(
           r.name,
           r.number,
-          color: r.missed ? c.busyText : null,
+          // L'esito "Persa" lo dice già la pillola: il nome resta neutro.
           // Nota scritta durante la chiamata.
           extra: r.note.isEmpty
               ? null
@@ -243,6 +243,7 @@ class _HistoryViewState extends State<HistoryView> {
         DurationCell(r.seconds, strong: true),
       ],
       callTooltip: tr('Richiama {n}', {'n': r.number}),
+      number: r.number,
       call: canDial && r.number.isNotEmpty
           ? () => widget.onCall(r.number)
           : null,

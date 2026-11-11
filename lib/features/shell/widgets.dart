@@ -1,5 +1,6 @@
 // Componenti condivisi: avatar con stato linea + presenza, paginatore, badge.
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../app/l10n.dart';
 import '../../app/theme.dart';
@@ -368,3 +369,58 @@ class Pager extends StatelessWidget {
     );
   }
 }
+
+/// Voce di un menu contestuale: icona, testo, azione (null = disattivata).
+typedef MenuAction = (IconData, String, VoidCallback?);
+
+/// Menu del tasto destro nel punto [at]: stesse righe del menu account
+/// (icona `muted` a sinistra, testo `body`).
+Future<void> showActionsMenu(
+  BuildContext context,
+  Offset at,
+  List<MenuAction?> actions,
+) {
+  final c = context.drin;
+  return showMenu<void>(
+    context: context,
+    position: RelativeRect.fromLTRB(at.dx, at.dy, at.dx, at.dy),
+    items: [
+      for (final a in actions)
+        if (a == null)
+          const PopupMenuDivider()
+        else
+          PopupMenuItem<void>(
+            height: 40,
+            enabled: a.$3 != null,
+            onTap: a.$3,
+            child: Row(
+              children: [
+                Icon(a.$1, size: 18, color: c.muted),
+                const SizedBox(width: DrinSpace.s3),
+                Text(a.$2),
+              ],
+            ),
+          ),
+    ],
+  );
+}
+
+/// Copia [text] negli appunti e lo dice con un avviso breve.
+void copyWithToast(BuildContext context, String text) {
+  Clipboard.setData(ClipboardData(text: text));
+  ScaffoldMessenger.maybeOf(context)
+    ?..hideCurrentSnackBar()
+    ..showSnackBar(
+      SnackBar(
+        content: Text(tr('Copiato: {t}', {'t': text})),
+        duration: const Duration(seconds: 2),
+      ),
+    );
+}
+
+/// Azione "Copia numero" pronta per [showActionsMenu].
+MenuAction copyAction(BuildContext context, String number) => (
+  Icons.content_copy_rounded,
+  tr('Copia numero'),
+  number.isEmpty ? null : () => copyWithToast(context, number),
+);
