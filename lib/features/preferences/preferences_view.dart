@@ -243,11 +243,76 @@ class _Card extends StatelessWidget {
   }
 }
 
+/// Campi su griglia a 2 colonne (1 sotto i 640 px, misurati dopo scala e
+/// zoom): stessa larghezza e altezza per tutti, come le sezioni ordinate dei
+/// pannelli PBX (PIANO-AZIONE, blocco H).
+class _FieldGrid extends StatelessWidget {
+  const _FieldGrid(this.children);
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, box) {
+      final cols = box.maxWidth >= 640 ? 2 : 1;
+      const gap = DrinSpace.s4;
+      final w = (box.maxWidth - gap * (cols - 1)) / cols;
+      return Wrap(
+        spacing: gap,
+        runSpacing: DrinSpace.s3,
+        children: [for (final f in children) SizedBox(width: w, child: f)],
+      );
+    },
+  );
+}
+
+/// Valore sì/no come simbolo: ✓ `freeText` o ✕ `muted`, con la parola accanto.
+Widget _yesNo(BuildContext context, bool on) {
+  final c = context.drin;
+  return Row(
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      Icon(
+        on ? Icons.check_circle_rounded : Icons.cancel_outlined,
+        size: 16,
+        color: on ? c.freeText : c.muted,
+      ),
+      const SizedBox(width: DrinSpace.s1),
+      Text(
+        on ? tr('Sì') : tr('No'),
+        style: DrinText.heading.copyWith(color: c.ink),
+      ),
+    ],
+  );
+}
+
+/// Elenco breve come chip `panel` (es. trasporti "UDP" "TCP" "TLS").
+Widget _chips(BuildContext context, List<String> items) {
+  final c = context.drin;
+  return Wrap(
+    spacing: DrinSpace.s1,
+    runSpacing: DrinSpace.s1,
+    children: [
+      for (final t in items)
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: DrinSpace.s2),
+          decoration: BoxDecoration(
+            color: c.panel,
+            borderRadius: BorderRadius.circular(DrinRadius.pill),
+          ),
+          child: Text(t, style: DrinText.label.copyWith(color: c.ink)),
+        ),
+    ],
+  );
+}
+
 class _Field extends StatelessWidget {
-  const _Field(this.label, this.value, {this.icon});
+  const _Field(this.label, this.value, {this.icon, this.content});
   final String label;
   final String value;
   final IconData? icon;
+
+  /// Valore disegnato (simbolo, chip) al posto del testo [value].
+  final Widget? content;
 
   @override
   Widget build(BuildContext context) {
@@ -273,15 +338,20 @@ class _Field extends StatelessWidget {
               children: [
                 Text(label, style: TextStyle(fontSize: 11, color: c.muted)),
                 const SizedBox(height: 2),
-                Text(
-                  value.isEmpty ? '—' : value,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: c.text,
-                  ),
-                ),
+                content ??
+                    // Valore troncato (es. email lunga): intero nel tooltip.
+                    Tooltip(
+                      message: value,
+                      child: Text(
+                        value.isEmpty ? '—' : value,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: c.text,
+                        ),
+                      ),
+                    ),
               ],
             ),
           ),
@@ -323,47 +393,28 @@ class _UserTab extends StatelessWidget {
               ),
               const SizedBox(width: 20),
               Expanded(
-                // I campi si dividono la riga; sotto i 180 px a testa vanno
-                // a capo.
-                child: LayoutBuilder(
-                  builder: (context, box) {
-                    final fields = [
-                      _Field(
-                        tr('Interno'),
-                        a?.username ?? '',
-                        icon: Icons.tag_rounded,
-                      ),
-                      _Field(
-                        tr('Nome'),
-                        me?.name ?? a?.displayName ?? '',
-                        icon: Icons.person_outline_rounded,
-                      ),
-                      _Field(
-                        tr('Email'),
-                        me?.email ?? '',
-                        icon: Icons.alternate_email_rounded,
-                      ),
-                      _Field(
-                        tr('Cellulare'),
-                        me?.mobile ?? '',
-                        icon: Icons.smartphone_rounded,
-                      ),
-                    ];
-                    const gap = 12.0;
-                    final perRow = (box.maxWidth / 180).floor().clamp(
-                      1,
-                      fields.length,
-                    );
-                    final w = (box.maxWidth - gap * (perRow - 1)) / perRow;
-                    return Wrap(
-                      spacing: gap,
-                      runSpacing: 10,
-                      children: [
-                        for (final f in fields) SizedBox(width: w, child: f),
-                      ],
-                    );
-                  },
-                ),
+                child: _FieldGrid([
+                  _Field(
+                    tr('Interno'),
+                    a?.username ?? '',
+                    icon: Icons.tag_rounded,
+                  ),
+                  _Field(
+                    tr('Nome'),
+                    me?.name ?? a?.displayName ?? '',
+                    icon: Icons.person_outline_rounded,
+                  ),
+                  _Field(
+                    tr('Email'),
+                    me?.email ?? '',
+                    icon: Icons.alternate_email_rounded,
+                  ),
+                  _Field(
+                    tr('Cellulare'),
+                    me?.mobile ?? '',
+                    icon: Icons.smartphone_rounded,
+                  ),
+                ]),
               ),
             ],
           ),

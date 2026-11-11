@@ -262,6 +262,7 @@ class _HomeScreenState extends State<HomeScreen> {
             missed: p.missedUnseen,
             voicemailNew: p.voicemailUnseen,
             showLive: p.hasLiveCalls,
+            live: p.connections.fold(0, (n, x) => n + x.visibleCalls.length),
             update: p.updater?.available?.version,
             onUpdate: () => showUpdateDialog(context, p, p.updater!),
             menu: _menu,
@@ -607,6 +608,7 @@ class _Sidebar extends StatelessWidget {
     required this.missed,
     required this.voicemailNew,
     required this.showLive,
+    required this.live,
     required this.menu,
     required this.onSection,
     this.update,
@@ -616,6 +618,9 @@ class _Sidebar extends StatelessWidget {
   final int missed;
   final int voicemailNew;
   final bool showLive;
+
+  /// Chiamate in corso sul PBX (badge neutro: è un'informazione, non un avviso).
+  final int live;
 
   /// Ordine delle sezioni per Ctrl+1…5 (mostrato nel tooltip).
   final List<_Section> menu;
@@ -759,6 +764,7 @@ class _Sidebar extends StatelessWidget {
               section == _Section.live,
               () => onSection(_Section.live),
               of: _Section.live,
+              trailing: CountBadge(live),
             ),
           item(
             Icons.import_contacts_rounded,
@@ -1038,6 +1044,16 @@ class _ExtensionsViewState extends State<_ExtensionsView> {
                     ),
                     count: ringingCount,
                   ),
+                IconButton(
+                  tooltip: tr('Legenda degli stati'),
+                  visualDensity: VisualDensity.compact,
+                  onPressed: () => showStatusLegend(context),
+                  icon: Icon(
+                    Icons.help_outline_rounded,
+                    size: 18,
+                    color: c.muted,
+                  ),
+                ),
               ],
               if (_isOrg(phone.selectedGroup))
                 Padding(

@@ -424,3 +424,68 @@ MenuAction copyAction(BuildContext context, String number) => (
   tr('Copia numero'),
   number.isEmpty ? null : () => copyWithToast(context, number),
 );
+
+/// Legenda dei simboli: anello dell'avatar = stato della linea, simbolo in
+/// basso a destra = presenza Yeastar.
+Future<void> showStatusLegend(BuildContext context) => showDialog<void>(
+  context: context,
+  builder: (ctx) {
+    final c = ctx.drin;
+    Widget row(Widget symbol, String label) => Padding(
+      padding: const EdgeInsets.symmetric(vertical: DrinSpace.s1),
+      child: Row(
+        children: [
+          SizedBox(width: 28, child: Center(child: symbol)),
+          const SizedBox(width: DrinSpace.s3),
+          Text(label, style: DrinText.body.copyWith(color: c.ink)),
+        ],
+      ),
+    );
+    Widget ring(Color? color) => Container(
+      width: 18,
+      height: 18,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        border: Border.all(color: color ?? c.line, width: 2),
+      ),
+    );
+    Widget head(String t) => Padding(
+      padding: const EdgeInsets.only(top: DrinSpace.s3, bottom: DrinSpace.s1),
+      child: Text(t, style: DrinText.label.copyWith(color: c.muted)),
+    );
+    return AlertDialog(
+      title: Text(tr('Legenda degli stati')),
+      content: SizedBox(
+        width: 360,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            head(tr('Anello: stato della linea')),
+            row(ring(c.ok), tr('Libero')),
+            row(ring(c.busy), tr('Occupato')),
+            row(ring(c.ringing), tr('Squilla')),
+            row(ring(null), tr('Non registrato')),
+            head(tr('Simbolo: presenza')),
+            for (final st in const [
+              'available',
+              'away',
+              'do_not_disturb',
+              'lunch',
+              'business_trip',
+              'off_work',
+            ])
+              if (presenceOf(c, st) case final p?)
+                row(Icon(p.$1, size: 18, color: p.$2), p.$3),
+          ],
+        ),
+      ),
+      actions: [
+        FilledButton(
+          onPressed: () => Navigator.pop(ctx),
+          child: Text(tr('Chiudi')),
+        ),
+      ],
+    );
+  },
+);

@@ -727,43 +727,69 @@ class _ExtensionInfoCard extends StatelessWidget {
     final c = context.drin;
     final d = phone.ownDetail;
     if (d == null) return const SizedBox.shrink();
-    String yes(String k) => d.flag(k) ? tr('Sì') : tr('No');
     final clients = [
       if (d.flag('enb_desktop_client')) 'Linkus Desktop',
       if (d.flag('enb_web_client')) 'Linkus Web',
       if (d.flag('enb_mobile_client')) 'Linkus Mobile',
     ];
-    final fields = <(String, String, IconData)>[
+    Widget yes(String k) => _yesNo(context, d.flag(k));
+    final transports = d
+        .field('transport')
+        .split(RegExp(r'[,;\s]+'))
+        .where((t) => t.isNotEmpty)
+        .map((t) => t.toUpperCase())
+        .toList();
+    final fields = <(String, String, IconData, Widget?)>[
       (
         tr('Nome'),
         '${d.field('first_name')} ${d.field('last_name')}'.trim(),
         Icons.badge_outlined,
+        null,
       ),
-      (tr('Email'), d.field('email_addr'), Icons.alternate_email_rounded),
-      (tr('Cellulare'), d.field('mobile_number'), Icons.smartphone_rounded),
-      (tr('ID chiamante'), d.field('caller_id'), Icons.call_made_rounded),
-      (tr('Qualifica'), d.field('title'), Icons.work_outline_rounded),
+      (tr('Email'), d.field('email_addr'), Icons.alternate_email_rounded, null),
+      (
+        tr('Cellulare'),
+        d.field('mobile_number'),
+        Icons.smartphone_rounded,
+        null,
+      ),
+      (tr('ID chiamante'), d.field('caller_id'), Icons.call_made_rounded, null),
+      (tr('Qualifica'), d.field('title'), Icons.work_outline_rounded, null),
       (
         tr('Registrazioni contemporanee'),
         d.field('concurrent_registrations'),
         Icons.devices_rounded,
+        null,
       ),
-      (tr('Trasporti SIP'), d.field('transport'), Icons.swap_horiz_rounded),
-      (tr('SRTP'), yes('enb_srtp'), Icons.lock_outline_rounded),
+      (
+        tr('Trasporti SIP'),
+        d.field('transport'),
+        Icons.swap_horiz_rounded,
+        transports.isEmpty ? null : _chips(context, transports),
+      ),
+      (
+        tr('SRTP'),
+        '-',
+        d.flag('enb_srtp') ? Icons.lock_rounded : Icons.lock_open_rounded,
+        yes('enb_srtp'),
+      ),
       (
         tr('Chiamate in uscita bloccate'),
-        yes('disable_outb_call'),
+        '-',
         Icons.block,
+        yes('disable_outb_call'),
       ),
       (
         tr('Internazionali bloccate'),
-        yes('disable_international_call'),
+        '-',
         Icons.public_off_rounded,
+        yes('disable_international_call'),
       ),
       (
         tr('Linkus abilitato'),
-        clients.isEmpty ? '—' : clients.join(', '),
+        clients.isEmpty ? '—' : '-',
         Icons.apps_rounded,
+        clients.isEmpty ? null : _chips(context, clients),
       ),
     ];
     return _Card(
@@ -771,14 +797,11 @@ class _ExtensionInfoCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Wrap(
-            spacing: 12,
-            runSpacing: 10,
-            children: [
-              for (final (label, value, icon) in fields)
-                if (value.isNotEmpty) _Field(label, value, icon: icon),
-            ],
-          ),
+          _FieldGrid([
+            for (final (label, value, icon, content) in fields)
+              if (value.isNotEmpty)
+                _Field(label, value, icon: icon, content: content),
+          ]),
           const SizedBox(height: 10),
           Text(
             tr('Le gestisce l\'amministratore del PBX: qui solo in lettura.'),
