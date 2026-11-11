@@ -10,6 +10,7 @@ import 'package:drinphone/features/history/history_view.dart';
 import 'package:drinphone/features/contacts/contacts_view.dart';
 import 'package:drinphone/features/shell/search_box.dart';
 import 'package:drinphone/core/contacts/personal_contacts.dart';
+import 'package:drinphone/core/call_history.dart';
 import 'package:drinphone/main.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -692,6 +693,72 @@ void main() {
     // Scelte applicate e tenute dal controller (il file: test a parte).
     expect(p.settings.view['ext.sort'], 'name');
     expect(p.settings.view['ext.byState'], '1');
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('Registro: ripetute ×3 apribili, giorni e riepilogo', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1366, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    late PhoneController p;
+    await tester.runAsync(() async {
+      await store.save(
+        const Settings(
+          accounts: [_account],
+          view: {'hist.repeat': '1', 'hist.byDay': '1'},
+        ),
+      );
+      p = PhoneController(
+        engine,
+        store,
+        engineDataDir: tmp.path,
+        logDir: tmp.path,
+      );
+      await p.init();
+    });
+    final now = DateTime.now();
+    CallRecord missed(int min) => CallRecord(
+      number: '250',
+      name: 'Max Sartini',
+      direction: CallDirection.incoming,
+      start: now.subtract(Duration(minutes: min)),
+      seconds: 0,
+      answered: false,
+    );
+    p.history = [
+      missed(1),
+      missed(2),
+      missed(3),
+      CallRecord(
+        number: '301',
+        name: 'Paolo',
+        direction: CallDirection.outgoing,
+        start: now.subtract(const Duration(minutes: 10)),
+        seconds: 95,
+        answered: true,
+      ),
+    ];
+    await tester.pumpWidget(DrinPhoneApp(phone: p));
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.digit3);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await tester.pump(const Duration(milliseconds: 400));
+
+    // Tre perse di fila dallo stesso numero: una riga "×3".
+    expect(find.text('×3 · mostra tutte'), findsOneWidget);
+    expect(find.text('Max Sartini'), findsOneWidget);
+    // Intestazione del giorno con il totale e riepilogo di oggi.
+    expect(find.text('4 chiamate'), findsOneWidget);
+    expect(find.text('perse'), findsOneWidget);
+    expect(find.text('1:35'), findsWidgets);
+
+    await tester.tap(find.text('×3 · mostra tutte'));
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.text('Max Sartini'), findsNWidgets(3));
+    expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());
   });
 }

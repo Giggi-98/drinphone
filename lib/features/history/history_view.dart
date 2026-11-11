@@ -5,6 +5,7 @@ import '../../app/phone_controller.dart';
 import '../../app/theme.dart';
 import '../../core/call_history.dart';
 import '../../core/pbx/pbx_cdr.dart';
+import '../../core/pbx/pbx_connection.dart';
 import '../../core/sip/sip_engine.dart';
 import '../shell/widgets.dart';
 import 'range_picker.dart';
@@ -209,7 +210,246 @@ class _HistoryViewState extends State<HistoryView> {
     CallColumn(tr('Conversazione'), width: 112, end: true, hideBelow: 480),
   ];
 
-  CallRow _localRow(CallRecord r, DrinColors c, bool canDial) {
+  /// Gruppi aperti (chiamate ripetute), per inizio della prima chiamata.
+  final _open = <DateTime>{};
+
+  // Preferenze di vista salvate, ognuna per conto suo (scelte dall'utente).
+  bool get _byDay => widget.phone.viewFlag('hist.byDay');
+  bool get _repeat => widget.phone.viewFlag('hist.repeat');
+  bool get _summary => widget.phone.viewPref('hist.summary', '1') == '1';
+
+  static bool _sameDay(DateTime a, DateTime b) =>
+      a.year == b.year && a.month == b.month && a.day == b.day;
+
+  /// Chiamate consecutive dallo/allo stesso numero, stesso tipo ed esito,
+  /// nello stesso giorno: un gruppo (la prima è la più recente).
+  List<List<CallRecord>> _groups(List<CallRecord> list) {
+    final out = <List<CallRecord>>[];
+    for (final r in list) {
+      final g = out.isEmpty ? null : out.last;
+      final h = g?.first;
+      if (_repeat &&
+          h != null &&
+          h.number == r.number &&
+          h.number.isNotEmpty &&
+          h.direction == r.direction &&
+          h.missed == r.missed &&
+          _sameDay(h.start, r.start)) {
+        g!.add(r);
+      } else {
+        out.add([r]);
+      }
+    }
+    return out;
+  }
+
+  /// Menu "Vista del registro": scelte salvate, ognuna per conto suo.
+  Widget _viewMenu(DrinColors c, bool local) {
+    final p = widget.phone;
+    PopupMenuItem<String> item(
+      String key,
+      IconData icon,
+      String label,
+      bool on,
+    ) => PopupMenuItem(
+      value: key,
+      height: 40,
+      child: Row(
+        children: [
+          Icon(icon, size: 18, color: c.muted),
+          const SizedBox(width: DrinSpace.s3),
+          Expanded(child: Text(label)),
+          if (on) Icon(Icons.check_rounded, size: 18, color: c.primary),
+        ],
+      ),
+    );
+    return PopupMenuButton<String>(
+      tooltip: tr('Vista del registro'),
+      icon: Icon(Icons.tune_rounded, color: c.muted),
+      position: PopupMenuPosition.under,
+      onSelected: (k) => k == 'hist.summary'
+          ? p.setViewPref(k, _summary ? '0' : '1')
+          : p.setViewFlag(k, !p.viewFlag(k)),
+      itemBuilder: (_) => [
+        item(
+          'hist.summary',
+          Icons.insights_rounded,
+          tr('Riepilogo del giorno'),
+          _summary,
+        ),
+        const PopupMenuDivider(),
+        item(
+          'hist.byDay',
+          Icons.calendar_view_day_rounded,
+          tr('Raggruppa per giorno'),
+          _byDay,
+        ),
+        if (local)
+          item(
+            'hist.repeat',
+            Icons.layers_outlined,
+            tr('Raggruppa chiamate ripetute'),
+            _repeat,
+          ),
+      ],
+    );
+  }
+
+  /// Oggi su questo PC: chiamate, perse, secondi al telefono.
+  static (int, int, int) _todayLocal(List<CallRecord> all) {
+    final now = DateTime.now();
+    final today = [
+      for (final r in all)
+        if (_sameDay(r.start, now)) r,
+    ];
+    return (
+      today.length,
+      today.where((r) => r.missed).length,
+      today.fold(0, (t, r) => t + r.seconds),
+    );
+  }
+
+  Future<(int, int, int)>? _pbxFuture;
+  String _pbxKey = '';
+
+  /// Oggi dal CDR del PBX (proprio interno o tutto il PBX, come la fonte).
+  Widget _pbxSummary(DrinColors c, PbxConnection conn) {
+    final now = DateTime.now();
+    final from = DateTime(now.year, now.month, now.day);
+    final whole = _source == _Source.wholePbx;
+    final key = '${conn.id}|$whole|$from';
+    if (key != _pbxKey || _pbxFuture == null) {
+      _pbxKey = key;
+      _pbxFuture = conn
+          .readCdr(
+            CdrQuery(
+              wholePbx: whole,
+              from: from,
+              to: from.add(const Duration(days: 1)),
+              limit: 1000,
+            ),
+          )
+          .then(
+            (page) => (
+              page.total,
+              page.rows
+                  .where((r) => !r.answered && r.callType == 'Inbound')
+                  .length,
+              page.rows.fold(0, (t, r) => t + r.talk),
+            ),
+          );
+    }
+    return FutureBuilder<(int, int, int)>(
+      future: _pbxFuture,
+      builder: (_, snap) => snap.hasData
+          ? _summaryBar(c, snap.data!)
+          : const SizedBox(height: 32),
+    );
+  }
+
+  /// Tre contatori del giorno: chiamate, perse, tempo al telefono.
+  Widget _summaryBar(DrinColors c, (int, int, int) d) {
+    final (calls, missed, secs) = d;
+    String two(int n) => n.toString().padLeft(2, '0');
+    final time = secs >= 3600
+        ? '${secs ~/ 3600}:${two(secs % 3600 ~/ 60)}:${two(secs % 60)}'
+        : '${secs ~/ 60}:${two(secs % 60)}';
+    Widget stat(IconData icon, Color color, String value, String label) =>
+        Container(
+          margin: const EdgeInsets.only(right: DrinSpace.s3),
+          padding: const EdgeInsets.symmetric(
+            horizontal: DrinSpace.s3,
+            vertical: DrinSpace.s1,
+          ),
+          decoration: BoxDecoration(
+            color: c.raised,
+            border: Border.all(color: c.line),
+            borderRadius: BorderRadius.circular(DrinRadius.pill),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 16, color: color),
+              const SizedBox(width: DrinSpace.s2),
+              Text(value, style: DrinText.number.copyWith(color: c.ink)),
+              const SizedBox(width: DrinSpace.s1),
+              Text(label, style: DrinText.detail.copyWith(color: c.muted)),
+            ],
+          ),
+        );
+    // Wrap: a finestra stretta i contatori vanno a capo invece di uscire.
+    return Wrap(
+      crossAxisAlignment: WrapCrossAlignment.center,
+      runSpacing: DrinSpace.s2,
+      children: [
+        Text(tr('Oggi'), style: DrinText.label.copyWith(color: c.muted)),
+        const SizedBox(width: DrinSpace.s3),
+        stat(Icons.call_rounded, c.primary, '$calls', tr('chiamate')),
+        stat(
+          Icons.call_missed_rounded,
+          missed > 0 ? c.busyText : c.muted,
+          '$missed',
+          tr('perse'),
+        ),
+        stat(Icons.timer_outlined, c.freeText, time, tr('al telefono')),
+      ],
+    );
+  }
+
+  /// Righe della pagina: intestazioni per giorno (se scelto), gruppi chiusi
+  /// con "×n" o aperti con le singole chiamate.
+  List<CallRow> _localRows(
+    List<List<CallRecord>> page,
+    List<List<CallRecord>> all,
+    DrinColors c,
+    bool canDial,
+  ) {
+    final rows = <CallRow>[];
+    DateTime? day;
+    for (final g in page) {
+      final first = g.first;
+      if (_byDay && (day == null || !_sameDay(day, first.start))) {
+        day = first.start;
+        final n = all
+            .where((x) => _sameDay(x.first.start, first.start))
+            .fold(0, (t, x) => t + x.length);
+        rows.add(
+          CallRow.section(dayTitle(first.start), sectionDetail: callsCount(n)),
+        );
+      }
+      final open = _open.contains(first.start);
+      rows.add(
+        _localRow(
+          first,
+          c,
+          canDial,
+          count: g.length,
+          open: open,
+          onToggle: g.length < 2
+              ? null
+              : () => setState(
+                  () =>
+                      open ? _open.remove(first.start) : _open.add(first.start),
+                ),
+        ),
+      );
+      if (open) {
+        for (final r in g.skip(1)) {
+          rows.add(_localRow(r, c, canDial));
+        }
+      }
+    }
+    return rows;
+  }
+
+  CallRow _localRow(
+    CallRecord r,
+    DrinColors c,
+    bool canDial, {
+    int count = 1,
+    bool open = false,
+    VoidCallback? onToggle,
+  }) {
     final (icon, color, kind) = r.missed
         ? (Icons.call_missed_rounded, c.busyText, tr('In arrivo, persa'))
         : r.direction == CallDirection.incoming
@@ -228,8 +468,16 @@ class _HistoryViewState extends State<HistoryView> {
           r.name,
           r.number,
           // L'esito "Persa" lo dice già la pillola: il nome resta neutro.
-          // Nota scritta durante la chiamata.
-          extra: r.note.isEmpty
+          // Gruppo di chiamate ripetute: "×n" con freccia; nota scritta
+          // durante la chiamata.
+          extra: count > 1
+              ? SubLine(
+                  open ? Icons.expand_less_rounded : Icons.expand_more_rounded,
+                  open
+                      ? tr('{n} chiamate · chiudi', {'n': count})
+                      : tr('×{n} · mostra tutte', {'n': count}),
+                )
+              : r.note.isEmpty
               ? null
               : SubLine(Icons.sticky_note_2_outlined, r.note),
         ),
@@ -238,6 +486,7 @@ class _HistoryViewState extends State<HistoryView> {
       ],
       callTooltip: tr('Richiama {n}', {'n': r.number}),
       number: r.number,
+      onTap: onToggle,
       call: canDial && r.number.isNotEmpty
           ? () => widget.onCall(r.number)
           : null,
@@ -252,9 +501,11 @@ class _HistoryViewState extends State<HistoryView> {
       for (final r in p.history)
         if (_matches(r)) r,
     ];
-    final pages = (list.length + pageSize - 1) ~/ pageSize;
+    // Le pagine contano i gruppi (una riga "×3" vale una riga).
+    final groups = _groups(list);
+    final pages = (groups.length + pageSize - 1) ~/ pageSize;
     if (_page >= pages && pages > 0) _page = pages - 1;
-    final slice = Pager.slice(list, _page, pageSize);
+    final slice = Pager.slice(groups, _page, pageSize);
     final conn = p.primaryConnection;
     final cdr = conn != null && conn.cdrConfigured;
     if (!cdr) _source = _Source.local;
@@ -381,6 +632,8 @@ class _HistoryViewState extends State<HistoryView> {
                   ),
               ];
               final search = <Widget>[
+                _viewMenu(c, local),
+                const SizedBox(width: DrinSpace.s2),
                 SizedBox(
                   width: 240,
                   child: TextField(
@@ -446,6 +699,12 @@ class _HistoryViewState extends State<HistoryView> {
               );
             },
           ),
+          if (_summary) ...[
+            const SizedBox(height: DrinSpace.s3),
+            local
+                ? _summaryBar(c, _todayLocal(p.history))
+                : _pbxSummary(c, conn!),
+          ],
           const SizedBox(height: DrinSpace.s3),
           Expanded(
             child: AnimatedSwitcher(
@@ -470,6 +729,7 @@ class _HistoryViewState extends State<HistoryView> {
                       ),
                       canDial: p.canDial,
                       onCall: widget.onCall,
+                      byDay: _byDay,
                     )
                   : list.isEmpty
                   ? Center(
@@ -484,14 +744,14 @@ class _HistoryViewState extends State<HistoryView> {
                   : CallTable(
                       key: const ValueKey('local'),
                       columns: _localColumns,
-                      rows: [for (final r in slice) _localRow(r, c, p.canDial)],
+                      rows: _localRows(slice, groups, c, p.canDial),
                     ),
             ),
           ),
           if (local) ...[
             const SizedBox(height: DrinSpace.s2),
             Pager(
-              total: list.length,
+              total: groups.length,
               page: _page,
               pageSize: pageSize,
               onPage: (i) => setState(() => _page = i),

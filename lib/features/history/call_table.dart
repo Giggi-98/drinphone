@@ -41,7 +41,19 @@ class CallRow {
     this.callTooltip,
     this.onTap,
     this.number = '',
-  });
+  }) : section = null,
+       sectionDetail = '';
+
+  /// Intestazione di gruppo (es. "Oggi" · "5 chiamate") tra le righe.
+  const CallRow.section(String this.section, {this.sectionDetail = ''})
+    : cells = const [],
+      call = null,
+      callTooltip = null,
+      onTap = null,
+      number = '';
+
+  final String? section;
+  final String sectionDetail;
   final List<Widget> cells;
   final VoidCallback? call;
   final String? callTooltip;
@@ -108,10 +120,17 @@ class CallTable extends StatelessWidget {
                 itemCount: rows.length + (footer == null ? 0 : 1),
                 itemBuilder: (_, i) => i == rows.length
                     ? footer!
+                    : rows[i].section != null
+                    ? _SectionHeader(
+                        rows[i].section!,
+                        rows[i].sectionDetail,
+                        first: i == 0,
+                      )
                     : Column(
                         children: [
                           _HoverRow(row: rows[i], child: line(rows[i].cells)),
-                          if (i < rows.length - 1)
+                          if (i < rows.length - 1 &&
+                              rows[i + 1].section == null)
                             Divider(height: 1, thickness: 1, color: c.line),
                         ],
                       ),
@@ -544,3 +563,80 @@ class DurationCell extends StatelessWidget {
     );
   }
 }
+
+/// Intestazione di gruppo nella tabella: titolo `heading`, dettaglio
+/// `detail` `muted`, filo `line` sotto.
+class _SectionHeader extends StatelessWidget {
+  const _SectionHeader(this.title, this.detail, {required this.first});
+  final String title;
+  final String detail;
+  final bool first;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.drin;
+    return Container(
+      padding: EdgeInsets.fromLTRB(
+        DrinSpace.s3,
+        first ? DrinSpace.s1 : DrinSpace.s4,
+        DrinSpace.s3,
+        DrinSpace.s1,
+      ),
+      decoration: BoxDecoration(
+        border: Border(bottom: BorderSide(color: c.line)),
+      ),
+      child: Row(
+        children: [
+          Text(title, style: DrinText.heading.copyWith(color: c.ink)),
+          if (detail.isNotEmpty) ...[
+            const SizedBox(width: DrinSpace.s2),
+            Text(detail, style: DrinText.detail.copyWith(color: c.muted)),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// Titolo del giorno per i raggruppamenti: Oggi, Ieri, poi "lunedì 9
+/// novembre" (con l'anno se diverso).
+String dayTitle(DateTime t) {
+  final today = DateTime.now();
+  final d = DateTime(t.year, t.month, t.day);
+  final diff = DateTime(
+    today.year,
+    today.month,
+    today.day,
+  ).difference(d).inDays;
+  if (diff == 0) return tr('Oggi');
+  if (diff == 1) return tr('Ieri');
+  final days = [
+    tr('lunedì'),
+    tr('martedì'),
+    tr('mercoledì'),
+    tr('giovedì'),
+    tr('venerdì'),
+    tr('sabato'),
+    tr('domenica'),
+  ];
+  final months = [
+    tr('gennaio'),
+    tr('febbraio'),
+    tr('marzo'),
+    tr('aprile'),
+    tr('maggio'),
+    tr('giugno'),
+    tr('luglio'),
+    tr('agosto'),
+    tr('settembre'),
+    tr('ottobre'),
+    tr('novembre'),
+    tr('dicembre'),
+  ];
+  final base = '${days[d.weekday - 1]} ${d.day} ${months[d.month - 1]}';
+  return d.year == today.year ? base : '$base ${d.year}';
+}
+
+/// "1 chiamata" / "n chiamate".
+String callsCount(int n) =>
+    n == 1 ? tr('1 chiamata') : tr('{n} chiamate', {'n': n});

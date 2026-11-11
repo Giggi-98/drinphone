@@ -35,8 +35,12 @@ class CdrView extends StatefulWidget {
     required this.filters,
     required this.canDial,
     required this.onCall,
+    this.byDay = false,
   });
   final PbxConnection conn;
+
+  /// Intestazioni per giorno tra le righe (se ordinate per ora).
+  final bool byDay;
 
   /// Filtri scelti sopra la tabella (senza ordinamento né pagina).
   final CdrQuery filters;
@@ -321,6 +325,9 @@ class _CdrViewState extends State<CdrView> {
         _ => (d, c.away),
       };
 
+  static bool _sameDay(DateTime? a, DateTime b) =>
+      a != null && a.year == b.year && a.month == b.month && a.day == b.day;
+
   CallRow _row(CdrRecord r, List<Widget Function(CdrRecord)> cells) {
     // Chi richiamare: l'altro capo rispetto al proprio interno; nel CDR di
     // tutto il PBX chi ha chiamato.
@@ -429,7 +436,17 @@ class _CdrViewState extends State<CdrView> {
       final cells = [for (final x in cols) x.$2];
       body = CallTable(
         columns: [for (final x in cols) x.$1],
-        rows: [for (final r in _data.rows) _row(r, cells)],
+        rows: [
+          for (final (i, r) in _data.rows.indexed) ...[
+            // Nuovo giorno (solo ordinando per ora): intestazione.
+            if (widget.byDay &&
+                _sort == CdrSort.time &&
+                r.time != null &&
+                (i == 0 || !_sameDay(_data.rows[i - 1].time, r.time!)))
+              CallRow.section(dayTitle(r.time!)),
+            _row(r, cells),
+          ],
+        ],
         sortKey: _sort,
         descending: _desc,
         onSort: _loading ? null : _sortBy,
