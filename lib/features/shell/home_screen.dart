@@ -8,6 +8,7 @@ import '../../app/brand.dart';
 import '../../app/l10n.dart';
 import '../../app/phone_controller.dart';
 import '../../app/theme.dart';
+import '../../core/pbx/yeastar_api.dart' show YeastarApiException;
 import '../../core/platform/call_links.dart';
 import '../../core/platform/window_attention.dart';
 import '../../core/security/settings_store.dart';
@@ -198,6 +199,25 @@ class _HomeScreenState extends State<HomeScreen> {
   void _onUpdater() => setState(() {});
 
   void _call(String number) => p.dial(number);
+
+  /// Cambio presenza dal menu dell'header: solo lo stato del proprio interno.
+  Future<void> _setPresence(String status) async {
+    final d = p.ownDetail;
+    if (d == null || status == p.ownPresence) return;
+    try {
+      await p.updateOwnExtension(d.withPresence(status));
+    } catch (e) {
+      if (!mounted) return;
+      // Messaggio del PBX (operazione e codice), mai URL o token.
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            e is YeastarApiException ? '$e' : tr('Salvataggio non riuscito'),
+          ),
+        ),
+      );
+    }
+  }
 
   void _openPreferences([int tab = 0]) => setState(() {
     _prefsTab = tab;
@@ -434,39 +454,76 @@ class _HomeScreenState extends State<HomeScreen> {
               ]),
             ),
           ),
-          // Presenza del proprio interno: simbolo + colore bastano, testo nel tooltip.
+          // Presenza del proprio interno: simbolo + colore bastano, testo nel
+          // tooltip. Clic = menu per cambiarla subito (stessa scrittura di
+          // Preferenze > Presenza, solo `presence_status` del proprio interno).
           if (presence != null) ...[
             const SizedBox(width: 8),
-            Tooltip(
-              message: '${tr('Stato di presenza')} · ${presence.$3}',
-              child: InkWell(
-                onTap: () => _openPreferences(1),
-                borderRadius: BorderRadius.circular(999),
-                child: pill([
-                  AnimatedSwitcher(
-                    duration: const Duration(milliseconds: 200),
-                    transitionBuilder: (child, anim) =>
-                        ScaleTransition(scale: anim, child: child),
-                    child: Icon(
-                      presence.$1,
-                      key: ValueKey(p.ownPresence),
-                      size: 17,
-                      color: presence.$2,
-                    ),
-                  ),
-                  if (customNote.isNotEmpty) ...[
-                    const SizedBox(width: 8),
-                    ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 140),
-                      child: Text(
-                        customNote,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(fontSize: 12, color: c.text),
+            PopupMenuButton<String>(
+              tooltip: '${tr('Stato di presenza')} · ${presence.$3}',
+              position: PopupMenuPosition.under,
+              onSelected: (v) =>
+                  v == 'more' ? _openPreferences(1) : _setPresence(v),
+              itemBuilder: (_) => [
+                for (final st in presenceStatuses)
+                  if (presenceOf(c, st) case final pr?)
+                    PopupMenuItem(
+                      value: st,
+                      height: 40,
+                      enabled: p.ownDetail != null,
+                      child: Row(
+                        children: [
+                          Icon(pr.$1, size: 18, color: pr.$2),
+                          const SizedBox(width: DrinSpace.s3),
+                          Expanded(child: Text(pr.$3)),
+                          if (st == p.ownPresence) ...[
+                            const SizedBox(width: DrinSpace.s3),
+                            Icon(
+                              Icons.check_rounded,
+                              size: 18,
+                              color: c.primary,
+                            ),
+                          ],
+                        ],
                       ),
                     ),
-                  ],
-                ]),
-              ),
+                const PopupMenuDivider(),
+                PopupMenuItem(
+                  value: 'more',
+                  height: 40,
+                  child: Row(
+                    children: [
+                      Icon(Icons.tune_rounded, size: 18, color: c.muted),
+                      const SizedBox(width: DrinSpace.s3),
+                      Text(tr('Impostazioni di presenza…')),
+                    ],
+                  ),
+                ),
+              ],
+              child: pill([
+                AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 200),
+                  transitionBuilder: (child, anim) =>
+                      ScaleTransition(scale: anim, child: child),
+                  child: Icon(
+                    presence.$1,
+                    key: ValueKey(p.ownPresence),
+                    size: 17,
+                    color: presence.$2,
+                  ),
+                ),
+                if (customNote.isNotEmpty) ...[
+                  const SizedBox(width: 8),
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 140),
+                    child: Text(
+                      customNote,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(fontSize: 12, color: c.text),
+                    ),
+                  ),
+                ],
+              ]),
             ),
           ],
           const Spacer(),

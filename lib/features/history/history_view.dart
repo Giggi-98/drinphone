@@ -209,7 +209,7 @@ class _HistoryViewState extends State<HistoryView> {
   /// Colonne del registro di questo PC.
   static List<CallColumn> get _localColumns => [
     CallColumn(tr('Ora'), width: 112),
-    CallColumn(tr('Tipo'), width: 116, hideBelow: 640),
+    CallColumn(tr('Tipo'), width: 56, hideBelow: 640),
     CallColumn(tr('Contatto'), flex: 1),
     CallColumn(tr('Esito'), width: 124),
     CallColumn(tr('Conversazione'), width: 112, end: true, hideBelow: 480),
@@ -217,7 +217,7 @@ class _HistoryViewState extends State<HistoryView> {
 
   CallRow _localRow(CallRecord r, DrinColors c, bool canDial) {
     final (icon, color, kind) = r.missed
-        ? (Icons.call_missed_rounded, c.busyText, tr('In arrivo'))
+        ? (Icons.call_missed_rounded, c.busyText, tr('In arrivo, persa'))
         : r.direction == CallDirection.incoming
         ? (Icons.call_received_rounded, c.freeText, tr('In arrivo'))
         : (Icons.call_made_rounded, c.primary, tr('In uscita'));
@@ -229,7 +229,7 @@ class _HistoryViewState extends State<HistoryView> {
     return CallRow(
       cells: [
         WhenCell(r.start),
-        KindCell(icon, kind, color: color),
+        KindCell(icon, kind, color: color, iconOnly: true),
         party(
           r.name,
           r.number,
@@ -276,15 +276,15 @@ class _HistoryViewState extends State<HistoryView> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Una riga sola se c'è spazio; altrimenti titolo e ricerca sopra,
-          // fonte e filtri sotto (vanno a capo se non entrano).
+          // Titolo, fonte e ricerca sopra; filtri sotto (a capo solo se
+          // la finestra è stretta).
           LayoutBuilder(
             builder: (context, box) {
               final title = Text(
                 tr('Registro chiamate'),
                 style: DrinText.title.copyWith(color: c.ink),
               );
-              final filters = <Widget>[
+              final source = <Widget>[
                 if (cdr) ...[
                   SegmentedButton<_Source>(
                     showSelectedIcon: false,
@@ -312,8 +312,9 @@ class _HistoryViewState extends State<HistoryView> {
                       _page = 0;
                     }),
                   ),
-                  const SizedBox(width: DrinSpace.s3),
                 ],
+              ];
+              final filters = <Widget>[
                 if (local)
                   _menu(
                     tr('Tipo'),
@@ -418,31 +419,34 @@ class _HistoryViewState extends State<HistoryView> {
                     icon: Icon(Icons.delete_sweep_outlined, color: c.muted),
                   ),
               ];
-              if (box.maxWidth >= 1120) {
-                return Row(
-                  children: [
-                    title,
-                    const SizedBox(width: DrinSpace.s4),
-                    Expanded(
-                      child: Wrap(
-                        crossAxisAlignment: WrapCrossAlignment.center,
-                        runSpacing: DrinSpace.s2,
-                        children: filters,
-                      ),
-                    ),
-                    ...search,
-                  ],
-                );
-              }
+              // Riga 1: titolo, fonte (se c'è spazio) e ricerca; riga 2: i
+              // filtri tutti insieme (prima "Periodo" restava solo a capo).
+              final wide = box.maxWidth >= 1000;
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(children: [title, const Spacer(), ...search]),
+                  Row(
+                    children: [
+                      title,
+                      if (wide && source.isNotEmpty) ...[
+                        const SizedBox(width: DrinSpace.s4),
+                        ...source,
+                      ],
+                      const Spacer(),
+                      ...search,
+                    ],
+                  ),
                   const SizedBox(height: DrinSpace.s3),
                   Wrap(
                     crossAxisAlignment: WrapCrossAlignment.center,
                     runSpacing: DrinSpace.s2,
-                    children: filters,
+                    children: [
+                      if (!wide && source.isNotEmpty) ...[
+                        ...source,
+                        const SizedBox(width: DrinSpace.s3),
+                      ],
+                      ...filters,
+                    ],
                   ),
                 ],
               );

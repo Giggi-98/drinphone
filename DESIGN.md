@@ -126,7 +126,9 @@ Regole:
   `label` in `muted` su riga da 36 con bordo `line` e la stessa spaziatura
   orizzontale delle righe (`s3` a sinistra, `48` riservati a destra per
   Richiama); righe da 52 separate da `line`, hover `raised` con raggio riga;
-  Ora in `number` con il giorno sotto in `detail`; nomi `heading` con numero
+  Ora in `number` con il giorno sotto in `detail`; Tipo come sola icona
+  (entrante `freeText`, persa `busyText`, uscente e interna `primary`) con la
+  parola nel tooltip; nomi `heading` con numero
   sotto in `number` (se manca il nome il numero è sulla prima riga in `number`,
   mai in `heading`; se c'è anche la riga secondaria "risposto da" il numero
   sta accanto al nome in `number` `muted`); "risposto da" di gruppi e code in

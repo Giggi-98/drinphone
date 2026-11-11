@@ -438,14 +438,32 @@ class WhenCell extends StatelessWidget {
 
 /// Tipo di chiamata: icona e parola, senza fondo.
 class KindCell extends StatelessWidget {
-  const KindCell(this.icon, this.label, {super.key, this.color});
+  const KindCell(
+    this.icon,
+    this.label, {
+    super.key,
+    this.color,
+    this.iconOnly = false,
+  });
   final IconData icon;
   final String label;
   final Color? color;
 
+  /// Nelle tabelle: solo il simbolo, la parola nel tooltip.
+  final bool iconOnly;
+
   @override
   Widget build(BuildContext context) {
     final c = context.drin;
+    if (iconOnly) {
+      return Align(
+        alignment: Alignment.centerLeft,
+        child: Tooltip(
+          message: label,
+          child: Icon(icon, size: 18, color: color ?? c.primary),
+        ),
+      );
+    }
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [

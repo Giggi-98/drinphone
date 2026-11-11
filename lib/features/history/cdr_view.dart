@@ -188,7 +188,7 @@ class _CdrViewState extends State<CdrView> {
         (
           CallColumn(
             tr('Tipo'),
-            width: 116,
+            width: 64,
             hideBelow: 900,
             sortKey: CdrSort.type,
           ),
@@ -298,7 +298,7 @@ class _CdrViewState extends State<CdrView> {
 
   static Widget _kindCell(CdrRecord r) {
     final (icon, label) = kind(r.callType);
-    return KindCell(icon, label);
+    return KindCell(icon, label, iconOnly: true);
   }
 
   /// Tipo di chiamata a parole, con l'icona.

@@ -45,6 +45,16 @@ String blfLabel(BlfStatus? s) => switch (s) {
   _ => tr('Stato sconosciuto'),
 };
 
+/// Stati di presenza Yeastar, nell'ordine dei menu.
+const presenceStatuses = [
+  'available',
+  'away',
+  'business_trip',
+  'do_not_disturb',
+  'lunch',
+  'off_work',
+];
+
 /// Presenza Yeastar: (icona, colore, etichetta); null se assente.
 (IconData, Color, String)? presenceOf(DrinColors c, String presence) =>
     switch (presence) {
@@ -237,18 +247,53 @@ class CallIconButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = context.drin;
-    return IconButton.filledTonal(
-      tooltip: tooltip ?? tr('Chiama'),
-      style: IconButton.styleFrom(
-        backgroundColor: c.keyBtn,
-        foregroundColor: c.accent,
-        disabledBackgroundColor: c.keyBtn.withValues(alpha: 0.4),
-        minimumSize: const Size(40, 40),
+    return Pressable(
+      enabled: onPressed != null,
+      child: IconButton.filledTonal(
+        tooltip: tooltip ?? tr('Chiama'),
+        style: IconButton.styleFrom(
+          backgroundColor: c.keyBtn,
+          foregroundColor: c.accent,
+          disabledBackgroundColor: c.keyBtn.withValues(alpha: 0.4),
+          minimumSize: const Size(40, 40),
+        ),
+        onPressed: onPressed,
+        icon: Icon(icon, size: 18),
       ),
-      onPressed: onPressed,
-      icon: Icon(icon, size: 18),
     );
   }
+}
+
+/// Pressione "a molla" (DESIGN §5): il figlio si stringe a 0,94 mentre il
+/// puntatore è giù e torna in `fast`; niente con "riduci movimento".
+class Pressable extends StatefulWidget {
+  const Pressable({super.key, required this.child, this.enabled = true});
+  final Widget child;
+  final bool enabled;
+
+  @override
+  State<Pressable> createState() => _PressableState();
+}
+
+class _PressableState extends State<Pressable> {
+  bool _down = false;
+
+  void _set(bool v) {
+    if (widget.enabled && _down != v) setState(() => _down = v);
+  }
+
+  @override
+  Widget build(BuildContext context) => Listener(
+    onPointerDown: (_) => _set(true),
+    onPointerUp: (_) => _set(false),
+    onPointerCancel: (_) => _set(false),
+    child: AnimatedScale(
+      scale: _down ? 0.94 : 1,
+      duration: DrinMotion.of(context, DrinMotion.fast),
+      curve: Curves.easeOutBack,
+      child: widget.child,
+    ),
+  );
 }
 
 /// Badge numerico per la barra laterale.
@@ -260,21 +305,35 @@ class CountBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = context.drin;
-    if (count <= 0) return const SizedBox.shrink();
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 1),
-      decoration: BoxDecoration(
-        color: alert ? c.busy : c.keyBtn,
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Text(
-        '$count',
-        style: TextStyle(
-          fontSize: 11,
-          fontWeight: FontWeight.w700,
-          color: alert ? Colors.white : c.text,
+    // Il numero che cambia entra con una piccola scala (DrinMotion.base).
+    return AnimatedSwitcher(
+      duration: DrinMotion.of(context, DrinMotion.base),
+      switchInCurve: DrinMotion.curve,
+      transitionBuilder: (child, anim) => FadeTransition(
+        opacity: anim,
+        child: ScaleTransition(
+          scale: Tween(begin: 0.7, end: 1.0).animate(anim),
+          child: child,
         ),
       ),
+      child: count <= 0
+          ? const SizedBox.shrink(key: ValueKey(0))
+          : Container(
+              key: ValueKey(count),
+              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 1),
+              decoration: BoxDecoration(
+                color: alert ? c.busy : c.keyBtn,
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: Text(
+                '$count',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  color: alert ? c.onBusy : c.text,
+                ),
+              ),
+            ),
     );
   }
 }
@@ -467,14 +526,7 @@ Future<void> showStatusLegend(BuildContext context) => showDialog<void>(
             row(ring(c.ringing), tr('Squilla')),
             row(ring(null), tr('Non registrato')),
             head(tr('Simbolo: presenza')),
-            for (final st in const [
-              'available',
-              'away',
-              'do_not_disturb',
-              'lunch',
-              'business_trip',
-              'off_work',
-            ])
+            for (final st in presenceStatuses)
               if (presenceOf(c, st) case final p?)
                 row(Icon(p.$1, size: 18, color: p.$2), p.$3),
           ],

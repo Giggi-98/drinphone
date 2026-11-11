@@ -5,14 +5,7 @@ part of 'preferences_view.dart';
 // solo i campi utente ammessi e solo sul proprio interno (DECISIONS "Scrittura
 // sul proprio interno", YeastarApi.ownWritable).
 
-const _statuses = [
-  'available',
-  'away',
-  'business_trip',
-  'do_not_disturb',
-  'lunch',
-  'off_work',
-];
+const _statuses = presenceStatuses;
 
 /// Destinazioni che si possono scegliere; le altre (IVR, code, gruppi,
 /// messaggi registrati) si tengono se già impostate sul PBX.

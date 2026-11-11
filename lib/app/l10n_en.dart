@@ -670,6 +670,8 @@ const en = <String, String>{
   'Copia numero': 'Copy number',
   'Richiama': 'Call back',
   'Legenda degli stati': 'Status legend',
+  'In arrivo, persa': 'Incoming, missed',
+  'Impostazioni di presenza…': 'Presence settings…',
   'Vista a schede': 'Card view',
   'Vista a righe': 'Row view',
   'Le chiamate del PBX compaiono qui appena iniziano, divise tra entranti e uscenti.': 'PBX calls show up here as soon as they start, split into incoming and outgoing.',
