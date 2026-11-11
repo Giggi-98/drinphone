@@ -37,6 +37,12 @@ class PbxExtension {
   final String presence;
 }
 
+/// Nome di rubrica pulito: niente separatori in testa o in coda
+/// ("- Alessandro Garrappa" quando l'azienda è vuota) e spazi doppi ridotti.
+String cleanContactName(String s) => s
+    .replaceAll(RegExp(r'\s+'), ' ')
+    .replaceAll(RegExp(r'^[\s\-–—·:,]+|[\s\-–—·:,]+$'), '');
+
 /// Contatto della rubrica aziendale (company_contact/list).
 class PbxContact {
   const PbxContact({
@@ -535,7 +541,7 @@ class YeastarApi {
         out.add(
           PbxContact(
             id: (c['id'] as num?)?.toInt() ?? 0,
-            name: '${c['contact_name'] ?? ''}',
+            name: cleanContactName('${c['contact_name'] ?? ''}'),
             company: '${c['company'] ?? ''}',
             jobTitle: '${c['job_title'] ?? ''}',
             email: '${c['email'] ?? ''}',

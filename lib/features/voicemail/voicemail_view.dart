@@ -84,11 +84,8 @@ class VoicemailView extends StatelessWidget {
           ),
           const SizedBox(height: 24),
           FilledButton.icon(
-            style: FilledButton.styleFrom(
-              backgroundColor: context.drin.free,
-              foregroundColor: context.drin.onFree,
-              minimumSize: const Size(240, 48),
-            ),
+            // Azione neutra: `primary` (il verde è solo per rispondere).
+            style: FilledButton.styleFrom(minimumSize: const Size(240, 48)),
             onPressed: phone.canDial ? phone.callVoicemail : null,
             icon: const Icon(Icons.play_arrow_rounded),
             label: Text(
@@ -101,7 +98,7 @@ class VoicemailView extends StatelessWidget {
           Text(
             tr(
               'Messaggi letti dal PBX. L’ascolto chiama il codice della '
-              'casella vocale, modificabile in Impostazioni.',
+              'casella vocale, modificabile in Preferenze.',
             ),
             style: TextStyle(fontSize: 12, color: c.muted),
           ),

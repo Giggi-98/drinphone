@@ -306,6 +306,18 @@ ThemeData buildTheme(Brightness b) {
     scaffoldBackgroundColor: c.ground,
     dividerColor: c.line,
     extensions: [c],
+    // Menu: stanno sopra (ombra), fondo `surface`, bordo `line`, raggio pannello.
+    popupMenuTheme: PopupMenuThemeData(
+      color: c.surface,
+      surfaceTintColor: Colors.transparent,
+      elevation: 8,
+      textStyle: t(DrinText.body, c.ink),
+      labelTextStyle: WidgetStatePropertyAll(t(DrinText.body, c.ink)),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(DrinRadius.panel),
+        side: BorderSide(color: c.line),
+      ),
+    ),
     dialogTheme: DialogThemeData(
       backgroundColor: c.surface,
       shape: RoundedRectangleBorder(

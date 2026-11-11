@@ -7,6 +7,7 @@ import 'package:flutter/rendering.dart';
 
 import '../../app/l10n.dart';
 import '../../app/theme.dart';
+import '../../core/pbx/yeastar_api.dart' show cleanContactName;
 import '../shell/widgets.dart';
 
 /// Colonna: larghezza fissa o quota dello spazio libero; sotto [hideBelow]
@@ -131,8 +132,9 @@ class CallTable extends StatelessWidget {
       onTap: () => sort(key),
       child: Row(
         mainAxisSize: MainAxisSize.min,
-        mainAxisAlignment:
-            col.end ? MainAxisAlignment.end : MainAxisAlignment.start,
+        mainAxisAlignment: col.end
+            ? MainAxisAlignment.end
+            : MainAxisAlignment.start,
         children: [
           Flexible(child: text),
           const SizedBox(width: 2),
@@ -291,16 +293,69 @@ class TwoLine extends StatelessWidget {
   }
 }
 
+/// ID chiamante del PBX "Nome:Etichetta:numero" (es. "Fonica Srl - Damiano:
+/// Econnet Whitelist:0817347838"): nome pulito ed etichette a parte, senza
+/// il numero ripetuto.
+(String, List<String>) splitCallerName(String name, String number) {
+  final parts = name.split(':').map(cleanContactName).toList();
+  return (
+    parts.first,
+    [
+      for (final p in parts.skip(1))
+        if (p.isNotEmpty && p != number && p != parts.first) p,
+    ],
+  );
+}
+
 /// Chi parla in una cella: nome e numero, o solo il numero (in `number`).
-TwoLine party(String name, String number, {Color? color, Widget? extra}) =>
-    name.isNotEmpty && name != number
-    ? TwoLine(name, bottom: number, color: color, extra: extra)
-    : TwoLine(
-        number.isEmpty ? '—' : number,
-        color: color,
-        extra: extra,
-        numberTop: number.isNotEmpty,
-      );
+/// Le etichette dell'ID chiamante vanno in una pillola sotto.
+TwoLine party(String rawName, String number, {Color? color, Widget? extra}) {
+  final (name, tags) = splitCallerName(rawName, number);
+  final more = extra ?? (tags.isEmpty ? null : TagLine(tags));
+  return name.isNotEmpty && name != number
+      ? TwoLine(name, bottom: number, color: color, extra: more)
+      : TwoLine(
+          number.isEmpty ? '—' : number,
+          color: color,
+          extra: more,
+          numberTop: number.isNotEmpty,
+        );
+}
+
+/// Etichette dell'ID chiamante: pillola `panel` in `label` `muted`.
+class TagLine extends StatelessWidget {
+  const TagLine(this.tags, {super.key});
+  final List<String> tags;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.drin;
+    return Padding(
+      padding: const EdgeInsets.only(top: 2),
+      child: Row(
+        children: [
+          for (final t in tags)
+            Flexible(
+              child: Container(
+                margin: const EdgeInsets.only(right: DrinSpace.s1),
+                padding: const EdgeInsets.symmetric(horizontal: DrinSpace.s2),
+                decoration: BoxDecoration(
+                  color: c.panel,
+                  borderRadius: BorderRadius.circular(DrinRadius.pill),
+                ),
+                child: Text(
+                  t,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: DrinText.label.copyWith(color: c.muted),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
 
 /// Riga secondaria con icona (risposto da, nota).
 class SubLine extends StatelessWidget {

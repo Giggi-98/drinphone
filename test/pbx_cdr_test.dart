@@ -329,50 +329,81 @@ void main() {
     expect('$back', isNot(contains('S3greta!')));
   }, skip: !Platform.isWindows);
 
-  test('evento 30039 (Call End Timeline Notification): parsing leg ed event_list', () {
-    final leg = CdrTimelineLeg.fromEvent({
-      'uid': '20261110153903FFA95',
-      'cdr_id': '20261110153903FFA95-1',
-      'leg': 1,
-      'time_start': '2026/11/10 15:39:03',
-      'call_from': '+493075425583',
-      'call_to': 'RING_SKILLWORKS<6300>',
-      'src_trunk': 'SKILLWORKS_0308373176',
-      'status': 'ANSWERED',
-      'ring_duration': 4,
-      'talk_duration': 27,
-      'hold_duration': 0,
-      'event_list': [
-        {
-          'event_id': '1',
-          'event_name': 'call_from',
-          'event_type': 'basic',
-          'event_ts': '2026/11/10 15:39:03',
-          'event_content': {'src': '+493075425583', 'trunk': 'SKILLWORKS_0308373176'},
-        },
-        {
-          'event_id': '2',
-          'event_name': 'assign_agents',
-          'event_type': 'ring_group',
-          'event_ts': '2026/11/10 15:39:04',
-          'event_content': {
-            'agents': [
-              {'name': 'Margherita Talenti<200>', 'status': 'ANSWERED', 'ring_duration': 3},
-              {'name': 'Luca Ferrari<202>', 'status': 'NO ANSWER', 'ring_duration': 3},
-            ],
+  test(
+    'evento 30039 (Call End Timeline Notification): parsing leg ed event_list',
+    () {
+      final leg = CdrTimelineLeg.fromEvent({
+        'uid': '20261110153903FFA95',
+        'cdr_id': '20261110153903FFA95-1',
+        'leg': 1,
+        'time_start': '2026/11/10 15:39:03',
+        'call_from': '+493075425583',
+        'call_to': 'RING_SKILLWORKS<6300>',
+        'src_trunk': 'SKILLWORKS_0308373176',
+        'status': 'ANSWERED',
+        'ring_duration': 4,
+        'talk_duration': 27,
+        'hold_duration': 0,
+        'event_list': [
+          {
+            'event_id': '1',
+            'event_name': 'call_from',
+            'event_type': 'basic',
+            'event_ts': '2026/11/10 15:39:03',
+            'event_content': {
+              'src': '+493075425583',
+              'trunk': 'SKILLWORKS_0308373176',
+            },
           },
-        },
+          {
+            'event_id': '2',
+            'event_name': 'assign_agents',
+            'event_type': 'ring_group',
+            'event_ts': '2026/11/10 15:39:04',
+            'event_content': {
+              'agents': [
+                {
+                  'name': 'Margherita Talenti<200>',
+                  'status': 'ANSWERED',
+                  'ring_duration': 3,
+                },
+                {
+                  'name': 'Luca Ferrari<202>',
+                  'status': 'NO ANSWER',
+                  'ring_duration': 3,
+                },
+              ],
+            },
+          },
+        ],
+      });
+      expect(leg, isNotNull);
+      expect(leg!.uid, '20261110153903FFA95');
+      expect(leg.leg, 1);
+      expect(leg.timeStart, DateTime(2026, 11, 10, 15, 39, 3));
+      expect(leg.ring, 4);
+      expect(leg.talk, 27);
+      expect(leg.events.length, 2);
+      expect(leg.events.first.name, 'call_from');
+      expect(leg.events.last.name, 'assign_agents');
+    },
+  );
+
+  // Bug 0.1.6: tutti gli offset della timeline a 00:00 se event_ts non è testo.
+  test('30039: event_ts come timestamp Unix (secondi o millisecondi)', () {
+    final t = DateTime(2026, 11, 11, 9, 59, 40);
+    final s = t.millisecondsSinceEpoch ~/ 1000;
+    final leg = CdrTimelineLeg.fromEvent({
+      'uid': 'x',
+      'time_start': '$s',
+      'event_list': [
+        {'event_name': 'call_to', 'event_ts': '$s'},
+        {'event_name': 'answer', 'event_ts': '${(s + 7) * 1000}'},
       ],
-    });
-    expect(leg, isNotNull);
-    expect(leg!.uid, '20261110153903FFA95');
-    expect(leg.leg, 1);
-    expect(leg.timeStart, DateTime(2026, 11, 10, 15, 39, 3));
-    expect(leg.ring, 4);
-    expect(leg.talk, 27);
-    expect(leg.events.length, 2);
-    expect(leg.events.first.name, 'call_from');
-    expect(leg.events.last.name, 'assign_agents');
+    })!;
+    expect(leg.timeStart, t);
+    expect(leg.events.first.time, t);
+    expect(leg.events.last.time, t.add(const Duration(seconds: 7)));
   });
 }
 

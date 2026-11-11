@@ -194,10 +194,7 @@ class _CdrViewState extends State<CdrView> {
           ),
           (r) => _kindCell(r),
         ),
-      (
-        CallColumn(tr('Da'), flex: 3),
-        (r) => party(r.srcName, r.src),
-      ),
+      (CallColumn(tr('Da'), flex: 3), (r) => party(r.srcName, r.src)),
       (
         CallColumn(tr('A'), flex: 3),
         (r) {
@@ -504,6 +501,9 @@ String _pretty(String s) {
   return m == null ? s : '${m[1]} · ${m[2]}';
 }
 
+/// Chi ha chiuso è il PBX stesso (`System` nel CDR).
+bool _isSystem(String s) => s.trim().toLowerCase() == 'system';
+
 /// Coda, gruppo di squillo, IVR, call flow attraversati: il primo con la
 /// sua icona, gli altri nel tooltip.
 class _RouteCell extends StatelessWidget {
@@ -638,6 +638,7 @@ class _CdrDetailsState extends State<_CdrDetails> {
           ? tr('Interlocutore esterno')
           : '${tr('Interlocutore esterno')} ($ext)';
     }
+    if (_isSystem(raw)) return tr('Sistema (PBX)');
     return _pretty(raw);
   }
 
@@ -664,12 +665,10 @@ class _CdrDetailsState extends State<_CdrDetails> {
   List<_TimelineLeg> _fromEvent30039(DrinColors c) {
     final t0 =
         r.time ??
-        r.timeline
-            .map((l) => l.timeStart)
-            .whereType<DateTime>()
-            .firstOrNull;
-    int off(DateTime? t, int fallback) =>
-        t != null && t0 != null ? math.max(0, t.difference(t0).inSeconds) : fallback;
+        r.timeline.map((l) => l.timeStart).whereType<DateTime>().firstOrNull;
+    int off(DateTime? t, int fallback) => t != null && t0 != null
+        ? math.max(0, t.difference(t0).inSeconds)
+        : fallback;
     final out = <_TimelineLeg>[];
     for (final leg in r.timeline) {
       final steps = <_TimelineStep>[];
@@ -692,11 +691,11 @@ class _CdrDetailsState extends State<_CdrDetails> {
           steps.add(
             _TimelineStep(
               offsetSec: legStart,
-              title: tr('Tentativo di contatto {n}', {'n': _pretty(leg.callTo)}),
+              title: tr('Tentativo di contatto {n}', {
+                'n': _pretty(leg.callTo),
+              }),
               subtitle: leg.ring > 0
-                  ? tr('Squillo per {d}', {
-                      'd': _CdrDetails._hms(leg.ring),
-                    })
+                  ? tr('Squillo per {d}', {'d': _CdrDetails._hms(leg.ring)})
                   : '',
             ),
           );
@@ -710,17 +709,35 @@ class _CdrDetailsState extends State<_CdrDetails> {
               title: tr('{n} ha risposto alla chiamata', {
                 'n': _pretty(leg.callTo),
               }),
-              subtitle:
-                  '${tr('Conversazione')}: ${_CdrDetails._hms(leg.talk)}',
+              subtitle: '${tr('Conversazione')}: ${_CdrDetails._hms(leg.talk)}',
             ),
           );
         }
       } else {
         for (final ev in leg.events) {
-          final evOff = off(ev.time, legStart);
           final name = ev.name.toLowerCase();
+          final isAnswer =
+              name.contains('answer') && !name.contains('no_answer');
+          final isEnd =
+              name.contains('hang') ||
+              name.contains('hung') ||
+              name.contains('end');
+          // Senza orario dell'evento: risposta dopo lo squillo, chiusura dopo
+          // squillo + conversazione (non tutto a 00:00).
+          final evOff = off(
+            ev.time,
+            legStart +
+                (isAnswer
+                    ? leg.ring
+                    : isEnd
+                    ? leg.ring + leg.talk
+                    : 0),
+          );
           final target = _pretty(
-            ev.content['dst'] ?? ev.content['target'] ?? ev.content['name'] ?? leg.callTo,
+            ev.content['dst'] ??
+                ev.content['target'] ??
+                ev.content['name'] ??
+                leg.callTo,
           );
           final sub = [
             if ((ev.content['trunk'] ?? '').isNotEmpty)
@@ -755,9 +772,7 @@ class _CdrDetailsState extends State<_CdrDetails> {
                 offsetSec: evOff,
                 title: tr('Ingresso in {d}', {'d': target}),
                 subtitle: leg.ring > 0
-                    ? tr('Squillo per {d}', {
-                        'd': _CdrDetails._hms(leg.ring),
-                      })
+                    ? tr('Squillo per {d}', {'d': _CdrDetails._hms(leg.ring)})
                     : sub,
               ),
             );
@@ -778,7 +793,15 @@ class _CdrDetailsState extends State<_CdrDetails> {
                 subtitle: sub,
               ),
             );
-          } else if (name.contains('answer') && !name.contains('no_answer')) {
+          } else if (name == 'call_to') {
+            steps.add(
+              _TimelineStep(
+                offsetSec: evOff,
+                title: tr('Chiamata verso {n}', {'n': target}),
+                subtitle: sub,
+              ),
+            );
+          } else if (isAnswer) {
             steps.add(
               _TimelineStep(
                 offsetSec: evOff,
@@ -789,26 +812,29 @@ class _CdrDetailsState extends State<_CdrDetails> {
                     '${tr('Conversazione')}: ${_CdrDetails._hms(leg.talk)}',
               ),
             );
-          } else if (name.contains('hang') ||
-              name.contains('hung') ||
-              name.contains('end')) {
+          } else if (isEnd) {
+            final by =
+                ev.content['by'] ?? ev.content['party'] ?? _closerParty(target);
             steps.add(
               _TimelineStep(
                 offsetSec: evOff,
                 icon: Icons.call_end_rounded,
                 tone: _StepTone.ended,
-                title: tr('{n} ha riagganciato', {
-                  'n': _pretty(
-                    ev.content['by'] ?? ev.content['party'] ?? _closerParty(target),
-                  ),
-                }),
+                title: _isSystem(by)
+                    ? tr('Chiusa dal sistema')
+                    : tr('{n} ha riagganciato', {'n': _pretty(by)}),
               ),
             );
           } else {
+            // Evento non previsto: nome leggibile, mai la chiave grezza.
+            final label = ev.name.replaceAll('_', ' ').trim();
+            final nice = label.isEmpty
+                ? ''
+                : label[0].toUpperCase() + label.substring(1);
             steps.add(
               _TimelineStep(
                 offsetSec: evOff,
-                title: '${ev.name}${target.isNotEmpty ? ': $target' : ''}',
+                title: '$nice${target.isNotEmpty ? ': $target' : ''}',
                 subtitle: sub,
               ),
             );
@@ -823,10 +849,10 @@ class _CdrDetailsState extends State<_CdrDetails> {
   }
 
   List<_TimelineLeg> _fromCdrRecord(DrinColors c) {
-    final t0 =
-        r.time ?? (r.legs.isNotEmpty ? r.legs.first.time : null);
-    int off(DateTime? t, int fallback) =>
-        t != null && t0 != null ? math.max(0, t.difference(t0).inSeconds) : fallback;
+    final t0 = r.time ?? (r.legs.isNotEmpty ? r.legs.first.time : null);
+    int off(DateTime? t, int fallback) => t != null && t0 != null
+        ? math.max(0, t.difference(t0).inSeconds)
+        : fallback;
 
     final caller = _CdrDetails._party(r.srcName, r.src);
     final firstDst = _CdrDetails._party(r.dstName, r.dst);
@@ -848,18 +874,12 @@ class _CdrDetailsState extends State<_CdrDetails> {
 
     for (final s in r.ivrs) {
       leg1.add(
-        _TimelineStep(
-          offsetSec: 0,
-          title: '${tr('IVR')}: ${_pretty(s)}',
-        ),
+        _TimelineStep(offsetSec: 0, title: '${tr('IVR')}: ${_pretty(s)}'),
       );
     }
     for (final s in r.callFlows) {
       leg1.add(
-        _TimelineStep(
-          offsetSec: 0,
-          title: '${tr('Call flow')}: ${_pretty(s)}',
-        ),
+        _TimelineStep(offsetSec: 0, title: '${tr('Call flow')}: ${_pretty(s)}'),
       );
     }
 
@@ -903,9 +923,7 @@ class _CdrDetailsState extends State<_CdrDetails> {
           _TimelineStep(
             offsetSec: 0,
             title: tr('Ingresso in {d}', {'d': groupLabel}),
-            subtitle: tr('Squillo per {d}', {
-              'd': _CdrDetails._hms(groupRing),
-            }),
+            subtitle: tr('Squillo per {d}', {'d': _CdrDetails._hms(groupRing)}),
           ),
         );
       }
@@ -924,10 +942,10 @@ class _CdrDetailsState extends State<_CdrDetails> {
               if (ans) {
                 line = tr('{n}: Ha risposto alla chiamata', {'n': who});
               } else if (r.answered) {
-                line = tr(
-                  '{n}: Risposto da un altro interno dopo {d}',
-                  {'n': who, 'd': _CdrDetails._hms(ml.ring)},
-                );
+                line = tr('{n}: Risposto da un altro interno dopo {d}', {
+                  'n': who,
+                  'd': _CdrDetails._hms(ml.ring),
+                });
               } else {
                 final (outLabel, _) = _CdrViewState.outcome(ml.disposition, c);
                 line = '$who: $outLabel (${_CdrDetails._hms(ml.ring)})';
@@ -999,9 +1017,9 @@ class _CdrDetailsState extends State<_CdrDetails> {
         offsetSec: endOff,
         icon: Icons.call_end_rounded,
         tone: _StepTone.ended,
-        title: tr('{n} ha riagganciato', {
-          'n': closer.isEmpty ? '—' : closer,
-        }),
+        title: _isSystem(closer)
+            ? tr('Chiusa dal sistema')
+            : tr('{n} ha riagganciato', {'n': closer.isEmpty ? '—' : closer}),
       ),
     ];
 
@@ -1015,7 +1033,11 @@ class _CdrDetailsState extends State<_CdrDetails> {
 
   // --------------------------------------------------- Pannello 1: Riepilogo
 
-  Widget _buildBasicCard(DrinColors c, String outcomeLabel, Color outcomeColor) {
+  Widget _buildBasicCard(
+    DrinColors c,
+    String outcomeLabel,
+    Color outcomeColor,
+  ) {
     final (kindIcon, kindLabel) = _CdrViewState.kind(r.callType);
     final closedBy = _closedByLabel();
     final extraFields = <(String, String, bool)>[
@@ -1083,7 +1105,7 @@ class _CdrDetailsState extends State<_CdrDetails> {
             ),
             sectionItem(
               tr('A'),
-              _PartyChip(name: r.dstName, number: r.dst, accent: c.squillo),
+              _PartyChip(name: r.dstName, number: r.dst, accent: c.brand),
             ),
             if (r.secondDst.isNotEmpty && r.secondDst != r.lastDst)
               sectionItem(
@@ -1100,13 +1122,10 @@ class _CdrDetailsState extends State<_CdrDetails> {
                 _PartyChip(
                   name: r.lastDstName,
                   number: r.lastDst,
-                  accent: c.free,
+                  accent: c.primary,
                 ),
               ),
-            sectionItem(
-              tr('Esito'),
-              OutcomePill(outcomeLabel, outcomeColor),
-            ),
+            sectionItem(tr('Esito'), OutcomePill(outcomeLabel, outcomeColor)),
             if (closedBy.isNotEmpty)
               sectionItem(
                 tr('Chiuso da'),
@@ -1148,10 +1167,7 @@ class _CdrDetailsState extends State<_CdrDetails> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            tr('Timeline'),
-            style: DrinText.heading.copyWith(color: c.ink),
-          ),
+          Text(tr('Timeline'), style: DrinText.heading.copyWith(color: c.ink)),
           const SizedBox(height: DrinSpace.s3),
           Expanded(
             child: SingleChildScrollView(
@@ -1242,9 +1258,7 @@ class _CdrDetailsState extends State<_CdrDetails> {
               children: [
                 indicator,
                 if (drawLineBelow)
-                  Expanded(
-                    child: Container(width: 1.5, color: c.line),
-                  ),
+                  Expanded(child: Container(width: 1.5, color: c.line)),
               ],
             ),
           ),
@@ -1415,10 +1429,7 @@ class _CdrDetailsState extends State<_CdrDetails> {
           ),
           const SizedBox(width: DrinSpace.s2),
           Expanded(
-            child: Text(
-              label,
-              style: DrinText.detail.copyWith(color: c.muted),
-            ),
+            child: Text(label, style: DrinText.detail.copyWith(color: c.muted)),
           ),
           Text(
             '${_CdrDetails._hms(sec)} · ${pct(sec)}',
@@ -1464,9 +1475,10 @@ class _CdrDetailsState extends State<_CdrDetails> {
                     size: const Size.square(168),
                     painter: _DonutPainter(
                       slices: [
-                        (ring.toDouble(), c.free),
-                        (talk.toDouble(), c.squillo),
-                        (hold.toDouble(), c.brand),
+                        // DESIGN §1: giallo solo a ciò che squilla.
+                        (ring.toDouble(), c.squillo),
+                        (talk.toDouble(), c.free),
+                        (hold.toDouble(), c.away),
                       ],
                       emptyColor: c.line,
                     ),
@@ -1492,9 +1504,9 @@ class _CdrDetailsState extends State<_CdrDetails> {
             ),
           ),
           const SizedBox(height: DrinSpace.s5),
-          legendRow(c.free, tr('Squillo'), ring),
-          legendRow(c.squillo, tr('Conversazione'), talk),
-          legendRow(c.brand, tr('In attesa'), hold),
+          legendRow(c.squillo, tr('Squillo'), ring),
+          legendRow(c.free, tr('Conversazione'), talk),
+          legendRow(c.away, tr('In attesa'), hold),
         ],
       ),
     );
@@ -1553,10 +1565,7 @@ class _CdrDetailsState extends State<_CdrDetails> {
                           children: [
                             _buildBasicCard(c, outcomeLabel, outcomeColor),
                             const SizedBox(height: DrinSpace.s3),
-                            SizedBox(
-                              height: 420,
-                              child: _buildTimelineCard(c),
-                            ),
+                            SizedBox(height: 420, child: _buildTimelineCard(c)),
                             const SizedBox(height: DrinSpace.s3),
                             _buildBreakdownCard(c),
                           ],
@@ -1573,10 +1582,7 @@ class _CdrDetailsState extends State<_CdrDetails> {
                         const SizedBox(width: DrinSpace.s3),
                         Expanded(child: _buildTimelineCard(c)),
                         const SizedBox(width: DrinSpace.s3),
-                        SizedBox(
-                          width: 296,
-                          child: _buildBreakdownCard(c),
-                        ),
+                        SizedBox(width: 296, child: _buildBreakdownCard(c)),
                       ],
                     );
                   },

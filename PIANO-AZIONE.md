@@ -85,7 +85,11 @@ Estende "Azioni rapide", "Scorciatoie" e "Allineamento grafico" qui sopra.
 Ordine: prima **A** (sono errori), poi **B–C** (vincite rapide), poi il resto.
 Ogni voce si chiude con screenshot nei due temi e a finestra stretta (§8).
 
-**A. Errori visibili (prima di tutto)**
+**A. Errori visibili (prima di tutto)** — IMPLEMENTATO 2026-11-11 (v0.1.7),
+DA VALIDARE a schermo, tranne il riaggancio remoto (aperto, serve la prova).
+Nota: "Available" non era un testo non tradotto ma la nota di presenza del PBX;
+ora si nasconde quando ripete lo stato. `event_ts` del 30039: formato reale
+non ancora visto, letto sia come testo sia come timestamp Unix.
 - **Riaggancio remoto non visto** (segnalato da Luigi 2026-11-11): se chiude
   l'altro capo o il PBX, la chiamata resta aperta in DrinPhone. Dai log: il
   motore gestisce bene il BYE quando arriva (4 casi, 28/10–03/11); nella

@@ -16,6 +16,13 @@ String initialsOf(String name) => name
     .join()
     .toUpperCase();
 
+/// Il nome non dice niente di più del numero ("208", "211 211"): si mostra
+/// solo il numero, senza doppioni.
+bool nameIsNumber(String name, String number) {
+  final words = name.trim().split(RegExp(r'\s+')).where((w) => w.isNotEmpty);
+  return words.isEmpty || words.every((w) => w == number);
+}
+
 /// Iniziali, oppure un'icona se il nome è solo un numero o un codice.
 Widget initialsOrIcon(
   String name, {

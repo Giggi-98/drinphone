@@ -294,7 +294,7 @@ class _SetupWizardState extends State<SetupWizard> {
           title: tr('Yeastar P-Series (integrato)'),
           sub: tr(
             'Un interno del PBX Yeastar; interni, rubrica aziendale, presenza '
-            'e Live Calls dalle API (facoltative).',
+            'e chiamate in corso dalle API (facoltative).',
           ),
           onTap: () => setState(() => _kind = ProfileKind.yeastar),
         ),
@@ -328,7 +328,7 @@ class _SetupWizardState extends State<SetupWizard> {
           tr('Integrazione API (facoltativa)'),
           tr(
             'Con Client ID e Secret del PBX arrivano interni, reparti, rubrica, '
-            'presenza e Live Calls. Si può fare anche dopo, da Preferenze.',
+            'presenza e chiamate in corso. Si può fare anche dopo, da Preferenze.',
           ),
         ),
         PbxConnectionsPanel(phone: p),

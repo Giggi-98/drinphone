@@ -445,9 +445,9 @@ class _AccountTile extends StatelessWidget {
                   children: [
                     Flexible(
                       child: Text(
-                        a.displayName.isNotEmpty
-                            ? '${a.displayName} · ${a.username}'
-                            : a.username,
+                        nameIsNumber(a.displayName, a.username)
+                            ? a.username
+                            : '${a.displayName} · ${a.username}',
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
                           fontWeight: FontWeight.w600,
@@ -460,7 +460,9 @@ class _AccountTile extends StatelessWidget {
                 Text(
                   [
                     '${a.domain} · ${a.transport.name.toUpperCase()}',
-                    if (pbx != null) 'PBX: $pbx',
+                    // "PBX: PBX" con l'etichetta predefinita non dice nulla.
+                    if (pbx != null && pbx.trim().toUpperCase() != 'PBX')
+                      'PBX: $pbx',
                   ].join(' · '),
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(fontSize: 12, color: c.muted),

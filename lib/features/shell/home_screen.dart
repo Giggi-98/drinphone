@@ -311,7 +311,16 @@ class _HomeScreenState extends State<HomeScreen> {
     ].join(' · ');
     final account = p.settings.account;
     final presence = presenceOf(c, p.ownPresence);
-    final customNote = p.ownDetail?.customPresence.trim() ?? '';
+    // La nota personalizzata del PBX spesso ripete solo lo stato
+    // ("Available"): accanto al simbolo sarebbe un doppione in inglese.
+    final rawNote = p.ownDetail?.customPresence.trim() ?? '';
+    final noteKey = rawNote.toLowerCase().replaceAll(RegExp(r'[\s_]+'), ' ');
+    final customNote =
+        presence != null &&
+            (noteKey == p.ownPresence.replaceAll('_', ' ') ||
+                noteKey == presence.$3.toLowerCase())
+        ? ''
+        : rawNote;
     Widget pill(List<Widget> children) => Container(
       height: 36,
       padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -402,57 +411,75 @@ class _HomeScreenState extends State<HomeScreen> {
               'theme:dark' => p.setThemeMode(ThemeMode.dark),
               _ => _openPreferences(),
             },
-            itemBuilder: (_) => [
-              PopupMenuItem(value: 'prefs', child: Text(tr('Preferenze'))),
-              PopupMenuItem(
-                value: 'rename',
-                child: Text(tr('Rinomina account…')),
-              ),
-              const PopupMenuDivider(),
-              // Lingua e tema: si applicano subito, restando dove si è.
-              for (final (l, label) in const [
-                (AppLang.it, 'Italiano'),
-                (AppLang.en, 'English'),
-              ])
-                CheckedPopupMenuItem(
-                  value: 'lang:${l.name}',
-                  checked: appLang.value == l,
-                  child: Text(label),
-                ),
-              const PopupMenuDivider(),
-              for (final (m, icon, label) in [
-                (
-                  ThemeMode.system,
-                  Icons.brightness_auto_rounded,
-                  tr('Tema di sistema'),
-                ),
-                (ThemeMode.light, Icons.light_mode_rounded, tr('Tema chiaro')),
-                (ThemeMode.dark, Icons.dark_mode_rounded, tr('Tema scuro')),
-              ])
-                CheckedPopupMenuItem(
-                  value: 'theme:${m.name}',
-                  checked: appThemeMode.value == m,
-                  child: Row(
-                    children: [
-                      Icon(icon, size: 18, color: c.muted),
-                      const SizedBox(width: DrinSpace.s2),
-                      Text(label),
-                    ],
-                  ),
-                ),
-              const PopupMenuDivider(),
-              PopupMenuItem(
-                value: 'logout',
-                enabled: p.calls.isEmpty,
+            itemBuilder: (_) {
+              // Ogni voce: icona a sinistra, testo, spunta a destra se scelta;
+              // stessi rientri per tutte.
+              PopupMenuItem<String> item(
+                String value,
+                IconData icon,
+                String label, {
+                bool checked = false,
+                bool enabled = true,
+              }) => PopupMenuItem(
+                value: value,
+                enabled: enabled,
+                height: 40,
                 child: Row(
                   children: [
-                    Icon(Icons.logout_rounded, size: 18, color: c.muted),
-                    const SizedBox(width: 10),
-                    Text(tr('Esci (logout)')),
+                    Icon(icon, size: 18, color: c.muted),
+                    const SizedBox(width: DrinSpace.s3),
+                    Expanded(child: Text(label)),
+                    if (checked) ...[
+                      const SizedBox(width: DrinSpace.s3),
+                      Icon(Icons.check_rounded, size: 18, color: c.primary),
+                    ],
                   ],
                 ),
-              ),
-            ],
+              );
+              return [
+                item('prefs', Icons.tune_rounded, tr('Preferenze')),
+                item('rename', Icons.edit_outlined, tr('Rinomina account…')),
+                const PopupMenuDivider(),
+                // Lingua e tema: si applicano subito, restando dove si è.
+                for (final (l, label) in const [
+                  (AppLang.it, 'Italiano'),
+                  (AppLang.en, 'English'),
+                ])
+                  item(
+                    'lang:${l.name}',
+                    Icons.translate_rounded,
+                    label,
+                    checked: appLang.value == l,
+                  ),
+                const PopupMenuDivider(),
+                for (final (m, icon, label) in [
+                  (
+                    ThemeMode.system,
+                    Icons.brightness_auto_rounded,
+                    tr('Tema di sistema'),
+                  ),
+                  (
+                    ThemeMode.light,
+                    Icons.light_mode_rounded,
+                    tr('Tema chiaro'),
+                  ),
+                  (ThemeMode.dark, Icons.dark_mode_rounded, tr('Tema scuro')),
+                ])
+                  item(
+                    'theme:${m.name}',
+                    icon,
+                    label,
+                    checked: appThemeMode.value == m,
+                  ),
+                const PopupMenuDivider(),
+                item(
+                  'logout',
+                  Icons.logout_rounded,
+                  tr('Esci (logout)'),
+                  enabled: p.calls.isEmpty,
+                ),
+              ];
+            },
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
               child: Row(
@@ -638,7 +665,7 @@ class _Sidebar extends StatelessWidget {
           if (showLive)
             item(
               Icons.graphic_eq_rounded,
-              tr('Live Calls'),
+              tr('Chiamate in corso'),
               section == _Section.live,
               () => onSection(_Section.live),
             ),
@@ -1129,18 +1156,28 @@ class _ExtensionTileState extends State<_ExtensionTile> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
-                            ext.name,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontWeight: FontWeight.w600,
-                              color: blf == BlfStatus.offline
-                                  ? c.muted
-                                  : c.text,
+                          if (nameIsNumber(ext.name, ext.number))
+                            // Senza nome vero: il numero una volta sola.
+                            Text(
+                              ext.number,
+                              style: mono(
+                                blf == BlfStatus.offline ? c.muted : c.text,
+                              ),
+                            )
+                          else ...[
+                            Text(
+                              ext.name,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontWeight: FontWeight.w600,
+                                color: blf == BlfStatus.offline
+                                    ? c.muted
+                                    : c.text,
+                              ),
                             ),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(ext.number, style: mono(c.muted, size: 12)),
+                            const SizedBox(height: 2),
+                            Text(ext.number, style: mono(c.muted, size: 12)),
+                          ],
                         ],
                       ),
                     ),

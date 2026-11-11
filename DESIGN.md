@@ -156,8 +156,9 @@ Regole:
      squillano in parallelo espandibile/collassabile ("Assegnata a n interni")
      e "Fine chiamata" in chiusura.
   3. **Ripartizione tempi** (`raised`, a destra): `Durata totale`, `Squillo` e
-     `Conversazione` in `number` (`hh:mm:ss`), grafico ad anello (`free` per
-     attesa/squillo, `squillo` per conversazione, `brand` per attesa in linea)
+     `Conversazione` in `number` (`hh:mm:ss`), grafico ad anello (`squillo` per lo
+     squillo, `free` per la conversazione, `away` per l'attesa in linea:
+     corretto il 2026-11-11, prima il giallo marcava la conversazione)
      e legenda con durate e percentuali.
 - **Filtro a pillola** (sopra le tabelle): alto 36, raggio `pill`, testo
   `label` "Etichetta: valore" con freccia; a riposo fondo `raised` e bordo

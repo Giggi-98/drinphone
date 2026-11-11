@@ -146,7 +146,7 @@ class PbxCache {
           for (final c in j['contacts'] as List)
             PbxContact(
               id: c[0] as int,
-              name: c[1] as String,
+              name: cleanContactName(c[1] as String),
               company: c[2] as String,
               jobTitle: c[3] as String,
               email: c[4] as String,

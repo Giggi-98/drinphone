@@ -115,7 +115,7 @@ class _LiveCallsViewState extends State<LiveCallsView> {
   Widget _header(DrinColors c, PbxConnection conn) => Row(
     children: [
       Text(
-        tr('Live Calls'),
+        tr('Chiamate in corso'),
         style: TextStyle(
           fontSize: 20,
           fontWeight: FontWeight.w700,
@@ -613,7 +613,7 @@ class _BlfRow extends StatelessWidget {
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  ext.name,
+                  nameIsNumber(ext.name, ext.number) ? '' : ext.name,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(color: c.text),
                 ),

@@ -85,36 +85,34 @@ class CdrRecord {
   String get did => _fromLegs((l) => l.did);
   String get dod => _fromLegs((l) => l.dod);
 
-  CdrRecord withLegs(
-    List<CdrLeg> legs, {
-    List<CdrTimelineLeg>? timeline,
-  }) => CdrRecord(
-    uid: uid,
-    time: time,
-    src: src,
-    srcName: srcName,
-    dst: dst,
-    dstName: dstName,
-    secondDst: secondDst,
-    secondDstName: secondDstName,
-    lastDst: lastDst,
-    lastDstName: lastDstName,
-    duration: duration,
-    ring: ring,
-    talk: talk,
-    hold: hold,
-    disposition: disposition,
-    callType: callType,
-    disconnectBy: disconnectBy,
-    queues: queues,
-    ringGroups: ringGroups,
-    ivrs: ivrs,
-    callFlows: callFlows,
-    segments: segments,
-    hasRecording: hasRecording,
-    legs: legs,
-    timeline: timeline ?? this.timeline,
-  );
+  CdrRecord withLegs(List<CdrLeg> legs, {List<CdrTimelineLeg>? timeline}) =>
+      CdrRecord(
+        uid: uid,
+        time: time,
+        src: src,
+        srcName: srcName,
+        dst: dst,
+        dstName: dstName,
+        secondDst: secondDst,
+        secondDstName: secondDstName,
+        lastDst: lastDst,
+        lastDstName: lastDstName,
+        duration: duration,
+        ring: ring,
+        talk: talk,
+        hold: hold,
+        disposition: disposition,
+        callType: callType,
+        disconnectBy: disconnectBy,
+        queues: queues,
+        ringGroups: ringGroups,
+        ivrs: ivrs,
+        callFlows: callFlows,
+        segments: segments,
+        hasRecording: hasRecording,
+        legs: legs,
+        timeline: timeline ?? this.timeline,
+      );
 
   static CdrRecord fromRow(Map<String, String?> r) => CdrRecord(
     uid: r['uid'] ?? '',
@@ -214,9 +212,17 @@ class CdrLeg {
   );
 }
 
-DateTime? _time(String? s) => DateTime.tryParse(
-  (s ?? '').trim().replaceAll('/', '-').replaceFirst(' ', 'T'),
-);
+/// Data del PBX: testo `2026/11/10 15:39:03` oppure timestamp Unix in
+/// secondi o millisecondi (l'evento 30039 non dichiara il formato di
+/// `event_ts`; senza questo tutti gli offset della timeline erano 00:00).
+DateTime? _time(String? s) {
+  final v = (s ?? '').trim();
+  if (RegExp(r'^\d{9,13}$').hasMatch(v)) {
+    final n = int.parse(v);
+    return DateTime.fromMillisecondsSinceEpoch(v.length > 10 ? n : n * 1000);
+  }
+  return DateTime.tryParse(v.replaceAll('/', '-').replaceFirst(' ', 'T'));
+}
 
 int _int(String? s) => int.tryParse(s ?? '') ?? 0;
 
