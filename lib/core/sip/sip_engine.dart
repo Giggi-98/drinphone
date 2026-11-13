@@ -360,8 +360,8 @@ abstract class SipEngine {
   /// Notifica quando il sistema aggiunge o rimuove un dispositivo audio.
   Stream<bool> get audioDevicesChanged => const Stream.empty();
 
-  /// Dispositivi audio disponibili (rilegge il sistema).
-  List<SoundDevice> soundDevices();
+  /// Dispositivi audio disponibili ([reload] = true rilegge il sistema).
+  List<SoundDevice> soundDevices({bool reload = true});
 
   /// Dispositivi in uso: (microfono, altoparlante, suoneria).
   (String, String, String) audioDevices();

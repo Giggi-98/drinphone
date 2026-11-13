@@ -161,11 +161,11 @@ class LinphoneFfiEngine implements SipEngine {
     if (state == 13) _transfers.add(false);
   }
 
+  bool _suppressAudioListCb = false;
+
   void _onAudioDevicesUpdated(Pointer<Void> core) {
-    Future.microtask(() {
-      if (_core != nullptr) _reloadSound(_core);
-      _audioDevicesChanged.add(true);
-    });
+    if (_suppressAudioListCb) return;
+    _audioDevicesChanged.add(true);
   }
 
   late final _callGetParams = _lib.lookupFunction<_PP, _PP>(
@@ -230,9 +230,16 @@ class LinphoneFfiEngine implements SipEngine {
       >('linphone_core_set_ringer_device');
 
   @override
-  List<SoundDevice> soundDevices() {
+  List<SoundDevice> soundDevices({bool reload = true}) {
     if (_core == nullptr) return const [];
-    _reloadSound(_core);
+    if (reload) {
+      _suppressAudioListCb = true;
+      try {
+        _reloadSound(_core);
+      } finally {
+        _suppressAudioListCb = false;
+      }
+    }
     _devicesListed = true;
     final list = _soundDevices(_core); // array di char* terminato da NULL
     final out = <SoundDevice>[];

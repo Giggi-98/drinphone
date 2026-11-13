@@ -89,8 +89,12 @@ class FakeSipEngine implements SipEngine {
     SoundDevice('WASAPI: Altoparlanti', capture: false, playback: true),
   ];
   (String, String, String) current = ('', '', '');
+  int reloadSoundCount = 0;
   @override
-  List<SoundDevice> soundDevices() => devices;
+  List<SoundDevice> soundDevices({bool reload = true}) {
+    if (reload) reloadSoundCount++;
+    return devices;
+  }
   @override
   (String, String, String) audioDevices() => current;
   @override

@@ -1342,41 +1342,47 @@ class PhoneController extends ChangeNotifier {
 
   /// Incrementato solo quando cambia l'elenco dei dispositivi audio di sistema.
   int audioDeviceRevision = 0;
+  bool _syncingAudio = false;
 
   /// Rilegge i dispositivi audio dopo una variazione hardware (USB/Bluetooth)
   /// e ripristina quelli salvati nelle impostazioni se sono tornati disponibili.
   Future<void> syncAudioDevicesAfterChange() async {
-    if (engineError != null) return;
-    final devs = _engine.soundDevices();
-    audioDeviceRevision++;
-    final (wantCap, wantPlay, wantRing) = settings.audio;
-    final (curCap, curPlay, curRing) = _engine.audioDevices();
-    final restoreCap =
-        wantCap.isNotEmpty &&
-            wantCap != curCap &&
-            devs.any((d) => d.capture && d.id == wantCap)
-        ? wantCap
-        : null;
-    final restorePlay =
-        wantPlay.isNotEmpty &&
-            wantPlay != curPlay &&
-            devs.any((d) => d.playback && d.id == wantPlay)
-        ? wantPlay
-        : null;
-    final restoreRing =
-        wantRing.isNotEmpty &&
-            wantRing != curRing &&
-            devs.any((d) => d.playback && d.id == wantRing)
-        ? wantRing
-        : null;
-    if (restoreCap != null || restorePlay != null || restoreRing != null) {
-      await _engine.setAudioDevices(
-        capture: restoreCap,
-        playback: restorePlay,
-        ringer: restoreRing,
-      );
+    if (engineError != null || _syncingAudio) return;
+    _syncingAudio = true;
+    try {
+      final devs = _engine.soundDevices(reload: false);
+      audioDeviceRevision++;
+      final (wantCap, wantPlay, wantRing) = settings.audio;
+      final (curCap, curPlay, curRing) = _engine.audioDevices();
+      final restoreCap =
+          wantCap.isNotEmpty &&
+              wantCap != curCap &&
+              devs.any((d) => d.capture && d.id == wantCap)
+          ? wantCap
+          : null;
+      final restorePlay =
+          wantPlay.isNotEmpty &&
+              wantPlay != curPlay &&
+              devs.any((d) => d.playback && d.id == wantPlay)
+          ? wantPlay
+          : null;
+      final restoreRing =
+          wantRing.isNotEmpty &&
+              wantRing != curRing &&
+              devs.any((d) => d.playback && d.id == wantRing)
+          ? wantRing
+          : null;
+      if (restoreCap != null || restorePlay != null || restoreRing != null) {
+        await _engine.setAudioDevices(
+          capture: restoreCap,
+          playback: restorePlay,
+          ringer: restoreRing,
+        );
+      }
+      notifyListeners();
+    } finally {
+      _syncingAudio = false;
     }
-    notifyListeners();
   }
 
   /// Codec audio esposti dal motore, in ordine di priorità.

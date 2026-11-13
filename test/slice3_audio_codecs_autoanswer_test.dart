@@ -49,9 +49,11 @@ void main() {
     // All'avvio la cuffia USB è collegata, poi viene scollegata e ricollegata.
     engine.current = ('WASAPI: Microfono', 'WASAPI: Altoparlanti', '');
     engine.devices = [...engine.devices, usbMic, usbSpk];
+    engine.reloadSoundCount = 0;
     engine.devicesChangedCtl.add(true);
     await Future<void>.delayed(const Duration(milliseconds: 20));
 
+    expect(engine.reloadSoundCount, 0);
     expect(engine.audioDevices().$1, 'WASAPI: Cuffia USB Mic');
     expect(engine.audioDevices().$2, 'WASAPI: Cuffia USB Audio');
     expect(phone.audioDeviceRevision, 1);
