@@ -120,6 +120,49 @@ class LiveCall {
       members.map((m) => m.trunk).where((t) => t.isNotEmpty).firstOrNull ?? '';
   String get path =>
       members.map((m) => m.path).where((t) => t.isNotEmpty).firstOrNull ?? '';
+
+  /// Canale della parte che resta in linea durante un trasferimento cieco
+  /// (`POST /openapi/v1.0/call/transfer`): il capo esterno (`inbound`/`outbound`),
+  /// altrimenti il chiamante interno o il primo membro con `channel_id`.
+  String get transferChannel => transferChannelFrom(members);
+
+  String transferChannelFrom(Iterable<LiveMember> all) {
+    for (final k in const ['inbound', 'outbound']) {
+      final ch = all
+          .where((m) => m.kind == k && m.channel.isNotEmpty)
+          .firstOrNull
+          ?.channel;
+      if (ch != null) return ch;
+    }
+    final callerCh = all
+        .where(
+          (m) =>
+              m.kind == 'extension' &&
+              m.number == caller &&
+              m.channel.isNotEmpty,
+        )
+        .firstOrNull
+        ?.channel;
+    if (callerCh != null) return callerCh;
+    return primaryChannelFrom(all);
+  }
+
+  /// Canale principale per chiudere (`call/hangup`) o registrare (`call/record_start`).
+  String get primaryChannel => primaryChannelFrom(members);
+
+  static String primaryChannelFrom(Iterable<LiveMember> all) =>
+      all
+          .where((m) => m.kind == 'extension' && m.channel.isNotEmpty)
+          .firstOrNull
+          ?.channel ??
+      all.where((m) => m.channel.isNotEmpty).firstOrNull?.channel ??
+      '';
+
+  /// Membri di tipo `extension` con `channel_id` (bersagli di `call/listen`).
+  List<LiveMember> get extensionMembers => [
+    for (final m in members)
+      if (m.kind == 'extension' && m.channel.isNotEmpty) m,
+  ];
 }
 
 class PbxConnection {
@@ -340,6 +383,48 @@ class PbxConnection {
   /// Codice di registrazione del PBX (`feature_code/get`), se abilitato.
   String? recordCode;
 
+  /// Codice di parcheggio (`feature_code/get`, es. `*5`) e numeri degli slot
+  /// di parcheggio (`6000`–`6009`), se abilitati sul PBX.
+  String? parkCode;
+  List<String> parkingSlots = const [];
+  List<PbxParkedCall> parkedCalls = const [];
+
+  /// Gruppi di squillo, code e caselle vocali di gruppo per il pannello Live.
+  List<PbxRingGroup> ringGroups = const [];
+  List<PbxQueue> queues = const [];
+  List<PbxVmGroup> vmGroups = const [];
+
+  PbxFeatureCodes _featureCodes = const PbxFeatureCodes();
+  bool _groupMonitorAllowed = false;
+
+  /// Vero solo se il proprio interno ([voicemailOf]) ha il permesso di
+  /// monitoraggio attivo sul PBX (`extensiongroup/query` o dettaglio interno)
+  /// ed esiste almeno una modalità (`listen` / `whisper` / `barge`) abilitata.
+  bool get canMonitor =>
+      voicemailOf != null &&
+      (_groupMonitorAllowed || (ownDetail?.canMonitor ?? false)) &&
+      allowedMonitorModes.isNotEmpty;
+
+  /// Modalità di monitoraggio consentite per il proprio interno e abilitate
+  /// nei codici funzione del PBX (`listen`, `whisper`, `barge`).
+  Set<String> get allowedMonitorModes {
+    if (voicemailOf == null ||
+        (!_groupMonitorAllowed && !(ownDetail?.canMonitor ?? false))) {
+      return const {};
+    }
+    final detailModes = ownDetail?.allowedMonitorModes ?? const {};
+    final base = detailModes.isNotEmpty
+        ? detailModes
+        : const {'listen', 'whisper', 'barge'};
+    return {
+      for (final m in base)
+        if ((m == 'listen' && _featureCodes.listenEnabled) ||
+            (m == 'whisper' && _featureCodes.whisperEnabled) ||
+            (m == 'barge' && _featureCodes.bargeEnabled))
+          m,
+    };
+  }
+
   /// Dettaglio del proprio interno ([voicemailOf]): presenze e inoltri.
   PbxExtensionDetail? ownDetail;
   bool _detailStale = true;
@@ -493,7 +578,8 @@ class PbxConnection {
           ext.length != directory.length;
       var newOrgs = orgs;
       var newContacts = contacts;
-      if (_due(PbxSync.orgs, now: force || idsChanged)) {
+      final readOrgs = _due(PbxSync.orgs, now: force || idsChanged);
+      if (readOrgs) {
         try {
           newOrgs = await api.listOrganizations();
         } catch (e) {
@@ -503,9 +589,16 @@ class PbxConnection {
         _readAt[PbxSync.orgs] = DateTime.now();
       }
       var newRecordCode = recordCode;
+      var newParkCode = parkCode;
+      var newParkingSlots = parkingSlots;
+      var newFeatureCodes = _featureCodes;
       if (_due(PbxSync.featureCodes, now: force)) {
         try {
-          newRecordCode = await api.recordFeatureCode();
+          final fc = await api.getFeatureCodes();
+          newRecordCode = fc.recordCode;
+          newParkCode = fc.parkCode;
+          newParkingSlots = fc.parkingSlots;
+          newFeatureCodes = fc;
         } catch (e) {
           optionalErrors.add('codici funzione: ${_short(e)}');
         }
@@ -549,8 +642,10 @@ class PbxConnection {
           : ext.where((e) => e.number == vmOf).firstOrNull;
       // Senza proprio interno non resta quello di prima (username cambiato).
       var newDetail = own == null ? null : ownDetail;
-      if (own != null &&
-          _due(PbxSync.ownDetail, now: _detailStale || force || idsChanged)) {
+      final readOwnDetail =
+          own != null &&
+          _due(PbxSync.ownDetail, now: _detailStale || force || idsChanged);
+      if (readOwnDetail) {
         try {
           newDetail = await api.getExtension(own.id);
           _detailStale = false;
@@ -565,9 +660,60 @@ class PbxConnection {
         _readAt.clear();
         return;
       }
+      var newRingGroups = ringGroups;
+      var newQueues = queues;
+      var newVmGroups = vmGroups;
+      if (readOrgs) {
+        try {
+          newRingGroups = await api.listRingGroups();
+        } catch (e) {
+          optionalErrors.add('gruppi di squillo: ${_short(e)}');
+        }
+        try {
+          newQueues = await api.listQueues();
+        } catch (e) {
+          optionalErrors.add('code: ${_short(e)}');
+        }
+        try {
+          newVmGroups = await api.listVmGroups();
+        } catch (e) {
+          optionalErrors.add('caselle vocali gruppo: ${_short(e)}');
+        }
+      }
+      var newGroupMonitor = own == null ? false : _groupMonitorAllowed;
+      if (readOwnDetail) {
+        try {
+          newGroupMonitor = await api.canExtensionMonitor(
+            own.number,
+            extId: own.id,
+          );
+        } catch (e) {
+          optionalErrors.add('permessi monitoraggio: ${_short(e)}');
+        }
+      }
+      var newParkedCalls = parkedCalls;
+      if (newParkingSlots.isNotEmpty) {
+        try {
+          newParkedCalls = await api.queryParkedCalls();
+        } catch (_) {}
+      } else {
+        newParkedCalls = const [];
+      }
+      if (!identical(api, _api)) {
+        _readAt.clear();
+        return;
+      }
       final detailChanged = !identical(newDetail, ownDetail);
       ownDetail = newDetail;
       recordCode = newRecordCode;
+      parkCode = newParkCode;
+      parkingSlots = newParkingSlots;
+      parkedCalls = newParkedCalls;
+      _featureCodes = newFeatureCodes;
+      ringGroups = newRingGroups;
+      queues = newQueues;
+      vmGroups = newVmGroups;
+      _groupMonitorAllowed = newGroupMonitor;
       final fp =
           '${_fingerprintOf(ext, newOrgs, newContacts)}\n'
           '${newVm?.map((m) => '${m.id}|${m.read}').join(',')}';
@@ -651,6 +797,106 @@ class PbxConnection {
   Future<void> refreshDetail() async {
     _detailStale = true;
     await sync(force: true);
+  }
+
+  /// Tutti i membri della conversazione di [call], inclusi eventuali altri
+  /// `call_id` in [liveCalls] con la stessa coppia chiamante/chiamato.
+  List<LiveMember> _allMembersOf(LiveCall call) {
+    final out = <LiveMember>[...call.members];
+    if (call.caller.isEmpty || call.callee.isEmpty) return out;
+    final pair = ([call.caller, call.callee]..sort()).join('|');
+    for (final other in liveCalls.values) {
+      if (identical(other, call) ||
+          other.caller.isEmpty ||
+          other.callee.isEmpty) {
+        continue;
+      }
+      final otherPair = ([other.caller, other.callee]..sort()).join('|');
+      if (otherPair == pair) out.addAll(other.members);
+    }
+    return out;
+  }
+
+  /// Interni con `channel_id` monitorabili sulla chiamata [call] (diversi dal
+  /// proprio interno quando possibile).
+  List<LiveMember> monitorableExtensionsOf(LiveCall call) {
+    final seen = <String>{};
+    final all = <LiveMember>[];
+    for (final m in _allMembersOf(call)) {
+      if (m.kind == 'extension' &&
+          m.channel.isNotEmpty &&
+          seen.add('${m.number}|${m.channel}')) {
+        all.add(m);
+      }
+    }
+    final own = voicemailOf;
+    if (own == null) return all;
+    final others = all.where((m) => m.number != own).toList();
+    return others.isNotEmpty ? others : all;
+  }
+
+  /// Trasferimento cieco di una chiamata attiva verso [destination]
+  /// (interno, gruppo di squillo, coda, slot parcheggio, casella vocale).
+  Future<void> blindTransferCall(
+    LiveCall call,
+    String destination, {
+    String? channelId,
+  }) async {
+    final api = _api;
+    if (api == null) throw StateError('PBX non connesso');
+    final ch = channelId ?? call.transferChannelFrom(_allMembersOf(call));
+    if (ch.isEmpty) {
+      throw StateError('nessun canale trasferibile sulla chiamata');
+    }
+    if (!api.connected) await api.connect();
+    await api.transferCall(channelId: ch, number: destination);
+    _scheduleCallsCheck(const Duration(seconds: 1));
+  }
+
+  /// Riaggancia una chiamata attiva sul PBX (`POST /openapi/v1.0/call/hangup`).
+  Future<void> hangupLiveCall(LiveCall call, {String? channelId}) async {
+    final api = _api;
+    if (api == null) throw StateError('PBX non connesso');
+    final ch = channelId ?? LiveCall.primaryChannelFrom(_allMembersOf(call));
+    if (ch.isEmpty) throw StateError('nessun canale sulla chiamata');
+    if (!api.connected) await api.connect();
+    await api.hangupCall(ch);
+    _scheduleCallsCheck(const Duration(seconds: 1));
+  }
+
+  /// Avvia la registrazione di una chiamata attiva (`POST /openapi/v1.0/call/record_start`).
+  Future<void> recordLiveCall(LiveCall call, {String? channelId}) async {
+    final api = _api;
+    if (api == null) throw StateError('PBX non connesso');
+    final ch = channelId ?? LiveCall.primaryChannelFrom(_allMembersOf(call));
+    if (ch.isEmpty) throw StateError('nessun canale sulla chiamata');
+    if (!api.connected) await api.connect();
+    await api.startRecordCall(ch);
+  }
+
+  /// Monitora una chiamata attiva (`listen` / `whisper` / `barge`) facendo
+  /// squillare il proprio interno ([voicemailOf]). Consentito solo se
+  /// [canMonitor] è attivo e [mode] è tra [allowedMonitorModes].
+  Future<void> monitorLiveCall(
+    LiveCall call,
+    String mode, {
+    String? targetChannelId,
+  }) async {
+    final api = _api;
+    final own = voicemailOf;
+    if (api == null) throw StateError('PBX non connesso');
+    if (own == null || !canMonitor || !allowedMonitorModes.contains(mode)) {
+      throw StateError('monitoraggio non abilitato per questo interno');
+    }
+    final ch =
+        targetChannelId ??
+        monitorableExtensionsOf(call).firstOrNull?.channel ??
+        '';
+    if (ch.isEmpty) {
+      throw StateError('nessun canale interno monitorabile sulla chiamata');
+    }
+    if (!api.connected) await api.connect();
+    await api.monitorCall(monitorExt: own, channelId: ch, mode: mode);
   }
 
   /// Accende o spegne il canale eventi senza riavviare la connessione.
@@ -780,6 +1026,12 @@ class PbxConnection {
           ..members = members
           ..type = e.value.$1;
         if (c.talking) c.answered ??= DateTime.now();
+      }
+      if (parkingSlots.isNotEmpty) {
+        try {
+          final parked = await api.queryParkedCalls();
+          if (identical(api, _api)) parkedCalls = parked;
+        } catch (_) {}
       }
       onUpdate(this, false);
     } finally {
@@ -1018,6 +1270,14 @@ class PbxConnection {
     ownDetail = null;
     voicemail = null;
     recordCode = null;
+    parkCode = null;
+    parkingSlots = const [];
+    parkedCalls = const [];
+    ringGroups = const [];
+    queues = const [];
+    vmGroups = const [];
+    _featureCodes = const PbxFeatureCodes();
+    _groupMonitorAllowed = false;
     callStatus.clear();
     liveCalls.clear();
     callTimelines.clear();

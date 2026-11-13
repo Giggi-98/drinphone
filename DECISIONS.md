@@ -6,6 +6,39 @@ aggiungi una voce nuova in cima che cita la vecchia. Il campo chiave è
 
 ---
 
+## 2026-11-13 · Sezione "Live" (pannello operatore): trasferimento cieco drag & drop, controllo chiamate e monitoraggio condizionale
+Cita "Modello di fiducia: utente finale meno fidato dell'amministratore" (2026-10-30).
+Richiesto da Luigi: rinominare "Chiamate in corso" in **"Live"** e dotare la
+vista delle funzioni da pannello operatore Yeastar:
+1. **Drag & drop di una chiamata attiva** verso un interno (colonna destra) o
+   verso le destinazioni in basso (`Gruppi di squillo`, `Code`, `Parcheggio`,
+   `Casella vocale di gruppo`) per eseguire un **trasferimento cieco**
+   (`POST /openapi/v1.0/call/transfer`, `type: "blind"`).
+2. **Menu contestuale (tasto destro)** sulle chiamate in corso con `Trasferisci`,
+   `Riaggancia` (`call/hangup`), `Registra` (`call/record_start`), `Parcheggia`
+   (`call/transfer` verso slot di parcheggio) e **monitoraggio** (`Intromettiti` /
+   `barge`, `Ascolta` / `listen`, `Suggerisci` / `whisper` via
+   `POST /openapi/v1.0/call/listen` con `monitor: ownExtension`).
+3. **Vincolo di sicurezza e permessi sul monitoraggio:** le voci `Ascolta`,
+   `Suggerisci` e `Intromettiti` compaiono e sono invocabili **solo** se:
+   - l'account SIP coincide con `ownExtension` fissato dall'amministratore nelle
+     credenziali API (`voicemailOf != null`), **e**
+   - l'interno ha il monitoraggio attivo sul PBX (verificato sui gruppi interni
+     `extensiongroup/list` + `extensiongroup/query`: `mgr_enb_monitor` /
+     `mgr_enb_ext_monitor` per `role: "manager"`, `user_enb_monitor` /
+     `user_enb_ext_monitor` per `role: "user"`, `enb_monitor` /
+     `enb_ext_monitor` per `role: "custom"`, oppure sul dettaglio dell'interno
+     `extension/get`), e i relativi codici funzione (`enb_listen`, `enb_whisper`,
+     `enb_barge_in` in `feature_code/get`) non sono disabilitati.
+**Scartato:** mostrare sempre `Listen`/`Whisper`/`Barge In` lasciando fallire
+la chiamata API (viola la richiesta esplicita e il modello di fiducia: la chiave
+OpenAPI è amministrativa e `call/listen` accetterebbe qualsiasi `monitor` se non
+filtrato dal client); usare codici funzione SIP `*51`/`*52`/`*53` al posto di
+`call/listen` (non permettono di scegliere lo specifico `channel_id` quando un
+interno ha più chiamate).
+**Da rivedere se:** Yeastar introduce un token OpenAPI per singolo utente con
+permessi applicati lato server, o cambia lo schema di `extensiongroup/query`.
+
 ## 2026-11-11 · Chiamata chiusa dal client dopo 20 s senza audio in arrivo
 Segnalato da Luigi: se riaggancia l'altro capo o il PBX la chiamata resta
 aperta in DrinPhone. Dai log (10/11, 18:11): audio in arrivo a zero, nessun

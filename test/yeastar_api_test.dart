@@ -37,6 +37,9 @@ class FakePbx {
   /// extension/list in errore (token valido ma elenco negato).
   bool failExtensionList = false;
 
+  /// Se attivo, espone i permessi di monitoraggio del gruppo interni per il 305.
+  bool allowMonitor305 = false;
+
   /// Richiesta a [holdPath] trattenuta finché [release] non completa.
   String? holdPath;
   final holdArrived = Completer<void>();
@@ -190,6 +193,94 @@ class FakePbx {
             },
           };
         case '/openapi/v1.0/extension/update':
+          reply = {'errcode': 0, 'errmsg': 'SUCCESS'};
+        case '/openapi/v1.0/feature_code/get':
+          reply = {
+            'errcode': 0,
+            'errmsg': 'SUCCESS',
+            'feature_code': {
+              'enb_auto_record': 1,
+              'auto_record': '*4',
+              'enb_park': 1,
+              'park': '*5',
+              'enb_park_on_slots': 1,
+              'park_start': '6000',
+              'park_end': '6002',
+              'enb_listen': 1,
+              'enb_whisper': 1,
+              'enb_barge_in': 1,
+            },
+          };
+        case '/openapi/v1.0/ringgroup/list':
+          reply = {
+            'errcode': 0,
+            'errmsg': 'SUCCESS',
+            'total_number': 1,
+            'data': [
+              {
+                'id': 1,
+                'name': 'RING_SKILLWORKS',
+                'number': '6300',
+                'members': [11, 15],
+              },
+            ],
+          };
+        case '/openapi/v1.0/queue/list':
+          reply = {
+            'errcode': 0,
+            'errmsg': 'SUCCESS',
+            'total_number': 1,
+            'data': [
+              {
+                'id': 2,
+                'name': 'Econnet Whitelist',
+                'number': '6400',
+                'static_agent_list': [11],
+                'dynamic_agent_list': [50],
+              },
+            ],
+          };
+        case '/openapi/v1.0/vm_group/list':
+          reply = {
+            'errcode': 0,
+            'errmsg': 'SUCCESS',
+            'total_number': 1,
+            'data': [
+              {
+                'id': 3,
+                'name': 'Segreteria Yeastar Academy',
+                'number': '6120',
+              },
+            ],
+          };
+        case '/openapi/v1.0/extensiongroup/list':
+          reply = {
+            'errcode': 0,
+            'errmsg': 'SUCCESS',
+            'data': [
+              {'id': 1, 'name': 'DefaultExtensionGroup'},
+            ],
+          };
+        case '/openapi/v1.0/extensiongroup/query':
+          reply = {
+            'errcode': 0,
+            'errmsg': 'SUCCESS',
+            'data': [
+              {
+                'id': 1,
+                'name': 'DefaultExtensionGroup',
+                'mgr_enb_monitor': 1,
+                'user_enb_monitor': allowMonitor305 ? 1 : 0,
+                'members': [
+                  {'ext_id': 15, 'ext_num': '305', 'role': 'user'},
+                ],
+              },
+            ],
+          };
+        case '/openapi/v1.0/call/transfer' ||
+            '/openapi/v1.0/call/hangup' ||
+            '/openapi/v1.0/call/record_start' ||
+            '/openapi/v1.0/call/listen':
           reply = {'errcode': 0, 'errmsg': 'SUCCESS'};
         case '/openapi/v1.0/del_token':
           reply = {'errcode': 0, 'errmsg': 'SUCCESS'};
@@ -1175,4 +1266,90 @@ void main() {
     await phone.setRealtime(conn, false);
     await phone.shutdown();
   }, skip: !Platform.isWindows);
+
+  test(
+    'pannello Live: gruppi, code, parcheggio, trasferimento cieco e monitoraggio condizionale',
+    () async {
+      final phone = await controllerWith(FakeSipEngine(), {'a': pbx.baseUrl});
+      final conn = phone.connections.single;
+      expect(conn.ringGroups.single.number, '6300');
+      expect(conn.ringGroups.single.name, 'RING_SKILLWORKS');
+      expect(conn.queues.single.number, '6400');
+      expect(conn.queues.single.agentNumbers, ['11', '50']);
+      expect(conn.vmGroups.single.number, '6120');
+      expect(conn.parkingSlots, ['6000', '6001', '6002']);
+      expect(conn.parkCode, '*5');
+      expect(conn.recordCode, '*4');
+
+      // Senza permesso sul gruppo: canMonitor = false, monitorLiveCall bloccato.
+      expect(conn.canMonitor, isFalse);
+      expect(conn.allowedMonitorModes, isEmpty);
+      final call = LiveCall('C-LIVE', const [
+        LiveMember(
+          kind: 'inbound',
+          channel: 'ch-inbound-1',
+          status: 'ANSWER',
+          from: '0612345',
+          to: '301',
+          trunk: 'Trunk1',
+        ),
+        LiveMember(
+          kind: 'extension',
+          channel: 'ch-ext-301',
+          status: 'ANSWERED',
+          number: '301',
+        ),
+      ]);
+      conn.liveCalls['C-LIVE'] = call;
+      await expectLater(
+        conn.monitorLiveCall(call, 'listen'),
+        throwsStateError,
+      );
+      expect(
+        pbx.requests.where((r) => r.uri.path.endsWith('call/listen')),
+        isEmpty,
+      );
+
+      // Trasferimento cieco (drag & drop): usa il canale del chiamante esterno.
+      await conn.blindTransferCall(call, '6300');
+      final trIdx = pbx.requests.lastIndexWhere(
+        (r) => r.uri.path.endsWith('call/transfer'),
+      );
+      expect(jsonDecode(pbx.bodies[trIdx]), {
+        'type': 'blind',
+        'channel_id': 'ch-inbound-1',
+        'number': '6300',
+      });
+
+      // Riaggancia e registra: usano il canale principale dell'interno.
+      await conn.hangupLiveCall(call);
+      final huIdx = pbx.requests.lastIndexWhere(
+        (r) => r.uri.path.endsWith('call/hangup'),
+      );
+      expect(jsonDecode(pbx.bodies[huIdx]), {'channel_id': 'ch-ext-301'});
+
+      await conn.recordLiveCall(call);
+      final rcIdx = pbx.requests.lastIndexWhere(
+        (r) => r.uri.path.endsWith('call/record_start'),
+      );
+      expect(jsonDecode(pbx.bodies[rcIdx]), {'channel_id': 'ch-ext-301'});
+
+      // Abilitando il monitoraggio sul PBX: canMonitor = true e call/listen parte.
+      pbx.allowMonitor305 = true;
+      await conn.refreshDetail();
+      expect(conn.canMonitor, isTrue);
+      expect(conn.allowedMonitorModes, {'listen', 'whisper', 'barge'});
+      await conn.monitorLiveCall(call, 'whisper');
+      final lsIdx = pbx.requests.lastIndexWhere(
+        (r) => r.uri.path.endsWith('call/listen'),
+      );
+      expect(jsonDecode(pbx.bodies[lsIdx]), {
+        'monitor': '305',
+        'channel_id': 'ch-ext-301',
+        'type': 'whisper',
+      });
+      await phone.shutdown();
+    },
+    skip: !Platform.isWindows,
+  );
 }

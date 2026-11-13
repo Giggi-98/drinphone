@@ -853,7 +853,7 @@ class _Sidebar extends StatelessWidget {
           if (showLive)
             item(
               Icons.graphic_eq_rounded,
-              tr('Chiamate in corso'),
+              tr('Live'),
               section == _Section.live,
               () => onSection(_Section.live),
               of: _Section.live,

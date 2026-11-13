@@ -249,6 +249,34 @@ class PbxExtensionDetail {
   String get presence => field('presence_status');
   String get customPresence => field('custom_presence_status');
 
+  /// Se l'interno ha il monitoraggio chiamate attivo nel proprio dettaglio
+  /// (`enb_monitor`, `enb_ext_monitor`, `monitor_mode`). Sulle P-Series il
+  /// permesso può anche arrivare dai gruppi interni (`extensiongroup/query`).
+  bool get canMonitor {
+    if (flag('enb_monitor') ||
+        flag('enb_ext_monitor') ||
+        flag('enb_call_monitor')) {
+      return true;
+    }
+    final mode = field('monitor_mode').trim().toLowerCase();
+    return mode.isNotEmpty &&
+        mode != 'disable' &&
+        mode != 'disabled' &&
+        mode != '0' &&
+        mode != 'none';
+  }
+
+  /// Modalità di monitoraggio consentite (`listen`, `whisper`, `barge`).
+  Set<String> get allowedMonitorModes {
+    final mode = field('monitor_mode').trim().toLowerCase();
+    return switch (mode) {
+      'listen' => const {'listen'},
+      'whisper' => const {'listen', 'whisper'},
+      'barge' || 'barge_in' => const {'barge'},
+      _ => const {'listen', 'whisper', 'barge'},
+    };
+  }
+
   List<PresenceSetting> get presences => [
     for (final p
         in (_j['presence_list'] as List? ?? const [])
@@ -334,6 +362,86 @@ class PbxOrg {
   final String name;
   final int depth;
   final Set<int> extIds;
+}
+
+/// Gruppo di squillo (`ringgroup/list`).
+class PbxRingGroup {
+  const PbxRingGroup({
+    required this.id,
+    required this.number,
+    required this.name,
+    this.memberCount = 0,
+    this.memberNumbers = const [],
+  });
+  final int id;
+  final String number;
+  final String name;
+  final int memberCount;
+  final List<String> memberNumbers;
+}
+
+/// Coda di chiamata (`queue/list`).
+class PbxQueue {
+  const PbxQueue({
+    required this.id,
+    required this.number,
+    required this.name,
+    this.memberCount = 0,
+    this.agentNumbers = const [],
+  });
+  final int id;
+  final String number;
+  final String name;
+  final int memberCount;
+  final List<String> agentNumbers;
+}
+
+/// Casella vocale di gruppo (`vm_group/list`).
+class PbxVmGroup {
+  const PbxVmGroup({
+    required this.id,
+    required this.number,
+    required this.name,
+    this.type = '',
+  });
+  final int id;
+  final String number;
+  final String name;
+  final String type;
+}
+
+/// Chiamata parcheggiata su uno slot (`call/park_status`).
+class PbxParkedCall {
+  const PbxParkedCall({
+    required this.slot,
+    this.parker = '',
+    this.parkedParty = '',
+    this.channelId = '',
+    this.parkTime = 0,
+  });
+  final String slot;
+  final String parker;
+  final String parkedParty;
+  final String channelId;
+  final int parkTime;
+}
+
+/// Codici funzione e configurazione parcheggio/monitoraggio (`feature_code/get`).
+class PbxFeatureCodes {
+  const PbxFeatureCodes({
+    this.recordCode,
+    this.parkCode,
+    this.parkingSlots = const [],
+    this.listenEnabled = true,
+    this.whisperEnabled = true,
+    this.bargeEnabled = true,
+  });
+  final String? recordCode;
+  final String? parkCode;
+  final List<String> parkingSlots;
+  final bool listenEnabled;
+  final bool whisperEnabled;
+  final bool bargeEnabled;
 }
 
 class YeastarApi {
@@ -577,18 +685,312 @@ class YeastarApi {
     };
   }
 
-  /// Codice funzione di registrazione (`auto_record`, pausa/ripresa e
-  /// registrazione a richiesta) se abilitato; null se disattivato.
-  Future<String?> recordFeatureCode() async {
+  /// Codici funzione del PBX (`feature_code/get`): registrazione (`auto_record`),
+  /// parcheggio (`park`, `park_start`..`park_end` / `park_group_list`) e
+  /// interruttori globali di monitoraggio (`enb_listen`, `enb_whisper`,
+  /// `enb_barge_in`).
+  Future<PbxFeatureCodes> getFeatureCodes() async {
     final j = await _call(
       'feature_code/get',
       'GET',
       _uri('feature_code/get', const {}),
     );
-    final f = j['feature_code'];
-    if (f is! Map<String, dynamic>) return null;
-    final code = '${f['auto_record'] ?? ''}';
-    return '${f['enb_auto_record']}' == '1' && code.isNotEmpty ? code : null;
+    final f = j['feature_code'] ?? j['data'];
+    if (f is! Map<String, dynamic>) return const PbxFeatureCodes();
+    final rec = '${f['auto_record'] ?? ''}';
+    final recordCode =
+        '${f['enb_auto_record']}' == '1' && rec.isNotEmpty ? rec : null;
+    final pk = '${f['park'] ?? ''}';
+    final parkCode = '${f['enb_park']}' == '1' && pk.isNotEmpty ? pk : null;
+    final slots = <String>[];
+    void addRange(String sStart, String sEnd) {
+      final a = int.tryParse(sStart.trim());
+      final b = int.tryParse(sEnd.trim());
+      if (a == null || b == null || b < a) return;
+      final end = b - a > 30 ? a + 30 : b;
+      for (var n = a; n <= end; n++) {
+        final s = '$n';
+        if (!slots.contains(s)) slots.add(s);
+      }
+    }
+
+    if ('${f['enb_park_on_slots']}' == '1') {
+      addRange('${f['park_start'] ?? ''}', '${f['park_end'] ?? ''}');
+    }
+    if ('${f['enb_park_group']}' == '1') {
+      for (final g
+          in (f['park_group_list'] as List? ?? const [])
+              .whereType<Map<String, dynamic>>()) {
+        addRange(
+          '${g['park_group_start'] ?? ''}',
+          '${g['park_group_end'] ?? ''}',
+        );
+      }
+    }
+    return PbxFeatureCodes(
+      recordCode: recordCode,
+      parkCode: parkCode,
+      parkingSlots: slots,
+      listenEnabled: '${f['enb_listen'] ?? '1'}' != '0',
+      whisperEnabled: '${f['enb_whisper'] ?? '1'}' != '0',
+      bargeEnabled: '${f['enb_barge_in'] ?? '1'}' != '0',
+    );
+  }
+
+  /// Codice funzione di registrazione (`auto_record`, pausa/ripresa e
+  /// registrazione a richiesta) se abilitato; null se disattivato.
+  Future<String?> recordFeatureCode() async =>
+      (await getFeatureCodes()).recordCode;
+
+  /// Elenco dei gruppi di squillo (`ringgroup/list`).
+  Future<List<PbxRingGroup>> listRingGroups() async {
+    final j = await _call(
+      'ringgroup/list',
+      'GET',
+      _uri('ringgroup/list', {
+        'page': '1',
+        'page_size': '200',
+        'sort_by': 'number',
+        'order_by': 'asc',
+      }),
+    );
+    final data = (j['data'] ?? j['ring_group_list']) as List? ?? const [];
+    return [
+      for (final r in data.whereType<Map<String, dynamic>>())
+        () {
+          final members = [
+            for (final m
+                in (r['member_list'] ?? r['members']) as List? ?? const [])
+              if (m is Map<String, dynamic>)
+                '${m['text2'] ?? m['number'] ?? m['value'] ?? ''}'
+              else
+                '$m',
+          ].where((s) => s.isNotEmpty).toList();
+          return PbxRingGroup(
+            id: (r['id'] as num?)?.toInt() ?? 0,
+            number: '${r['number'] ?? ''}',
+            name: '${r['name'] ?? ''}',
+            memberCount:
+                (r['member_count'] as num?)?.toInt() ?? members.length,
+            memberNumbers: members,
+          );
+        }(),
+    ];
+  }
+
+  /// Elenco delle code di chiamata (`queue/list`).
+  Future<List<PbxQueue>> listQueues() async {
+    final j = await _call(
+      'queue/list',
+      'GET',
+      _uri('queue/list', {
+        'page': '1',
+        'page_size': '200',
+        'sort_by': 'number',
+        'order_by': 'asc',
+      }),
+    );
+    final data = (j['queue_list'] ?? j['data']) as List? ?? const [];
+    return [
+      for (final q in data.whereType<Map<String, dynamic>>())
+        () {
+          final agents = <String>{
+            for (final k in const ['static_agent_list', 'dynamic_agent_list'])
+              for (final a in (q[k] as List? ?? const []))
+                if (a is Map<String, dynamic>)
+                  '${a['text2'] ?? a['number'] ?? a['value'] ?? ''}'
+                else
+                  '$a',
+          }..remove('');
+          return PbxQueue(
+            id: (q['id'] as num?)?.toInt() ?? 0,
+            number: '${q['number'] ?? ''}',
+            name: '${q['name'] ?? ''}',
+            memberCount:
+                (q['member_count'] as num?)?.toInt() ?? agents.length,
+            agentNumbers: agents.toList(),
+          );
+        }(),
+    ];
+  }
+
+  /// Elenco delle caselle vocali di gruppo (`vm_group/list`).
+  Future<List<PbxVmGroup>> listVmGroups() async {
+    final j = await _call(
+      'vm_group/list',
+      'GET',
+      _uri('vm_group/list', {'page': '1', 'page_size': '200'}),
+    );
+    final data = (j['vm_group_list'] ?? j['data']) as List? ?? const [];
+    return [
+      for (final v in data.whereType<Map<String, dynamic>>())
+        PbxVmGroup(
+          id: (v['id'] as num?)?.toInt() ?? 0,
+          number: '${v['number'] ?? ''}',
+          name: '${v['name'] ?? ''}',
+          type: '${v['type'] ?? ''}',
+        ),
+    ];
+  }
+
+  /// Chiamate attualmente parcheggiate (`call/park_status`).
+  Future<List<PbxParkedCall>> queryParkedCalls() async {
+    final j = await _call(
+      'call/park_status',
+      'GET',
+      _uri('call/park_status', const {}),
+    );
+    return [
+      for (final p
+          in (j['data'] as List? ?? const []).whereType<Map<String, dynamic>>())
+        if ('${p['parking_slot'] ?? ''}'.isNotEmpty)
+          PbxParkedCall(
+            slot: '${p['parking_slot']}',
+            parker: '${p['parker'] ?? ''}',
+            parkedParty: '${p['parked_party'] ?? ''}',
+            channelId: '${p['channel_id'] ?? ''}',
+            parkTime: (p['park_time'] as num?)?.toInt() ?? 0,
+          ),
+    ];
+  }
+
+  /// Verifica se l'interno [extNumber] (o [extId]) ha il permesso di
+  /// monitoraggio chiamate (`Listen`, `Whisper`, `Barge In`) nei gruppi di
+  /// interni del PBX (`extensiongroup/list` + `extensiongroup/query`).
+  Future<bool> canExtensionMonitor(String extNumber, {int? extId}) async {
+    if (extNumber.isEmpty && extId == null) return false;
+    final listRes = await _call(
+      'extensiongroup/list',
+      'GET',
+      _uri('extensiongroup/list', {'page': '1', 'page_size': '200'}),
+    );
+    final list = (listRes['data'] as List? ?? const [])
+        .whereType<Map<String, dynamic>>()
+        .toList();
+    if (list.isEmpty) return false;
+    final ids = [
+      for (final g in list)
+        if (g['id'] != null) '${g['id']}',
+    ];
+    if (ids.isEmpty) return false;
+    List<Map<String, dynamic>> groups;
+    try {
+      final qRes = await _call(
+        'extensiongroup/query',
+        'GET',
+        _uri('extensiongroup/query', {'ids': ids.join(',')}),
+      );
+      groups = (qRes['data'] as List? ?? const [])
+          .whereType<Map<String, dynamic>>()
+          .toList();
+    } on YeastarApiException {
+      groups = [];
+      for (final id in ids) {
+        try {
+          final gRes = await _call(
+            'extensiongroup/get',
+            'GET',
+            _uri('extensiongroup/get', {'id': id}),
+          );
+          if (gRes['data'] case final Map<String, dynamic> d) groups.add(d);
+        } on YeastarApiException {
+          // Singolo gruppo non leggibile: si passa oltre.
+        }
+      }
+    }
+    for (final g in groups) {
+      final members = (g['members'] as List? ?? const [])
+          .whereType<Map<String, dynamic>>();
+      Map<String, dynamic>? member;
+      for (final m in members) {
+        final numMatch =
+            extNumber.isNotEmpty && '${m['ext_num'] ?? ''}' == extNumber;
+        final idMatch = extId != null && (m['ext_id'] as num?)?.toInt() == extId;
+        if (numMatch || idMatch) {
+          member = m;
+          break;
+        }
+      }
+      if (member != null) {
+        final role = '${member['role'] ?? ''}'.toLowerCase();
+        if (role == 'manager') {
+          final mgrMon = g['mgr_enb_monitor'] ?? g['mgr_enb_ext_monitor'] ?? 1;
+          if ('$mgrMon' == '1' ||
+              _flag(g, 'mgr_enb_monitor') ||
+              _flag(g, 'mgr_enb_ext_monitor')) {
+            return true;
+          }
+        } else if (role == 'custom') {
+          if (_flag(member, 'enb_monitor') ||
+              _flag(member, 'enb_ext_monitor')) {
+            return true;
+          }
+        } else if (role == 'user') {
+          if (_flag(g, 'user_enb_monitor') ||
+              _flag(g, 'user_enb_ext_monitor')) {
+            return true;
+          }
+        }
+      } else if ('${g['member_select'] ?? ''}' == 'sel_all_ext') {
+        if (_flag(g, 'user_enb_monitor') || _flag(g, 'user_enb_ext_monitor')) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  /// Trasferimento di una chiamata in corso (`POST call/transfer`).
+  /// Per il trasferimento cieco nel pannello operatore: `type: 'blind'`.
+  Future<void> transferCall({
+    required String channelId,
+    required String number,
+    String type = 'blind',
+  }) async {
+    if (channelId.isEmpty || number.isEmpty) {
+      throw ArgumentError('channel_id e number obbligatori');
+    }
+    await _call('call/transfer', 'POST', _uri('call/transfer'), {
+      'type': type,
+      'channel_id': channelId,
+      'number': number,
+    });
+  }
+
+  /// Riaggancia un canale attivo (`POST call/hangup`).
+  Future<void> hangupCall(String channelId) async {
+    if (channelId.isEmpty) throw ArgumentError('channel_id obbligatorio');
+    await _call('call/hangup', 'POST', _uri('call/hangup'), {
+      'channel_id': channelId,
+    });
+  }
+
+  /// Avvia la registrazione su un canale attivo (`POST call/record_start`).
+  Future<void> startRecordCall(String channelId) async {
+    if (channelId.isEmpty) throw ArgumentError('channel_id obbligatorio');
+    await _call('call/record_start', 'POST', _uri('call/record_start'), {
+      'channel_id': channelId,
+    });
+  }
+
+  /// Monitoraggio di una chiamata (`POST call/listen`): [mode] può essere
+  /// `'listen'`, `'whisper'` o `'barge'`.
+  Future<void> monitorCall({
+    required String monitorExt,
+    required String channelId,
+    required String mode,
+  }) async {
+    if (!const {'listen', 'whisper', 'barge'}.contains(mode)) {
+      throw ArgumentError('modalità monitoraggio non valida: $mode');
+    }
+    if (monitorExt.isEmpty || channelId.isEmpty) {
+      throw ArgumentError('monitor e channel_id obbligatori');
+    }
+    await _call('call/listen', 'POST', _uri('call/listen'), {
+      'monitor': monitorExt,
+      'channel_id': channelId,
+      'type': mode,
+    });
   }
 
   /// Dettaglio di un interno (presenze, inoltri, squillo, casella vocale).

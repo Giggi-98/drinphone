@@ -32,7 +32,7 @@ lib/features/shell/home_screen.dart barra sezioni, barra composizione, griglia i
 lib/features/call/                  pannello chiamata, tastierino (anche DTMF)
 lib/features/account/               editor account SIP, pannello connessioni PBX
 lib/features/preferences/           Preferenze a schede (utente, audio, PBX, lingua…)
-lib/features/live/                  Live Calls: chiamate in corso del PBX + colonna BLF
+lib/features/live/                  Live: pannello operatore (chiamate in corso, drag & drop trasferimento cieco, menu controllo/monitoraggio, gruppi/code/parcheggio/VM gruppo, colonna BLF)
 lib/features/contacts|history|voicemail/  rubrica, registro chiamate, casella vocale
 lib/features/setup/                 scelta dell'account, procedura guidata (primo avvio, nuovo account)
 lib/core/contacts/                  contatti personali + import CSV/vCard
@@ -86,18 +86,33 @@ spikes/f0a/                         spike F0-A (non prodotto)
   Presenza via 30009 `VERIFICATA` sul pilota; evento 30039 (`DA VALIDARE` sul
   pilota) salvato in memoria in `PbxConnection.callTimelines` (per `uid`, max
   200 chiamate) e agganciato alle righe CDR lette in `readCdr`.
-- **Live Calls** (`IMPLEMENTATO`; eventi osservati sul pilota, riaggancio `DA VALIDARE`) —
+- **Live (pannello operatore)** (`IMPLEMENTATO`; eventi osservati sul pilota, azioni di controllo e monitoraggio `DA VALIDARE` sul PBX) —
   `PbxConnection.liveCalls`: evento 30011 (membri per identità — interno per numero,
   tratte per estremi — perché `channel_id` cambia; i `BYE` escono; dopo un BYE con al
   più un capo rimasto la chiamata è finita: Yeastar manda `[extension:BYE,
   outbound:ANSWER]` e nient'altro). `call/query?type=inbound|outbound|internal` dopo
   la sottoscrizione, 2 s dopo ogni chiamata nuova e ogni 15 s finché ce ne sono:
-  toglie le chiamate sparite e dà il tipo. `visibleCalls`: una riga per coppia di
+  toglie le chiamate sparite e dà il tipo; se ci sono slot di parcheggio rilegge
+  anche `call/query?type=parkedcall`. `visibleCalls`: una riga per coppia di
   capi (il PBX dà id diversi a tratta trunk e tratta dell'interno), direzione da
   tratte trunk, poi interni noti, poi tipo. Log: solo tipo e stato dei membri.
-  Inizio = prima volta vista, durata da prima risposta. Vista `features/live/`:
-  tabelle "Entranti e interne" / "Uscenti", scelta del PBX, colonna BLF a gruppi
-  (Preferiti + reparti, attivi/totale); solo lettura, nessun controllo di chiamata.
+  Inizio = prima volta vista, durata da prima risposta.
+  Alla sincronizzazione legge anche `ringgroup/list`, `queue/list`, `vm_group/list`,
+  slot e codice parcheggio da `feature_code/get` e i permessi di monitoraggio del
+  proprio interno da `extensiongroup/list` + `extensiongroup/query` (oltre al
+  dettaglio interno).
+  Vista `features/live/`:
+  - tabelle "Entranti e interne" / "Uscenti" con righe trascinabili (`Draggable<LiveCall>`);
+  - trascinamento (drag & drop) di una chiamata attiva su un interno della colonna
+    BLF o su un elemento dei riquadri inferiori (Gruppi di squillo, Code, Parcheggio,
+    Casella vocale di gruppo) → trasferimento cieco (`POST /openapi/v1.0/call/transfer`,
+    `type: "blind"`);
+  - menu contestuale tasto destro (`onSecondaryTapDown` e pulsante `…`) sulle
+    chiamate attive: `Trasferisci`, `Riaggancia` (`call/hangup`), `Registra`
+    (`call/record_start`), `Parcheggia` (trasferimento cieco verso slot libero o
+    `parkCode`) e — **solo se il proprio interno ha il monitoraggio attivo sul PBX**
+    (`conn.canMonitor`) — `Intromettiti` (`barge`), `Ascolta` (`listen`) e
+    `Suggerisci` (`whisper`) via `POST /openapi/v1.0/call/listen`.
 - **Proprio interno in profondità** (`IMPLEMENTATO`; lettura e scrittura verificate
   sul pilota via API, effetto sulle chiamate `DA VALIDARE`) — DECISIONS "Scrittura
   sul proprio interno". `extension/get` del proprio interno (`PbxSync.ownDetail`, su

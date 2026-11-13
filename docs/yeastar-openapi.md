@@ -55,7 +55,9 @@ blocco IP e limite degli 8 token).
 | Elenco interni | `GET extension/list` (`page`, `page_size`, `sort_by`, `order_by`) | per ogni interno: `id`, `number`, `caller_id_name`, `email_addr`, `mobile_number`, `role_name`, `presence_status` (`available`, `away`, `business_trip`, `do_not_disturb`, `lunch`, `off_work`), `custom_presence_status`, `online_status` per `sip_phone` / `linkus_desktop` / `linkus_mobile` / `linkus_web` |
 | Dettaglio interni | `extension/get`, `extension/query`, `extension/search` | |
 | Reparti (gruppi opzionali, DECISIONS 2026-10-28) | `GET organization/list?is_all=1` | albero `children` con `ext_list` (ID degli interni) |
-| Gruppi di interni | `extension_group/list` … | |
+| Gruppi di interni e permessi Operator Panel | `GET extensiongroup/list`, `GET extensiongroup/query?ids=…`, `GET extensiongroup/get?id=…` | membri (`ext_num`, `role`: `manager` / `user` / `custom`) e permessi `mgr_enb_monitor`, `user_enb_monitor`, `enb_monitor` (`enb_ext_monitor`) |
+| Destinazioni Operator Panel | `GET ringgroup/list` (`data`), `GET queue/list` (`queue_list`), `GET vm_group/list` (`vm_group_list`), `GET call/park_status` (`data`), `GET feature_code/get` (`park_start`..`park_end`, `enb_listen`, `enb_whisper`, `enb_barge_in`) | per pannello `Live` e trasferimento drag & drop |
+| Controllo chiamate (`Live`) | `POST call/transfer` (`type: "blind"`, `channel_id`, `number`), `POST call/hangup` (`channel_id`), `POST call/record_start` (`channel_id`), `POST call/listen` (`monitor`, `channel_id`, `type`: `listen` \| `whisper` \| `barge`) | DECISIONS 2026-11-13 |
 | Rubrica aziendale | `company_contact/list`, `/search`, `/get`, `/query`; `phonebook/list` … | campi da verificare sulla pagina dell'endpoint |
 | Stato chiamata interni | evento **30008**: `{"extension":"2002","status":"Ringing"}`, `status` ∈ `Ringing`, `Busy`, `Idle` | richiede Call Status Monitor attivo per quegli interni |
 | Registrazione / presenza | eventi **30007**, **30009** | formato payload da verificare |
