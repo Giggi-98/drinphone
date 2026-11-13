@@ -8,6 +8,7 @@ import 'package:drinphone/core/pbx/pbx_cdr.dart';
 import 'package:drinphone/core/pbx/pbx_connection.dart';
 import 'package:drinphone/core/pbx/pbx_sync.dart';
 import 'package:drinphone/core/pbx/yeastar_api.dart';
+import 'package:drinphone/core/platform/audio_player.dart';
 import 'package:drinphone/core/security/api_credential_store.dart';
 import 'package:drinphone/core/security/cdr_db_store.dart';
 import 'package:drinphone/core/security/settings_store.dart';
@@ -39,6 +40,7 @@ class FakePbx {
 
   /// Se attivo, espone i permessi di monitoraggio del gruppo interni per il 305.
   bool allowMonitor305 = false;
+  bool include305InQueue = false;
 
   /// Richiesta a [holdPath] trattenuta finché [release] non completa.
   String? holdPath;
@@ -68,6 +70,14 @@ class FakePbx {
       if (req.uri.path == holdPath) {
         if (!holdArrived.isCompleted) holdArrived.complete();
         await release.future;
+      }
+      if (req.uri.path.startsWith('/openapi/v1.0/audio/')) {
+        req.response
+          ..statusCode = 200
+          ..headers.contentType = ContentType('audio', 'wav')
+          ..add(utf8.encode('RIFF-FAKE-WAV-${req.uri.path.split('/').last}'));
+        await req.response.close();
+        return;
       }
       Map<String, Object> reply;
       switch (req.uri.path) {
@@ -203,6 +213,10 @@ class FakePbx {
               'auto_record': '*4',
               'enb_park': 1,
               'park': '*5',
+              'enb_ext_pickup': 1,
+              'ext_pickup': '*04',
+              'enb_pickup': 1,
+              'pickup': '*4',
               'enb_park_on_slots': 1,
               'park_start': '6000',
               'park_end': '6002',
@@ -235,7 +249,7 @@ class FakePbx {
                 'id': 2,
                 'name': 'Econnet Whitelist',
                 'number': '6400',
-                'static_agent_list': [11],
+                'static_agent_list': [11, if (include305InQueue) 15],
                 'dynamic_agent_list': [50],
               },
             ],
@@ -280,8 +294,44 @@ class FakePbx {
         case '/openapi/v1.0/call/transfer' ||
             '/openapi/v1.0/call/hangup' ||
             '/openapi/v1.0/call/record_start' ||
-            '/openapi/v1.0/call/listen':
+            '/openapi/v1.0/call/listen' ||
+            '/openapi/v1.0/queue/agent_pause' ||
+            '/openapi/v1.0/agent/pause':
           reply = {'errcode': 0, 'errmsg': 'SUCCESS'};
+        case '/openapi/v1.0/vm/download':
+          final msgId = req.uri.queryParameters['msg_id'] ?? 'm1';
+          reply = {
+            'errcode': 0,
+            'errmsg': 'SUCCESS',
+            'file': 'vm_$msgId.wav',
+            'download_resource_url': '/openapi/v1.0/audio/vm_$msgId.wav',
+          };
+        case '/openapi/v1.0/recording/list':
+          reply = {
+            'errcode': 0,
+            'errmsg': 'SUCCESS',
+            'total_number': 1,
+            'data': [
+              {
+                'id': 91,
+                'uid': 'UID-REC-1',
+                'file': 'rec_2026.wav',
+                'time': '2026/11/10 15:39:03',
+                'duration': 42,
+                'size': 256000,
+                'call_from': 'Mario<301>',
+                'call_to': 'Luigi<305>',
+              },
+            ],
+          };
+        case '/openapi/v1.0/recording/download':
+          final id = req.uri.queryParameters['id'] ?? '91';
+          reply = {
+            'errcode': 0,
+            'errmsg': 'SUCCESS',
+            'file': 'rec_$id.wav',
+            'download_resource_url': '/openapi/v1.0/audio/rec_$id.wav',
+          };
         case '/openapi/v1.0/del_token':
           reply = {'errcode': 0, 'errmsg': 'SUCCESS'};
         default:
@@ -1352,4 +1402,201 @@ void main() {
     },
     skip: !Platform.isWindows,
   );
+
+  test('download voicemail e registrazioni CDR + rifiuto URL esterni', () async {
+    final api = YeastarApi(
+      ApiCredentials(
+        baseUrl: pbx.baseUrl,
+        clientId: _id,
+        clientSecret: _secret,
+      ),
+    );
+    await api.connect();
+    final vmDl = await api.getVoicemailDownloadUrl('msg-77');
+    expect(vmDl.$1, 'vm_msg-77.wav');
+    final vmFile = File('${tmp.path}${Platform.pathSeparator}vm.wav');
+    await api.downloadResource(vmDl.$2, vmFile);
+    expect(
+      await vmFile.readAsString(),
+      'RIFF-FAKE-WAV-vm_msg-77.wav',
+    );
+    final dlReq = pbx.requests.last;
+    expect(dlReq.uri.queryParameters['access_token'], 'AT1');
+    expect(dlReq.headers.value('user-agent'), startsWith('DrinPhone/'));
+
+    final rec = await api.findRecordingByUid('UID-REC-1');
+    expect(rec, isNotNull);
+    expect(rec!.id, 91);
+    final recDl = await api.getRecordingDownloadUrl(id: rec.id);
+    final recFile = File('${tmp.path}${Platform.pathSeparator}rec.wav');
+    await api.downloadResource(recDl.$2, recFile);
+    expect(await recFile.readAsString(), 'RIFF-FAKE-WAV-rec_91.wav');
+
+    // Sicurezza: URL verso un host diverso viene rifiutato.
+    await expectLater(
+      api.downloadResource(Uri.parse('https://evil.example/steal.wav'), recFile),
+      throwsStateError,
+    );
+    await api.close();
+  });
+
+  test('InAppAudioPlayer: play, pause, seek, fine naturale e cleanup file', () async {
+    final backend = _FakeAudioBackend();
+    final player = InAppAudioPlayer(backend: backend);
+    final file1 = File('${tmp.path}${Platform.pathSeparator}a1.wav')
+      ..writeAsBytesSync([1, 2, 3]);
+    final file2 = File('${tmp.path}${Platform.pathSeparator}a2.wav')
+      ..writeAsBytesSync([4, 5, 6]);
+
+    await player.togglePlay('vm:1', () async => file1);
+    expect(player.activeKey, 'vm:1');
+    expect(player.isPlaying, isTrue);
+    expect(player.durationMs, 12000);
+
+    // Pause -> Resume
+    await player.togglePlay('vm:1', () async => file1);
+    expect(player.isPaused, isTrue);
+    await player.togglePlay('vm:1', () async => file1);
+    expect(player.isPlaying, isTrue);
+
+    // Seek
+    await player.seek(5000);
+    expect(player.positionMs, 5000);
+
+    // Completamento naturale
+    backend.curPosMs = 12000;
+    backend.curMode = 'stopped';
+    for (var i = 0; i < 20 && player.state != PlaybackState.idle; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+    }
+    expect(player.state, PlaybackState.idle);
+
+    // Cambio traccia e dispose rimuovono i file in cache
+    await player.togglePlay('rec:2', () async => file2);
+    expect(player.activeKey, 'rec:2');
+    player.dispose();
+    expect(file1.existsSync(), isFalse);
+    expect(file2.existsSync(), isFalse);
+  });
+
+  test(
+    'Live Slice 2: pickup code, pausa agente code e trasferimento con consultazione',
+    () async {
+      pbx.include305InQueue = true;
+      final phone = await controllerWith(FakeSipEngine(), {'a': pbx.baseUrl});
+      final conn = phone.connections.single;
+
+      expect(conn.extPickupCode, '*04');
+      expect(conn.groupPickupCode, '*4');
+      expect(conn.ownAgentQueues.map((q) => q.number), ['6400']);
+
+      // Pausa / ripresa su singola coda e su tutte le code
+      await conn.setOwnQueuePause(pause: true, queue: conn.ownAgentQueues.single);
+      expect(conn.pausedQueueIds, {2});
+      final qPauseReq = pbx.requests.last;
+      expect(qPauseReq.uri.path, '/openapi/v1.0/queue/agent_pause');
+      expect(qPauseReq.uri.queryParameters['queue_id'], '2');
+      expect(qPauseReq.uri.queryParameters['ext_ids'], '15');
+      expect(qPauseReq.uri.queryParameters['operation'], 'pause');
+
+      await conn.setOwnQueuePause(pause: false);
+      expect(conn.pausedQueueIds, isEmpty);
+      final allUnpauseReq = pbx.requests.last;
+      expect(allUnpauseReq.uri.path, '/openapi/v1.0/agent/pause');
+      expect(allUnpauseReq.uri.queryParameters['ext_id'], '15');
+      expect(allUnpauseReq.uri.queryParameters['operation'], 'unpause');
+
+      // Trasferimento con consultazione + complete/swap
+      final call = LiveCall('C-ATT', const [
+        LiveMember(
+          kind: 'inbound',
+          channel: 'ch-in-9',
+          status: 'ANSWER',
+          from: '0612345',
+          to: '305',
+        ),
+        LiveMember(
+          kind: 'extension',
+          channel: 'ch-ext-305',
+          status: 'ANSWERED',
+          number: '305',
+        ),
+      ]);
+      conn.liveCalls['C-ATT'] = call;
+      final ch = await conn.attendedTransferCall(call, '350');
+      expect(ch, 'ch-ext-305');
+      final startIdx = pbx.requests.lastIndexWhere(
+        (r) => r.uri.path.endsWith('call/transfer'),
+      );
+      expect(jsonDecode(pbx.bodies[startIdx]), {
+        'type': 'attended',
+        'channel_id': 'ch-ext-305',
+        'number': '350',
+        'dial_permission': '305',
+      });
+
+      await conn.operateAttendedTransfer(channelId: ch, operate: 'complete');
+      final opIdx = pbx.requests.lastIndexWhere(
+        (r) => r.uri.path.endsWith('call/transfer'),
+      );
+      expect(jsonDecode(pbx.bodies[opIdx]), {
+        'type': 'attended',
+        'channel_id': 'ch-ext-305',
+        'attended_operate': 'complete',
+      });
+
+      await phone.shutdown();
+    },
+    skip: !Platform.isWindows,
+  );
+}
+
+class _FakeAudioBackend implements AudioBackend {
+  int curDurationMs = 12000;
+  int curPosMs = 0;
+  String curMode = 'stopped';
+
+  @override
+  Future<int> open(String path) async {
+    curMode = 'stopped';
+    curPosMs = 0;
+    return curDurationMs;
+  }
+
+  @override
+  Future<void> play() async {
+    curMode = 'playing';
+  }
+
+  @override
+  Future<void> pause() async {
+    curMode = 'paused';
+  }
+
+  @override
+  Future<void> resume() async {
+    curMode = 'playing';
+  }
+
+  @override
+  Future<void> seek(int ms) async {
+    curPosMs = ms;
+    curMode = 'playing';
+  }
+
+  @override
+  Future<int> positionMs() async {
+    if (curMode == 'playing' && curPosMs < curDurationMs) {
+      curPosMs += 1000;
+    }
+    return curPosMs;
+  }
+
+  @override
+  Future<String> mode() async => curMode;
+
+  @override
+  Future<void> close() async {
+    curMode = 'stopped';
+  }
 }

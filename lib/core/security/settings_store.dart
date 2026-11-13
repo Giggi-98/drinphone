@@ -103,9 +103,11 @@ class Settings {
     this.zoom = 1.0,
     this.view = const {},
     this.closeToTray = true,
+    this.globalHotkeys = false,
     this.voicemailCode = '*2',
     this.favorites = const [],
     this.audio = const ('', '', ''),
+    this.audioCodecs = const [],
     this.callOptions = const CallOptions(),
     this.video = const VideoOptions(),
     this.seenMissedAt = '',
@@ -146,6 +148,9 @@ class Settings {
   /// Chiudendo la finestra l'app resta nella barra di sistema (Windows).
   final bool closeToTray;
 
+  /// Scorciatoie globali di sistema (Windows `RegisterHotKey`, opzionali).
+  final bool globalHotkeys;
+
   /// Codice funzione per ascoltare la casella vocale. `*2` è il default di
   /// Yeastar P-Series: configurabile, non universale (docs/sip-e-blf.md).
   final String voicemailCode;
@@ -156,6 +161,9 @@ class Settings {
 
   /// Dispositivi audio scelti (microfono, altoparlante, suoneria); '' = predefinito.
   final (String, String, String) audio;
+
+  /// Ordine e abilitazione personalizzati dei codec audio (vuoto = predefiniti).
+  final List<AudioCodecPref> audioCodecs;
 
   /// Globale: cifratura media, keep-alive, DTMF (Preferenze > Avanzate).
   final CallOptions callOptions;
@@ -250,9 +258,11 @@ class Settings {
       zoom: zoom,
       view: view,
       closeToTray: closeToTray,
+      globalHotkeys: globalHotkeys,
       voicemailCode: a.voicemailCode,
       favorites: a.favorites,
       audio: audio,
+      audioCodecs: audioCodecs,
       callOptions: callOptions,
       video: video,
       seenMissedAt: a.seenMissedAt,
@@ -274,9 +284,11 @@ class Settings {
     double? zoom,
     Map<String, String>? view,
     bool? closeToTray,
+    bool? globalHotkeys,
     String? voicemailCode,
     List<String>? favorites,
     (String, String, String)? audio,
+    List<AudioCodecPref>? audioCodecs,
     CallOptions? callOptions,
     VideoOptions? video,
     String? seenMissedAt,
@@ -296,9 +308,11 @@ class Settings {
     zoom: zoom ?? this.zoom,
     view: view ?? this.view,
     closeToTray: closeToTray ?? this.closeToTray,
+    globalHotkeys: globalHotkeys ?? this.globalHotkeys,
     voicemailCode: voicemailCode ?? this.voicemailCode,
     favorites: favorites ?? this.favorites,
     audio: audio ?? this.audio,
+    audioCodecs: audioCodecs ?? this.audioCodecs,
     callOptions: callOptions ?? this.callOptions,
     video: video ?? this.video,
     seenMissedAt: seenMissedAt ?? this.seenMissedAt,
@@ -441,6 +455,7 @@ class SettingsStore {
           '${e.key}': '${e.value}',
       },
       closeToTray: j['closeToTray'] as bool? ?? true,
+      globalHotkeys: j['globalHotkeys'] as bool? ?? false,
       voicemailCode: active?.voicemailCode ?? '*2',
       favorites: active?.favorites ?? const [],
       seenMissedAt: active?.seenMissedAt ?? '',
@@ -451,6 +466,14 @@ class SettingsStore {
         j['audioPlayback'] as String? ?? '',
         j['audioRinger'] as String? ?? '',
       ),
+      audioCodecs: [
+        for (final x in (j['audioCodecs'] as List? ?? const []))
+          if (x is Map && x['id'] is String)
+            AudioCodecPref(
+              x['id'] as String,
+              enabled: x['enabled'] as bool? ?? true,
+            ),
+      ],
       pbx: active?.pbx ?? const [],
       callOptions: CallOptions(
         encryption:
@@ -459,6 +482,9 @@ class SettingsStore {
         encryptionMandatory: j['encryptionMandatory'] as bool? ?? false,
         keepAlive: j['keepAlive'] as bool? ?? true,
         dtmfInfo: j['dtmfInfo'] as bool? ?? false,
+        autoAnswer: j['autoAnswer'] as bool? ?? false,
+        autoAnswerDelaySeconds:
+            (j['autoAnswerDelaySeconds'] as num?)?.toInt() ?? 0,
       ),
       video: VideoOptions(
         enabled: j['videoEnabled'] as bool? ?? true,
@@ -568,13 +594,19 @@ class SettingsStore {
         'zoom': s.zoom,
         'view': s.view,
         'closeToTray': s.closeToTray,
+        'globalHotkeys': s.globalHotkeys,
         'audioCapture': s.audio.$1,
         'audioPlayback': s.audio.$2,
         'audioRinger': s.audio.$3,
+        'audioCodecs': [
+          for (final c in s.audioCodecs) {'id': c.id, 'enabled': c.enabled},
+        ],
         'mediaEncryption': s.callOptions.encryption.name,
         'encryptionMandatory': s.callOptions.encryptionMandatory,
         'keepAlive': s.callOptions.keepAlive,
         'dtmfInfo': s.callOptions.dtmfInfo,
+        'autoAnswer': s.callOptions.autoAnswer,
+        'autoAnswerDelaySeconds': s.callOptions.autoAnswerDelaySeconds,
         'videoEnabled': s.video.enabled,
         'videoCamera': s.video.camera,
         'videoPreview': s.video.preview,

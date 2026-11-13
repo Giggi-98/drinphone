@@ -60,25 +60,15 @@ Desktop (F5) e UI (§8):
 ## Da fare (Prossimi passi proposti)
 
 ### F3/F5 — Ergonomia e rifinitura softphone desktop
-- **Ascolto e download registrazioni / casella vocale in-app**: player integrato
-  nei `Dettagli chiamata` CDR (`recording/download`) e in `Casella vocale`
-  (`vm/download`) senza dover chiamare `*2` o aprire il PBX via web.
-- **Azioni rapide in `Dettagli chiamata` e header**: clic sulle pillole dei
-  partecipanti (`Da`, `A`, `Ultimo partecipante`) per richiamare, copiare o
-  salvare in rubrica; menu rapido sul chip presenza in alto per cambiare stato in
-  un clic.
-- **Scorciatoie da tastiera**: `Ctrl+F`/`Ctrl+K` (ricerca/composizione), `Invio`
-  (rispondi), `Esc` (rifiuta/chiudi), `Ctrl+M` (muto).
-- **Hot-swap dispositivi audio**: rilevamento automatico cuffie USB/Bluetooth
-  collegate o scollegate a caldo.
-- **Allineamento grafico allo stile "Squillo" (`DESIGN.md`)**: completare la
-  migrazione tipografica (`DrinText` / `DrinSpace`) di `LiveCallsView`,
-  `ContactsView` e `VoicemailView` sullo standard di `CdrView`.
-- **Codec audio**: scelta e ordine Opus / G.711 PCMA-PCMU / G.722.
-- **Risposta automatica** lato app per interfono/citofoni.
-- **Agent Status** (code) e **scelta del numero in uscita** (DOD).
-- **Plugin Media Foundation** per H264 con i codec di Windows, oppure licenza
-  commerciale Belledonne.
+- **Ascolto e download registrazioni / casella vocale in-app** (`IMPLEMENTATO 2026-11-13`, `DA VALIDARE` su PBX reale con file audio veri): player integrato (`winmm.dll` MCI) nei `Dettagli chiamata` CDR (`recording/list` + `recording/download`) e in `Casella vocale` (`vm/download`), senza dover chiamare `*2` o aprire il PBX via web.
+- **Azioni rapide in `Dettagli chiamata` e header**: clic sui chip dei partecipanti (`Da`, `A`, `Ultimo partecipante`) per richiamare, copiare o salvare in rubrica (`IMPLEMENTATO`); menu rapido sul chip presenza in alto per cambiare stato in un clic.
+- **Controlli `Live` estesi** (`IMPLEMENTATO 2026-11-13`, `DA VALIDARE` su PBX reale): pickup diretto su BLF che squillano, pausa/riprendi agente nelle code, ripresa rapida parcheggio e trasferimento con consultazione (`swap`/`threeway`/`complete`/`abort`) dall'elenco chiamate.
+- **Scorciatoie da tastiera e globali**: `Ctrl+F`/`Ctrl+K`/`Ctrl+L` (ricerca/composizione), `Ctrl+Invio` (rispondi), `Ctrl+E` (rifiuta/chiudi), `Ctrl+M` (muto), più scorciatoie globali Win32 opzionali (`Ctrl+Alt+A/M/D`, `IMPLEMENTATO`, `DA VALIDARE` a schermo).
+- **Hot-swap dispositivi audio** (`IMPLEMENTATO 2026-11-13`, `DA VALIDARE` su cuffie USB/Bluetooth reali): reload elenco dispositivi al cambio sistema (`audio_devices_list_updated`) e ripristino automatico dei dispositivi preferiti.
+- **Codec audio** (`IMPLEMENTATO 2026-11-13`, `DA VALIDARE` su chiamata reale): scelta e priorità dei codec audio esposti da liblinphone (`Preferenze > Audio`).
+- **Risposta automatica** (`IMPLEMENTATO 2026-11-13`, `DA VALIDARE` su chiamata reale): interruttore e ritardo in `Preferenze > Audio` (non interrompe chiamate già attive).
+- **Allineamento grafico allo stile "Squillo" (`DESIGN.md`)**: `VoicemailView`, `CdrView`/`CdrDetailsDialog` e `LiveCallsView` allineati (`IMPLEMENTATO`); `ContactsView` ancora da rifinire a screenshot (`§8`).
+- **Scelta del numero in uscita (DOD)**, **Plugin Media Foundation** per H264 e **licenza commerciale Belledonne** / pubblicazione: rimandati alla fase di chiusura commerciale/rilascio pubblico.
 
 ### UX — Rifinitura "Squillo" (revisione degli screenshot v0.1.6, 2026-11-11)
 Estende "Azioni rapide", "Scorciatoie" e "Allineamento grafico" qui sopra.

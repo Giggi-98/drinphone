@@ -154,6 +154,8 @@ class CallOptions {
     this.encryptionMandatory = false,
     this.keepAlive = true,
     this.dtmfInfo = false,
+    this.autoAnswer = false,
+    this.autoAnswerDelaySeconds = 0,
   });
   final MediaEncryption encryption;
 
@@ -165,6 +167,13 @@ class CallOptions {
 
   /// DTMF via SIP INFO invece di RFC 2833 (nel flusso RTP).
   final bool dtmfInfo;
+
+  /// Risposta automatica alle chiamate entranti (quando non c'è un'altra chiamata
+  /// attiva o in uscita).
+  final bool autoAnswer;
+
+  /// Ritardo prima della risposta automatica, in secondi (0 = subito).
+  final int autoAnswerDelaySeconds;
 }
 
 enum RegistrationStatus { none, progress, ok, cleared, failed }
@@ -230,6 +239,38 @@ class BlfEvent {
   final String number;
   final BlfStatus status;
   final String reason;
+}
+
+/// Codec audio esposto dal core (ordine di preferenza e stato).
+class AudioCodecInfo {
+  const AudioCodecInfo({
+    required this.id,
+    required this.mime,
+    required this.clockRate,
+    required this.channels,
+    required this.enabled,
+  });
+
+  /// Identificatore univoco `<mime>/<clockRate>/<channels>` (es. `opus/48000/2`).
+  final String id;
+  final String mime;
+  final int clockRate;
+  final int channels;
+  final bool enabled;
+}
+
+/// Preferenza salvata su disco per un codec audio (ordine + abilitazione).
+class AudioCodecPref {
+  const AudioCodecPref(this.id, {this.enabled = true});
+  final String id;
+  final bool enabled;
+
+  @override
+  bool operator ==(Object other) =>
+      other is AudioCodecPref && id == other.id && enabled == other.enabled;
+
+  @override
+  int get hashCode => Object.hash(id, enabled);
 }
 
 /// Dispositivo audio del sistema (id del core, es. `WASAPI: Microfono (…)`).
@@ -316,6 +357,9 @@ abstract class SipEngine {
   /// noto): serve a riconoscere le chiamate rimaste aperte senza l'altro capo.
   Future<double?> inboundAudioKbps(int id);
 
+  /// Notifica quando il sistema aggiunge o rimuove un dispositivo audio.
+  Stream<bool> get audioDevicesChanged => const Stream.empty();
+
   /// Dispositivi audio disponibili (rilegge il sistema).
   List<SoundDevice> soundDevices();
 
@@ -328,6 +372,12 @@ abstract class SipEngine {
     String? playback,
     String? ringer,
   });
+
+  /// Codec audio utilizzabili dal core, in ordine di priorità.
+  List<AudioCodecInfo> audioCodecs();
+
+  /// Imposta abilitazione e priorità dei codec audio.
+  Future<void> setAudioCodecs(List<AudioCodecPref> codecs);
 
   /// Opzioni globali: cifratura media, keep-alive, metodo DTMF.
   Future<void> setCallOptions(CallOptions options);

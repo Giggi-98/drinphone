@@ -1,9 +1,12 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 
 import '../../app/l10n.dart';
 import '../../app/phone_controller.dart';
 import '../../app/theme.dart';
 import '../../core/call_history.dart';
+import '../../core/contacts/personal_contacts.dart';
 import '../../core/pbx/pbx_cdr.dart';
 import '../../core/pbx/pbx_connection.dart';
 import '../../core/sip/sip_engine.dart';
@@ -730,6 +733,12 @@ class _HistoryViewState extends State<HistoryView> {
                       canDial: p.canDial,
                       onCall: widget.onCall,
                       byDay: _byDay,
+                      player: p.mediaPlayer,
+                      audioCacheDir: Directory(
+                        '${p.engineDataDir}${Platform.pathSeparator}audio_cache',
+                      ),
+                      onSaveContact: (name, number) =>
+                          _savePartyAsContact(context, p, name, number),
                     )
                   : list.isEmpty
                   ? Center(
@@ -760,5 +769,71 @@ class _HistoryViewState extends State<HistoryView> {
         ],
       ),
     );
+  }
+
+  Future<void> _savePartyAsContact(
+    BuildContext context,
+    PhoneController p,
+    String initialName,
+    String number,
+  ) async {
+    final nameCtrl = TextEditingController(
+      text: initialName.trim().isNotEmpty ? initialName.trim() : number,
+    );
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(tr('Salva in rubrica')),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            TextField(
+              controller: nameCtrl,
+              autofocus: true,
+              decoration: InputDecoration(labelText: tr('Nome')),
+              onSubmitted: (_) => Navigator.of(ctx).pop(true),
+            ),
+            const SizedBox(height: DrinSpace.s2),
+            Text(
+              '${tr('Numero')}: $number',
+              style: DrinText.number.copyWith(color: context.drin.muted),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text(tr('Annulla')),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(tr('Salva')),
+          ),
+        ],
+      ),
+    );
+    final finalName = nameCtrl.text.trim();
+    nameCtrl.dispose();
+    if (saved != true || finalName.isEmpty) return;
+    final contact = PersonalContact(
+      id: PersonalContact.newId(),
+      name: finalName,
+      numbers: [('Ufficio', number)],
+    );
+    if (p.isPersonalDuplicate(contact)) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(tr('Contatto già presente in rubrica'))),
+        );
+      }
+      return;
+    }
+    await p.savePersonal(contact);
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(tr('Salvato in rubrica: {n}', {'n': finalName}))),
+      );
+    }
   }
 }

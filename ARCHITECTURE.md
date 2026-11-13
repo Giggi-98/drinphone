@@ -27,6 +27,8 @@ lib/core/pbx/pbx_sync.dart          registro delle voci sincronizzabili dalle AP
 lib/core/pbx/pbx_cdr.dart           CDR dal database del PBX (Database Grant, MySQL)
 lib/core/security/cdr_db_store.dart credenziali Database Grant cifrate (DPAPI)
 lib/core/sip/linphone_ffi_engine.dart  unico adattatore liblinphone (FFI, API C)
+lib/core/platform/audio_player.dart player audio in-app (winmm.dll MCI) per VM e registrazioni CDR
+lib/core/platform/global_hotkeys.dart scorciatoie globali Win32 opzionali (RegisterHotKey + conferma appunti)
 lib/core/security/settings_store.dart  impostazioni JSON + password in storage sicuro
 lib/features/shell/home_screen.dart barra sezioni, barra composizione, griglia interni
 lib/features/call/                  pannello chiamata, tastierino (anche DTMF)
@@ -108,11 +110,24 @@ spikes/f0a/                         spike F0-A (non prodotto)
     Casella vocale di gruppo) → trasferimento cieco (`POST /openapi/v1.0/call/transfer`,
     `type: "blind"`);
   - menu contestuale tasto destro (`onSecondaryTapDown` e pulsante `…`) sulle
-    chiamate attive: `Trasferisci`, `Riaggancia` (`call/hangup`), `Registra`
-    (`call/record_start`), `Parcheggia` (trasferimento cieco verso slot libero o
-    `parkCode`) e — **solo se il proprio interno ha il monitoraggio attivo sul PBX**
-    (`conn.canMonitor`) — `Intromettiti` (`barge`), `Ascolta` (`listen`) e
-    `Suggerisci` (`whisper`) via `POST /openapi/v1.0/call/listen`.
+    chiamate attive: `Trasferisci` (cieco o con consultazione `type: "attended"` +
+    controlli `swap`/`threeway`/`complete`/`abort`), `Riaggancia` (`call/hangup`),
+    `Registra` (`call/record_start`), `Parcheggia` (trasferimento cieco verso slot
+    libero o `parkCode`, più drop sull'intera card e chip `Riprendi` sugli slot
+    occupati), `Rispondi per {n}` / pickup BLF su interni ringing
+    (`feature_code/get` `ext_pickup`/`pickup`), pausa/riprendi agente nelle code
+    (`queue/agent_pause` / `agent/pause`), e — **solo se il proprio interno ha il
+    monitoraggio attivo sul PBX** (`conn.canMonitor`) — `Intromettiti` (`barge`),
+    `Ascolta` (`listen`) e `Suggerisci` (`whisper`) via
+    `POST /openapi/v1.0/call/listen`.
+- **Player audio, audio desktop, risposta automatica e scorciatoie globali**
+  (`IMPLEMENTATO`; testato con fake, `DA VALIDARE` su PBX/hardware reale) —
+  `InAppAudioPlayer` (`winmm.dll` MCI) in `Casella vocale` (`vm/download`) e
+  `Dettagli chiamata` CDR (`recording/list` + `recording/download`); hot-swap
+  dispositivi (`linphone_core_cbs_set_audio_devices_list_updated` + ripristino
+  preferiti), priorità/abilitazione codec audio (`linphone_core_set_audio_payload_types`),
+  risposta automatica opzionale con ritardo in `CallOptions` e scorciatoie globali
+  Win32 opzionali (`RegisterHotKey` su `drinphone/hotkeys` con `Ctrl+Alt+A/M/D`).
 - **Proprio interno in profondità** (`IMPLEMENTATO`; lettura e scrittura verificate
   sul pilota via API, effetto sulle chiamate `DA VALIDARE`) — DECISIONS "Scrittura
   sul proprio interno". `extension/get` del proprio interno (`PbxSync.ownDetail`, su

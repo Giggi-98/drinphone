@@ -6,6 +6,17 @@ aggiungi una voce nuova in cima che cita la vecchia. Il campo chiave è
 
 ---
 
+## 2026-11-13 · Ergonomia desktop & operatore (v0.1.13-dev): player audio Windows MCI, controlli Live avanzati, audio hot-swap/codec, risposta automatica e scorciatoie globali Win32
+Richiesto da Luigi di completare le funzionalità tecniche e desktop rimandando alla fine la sola parte commerciale/vendita.
+1. **Player audio in-app (`lib/core/platform/audio_player.dart`):** riproduzione dei messaggi vocali (`vm/download`) e delle registrazioni CDR (`recording/list` + `recording/download`) tramite API Win32 native `mciSendStringW` (`winmm.dll`) dietro interfaccia testabile `AudioBackend`, con file temporanei nella cache app e pulizia allo scarico/chiusura.
+   - **Scartato:** dipendenze esterne con codec/runtime aggiuntivi o apertura automatica del player di Windows ad ogni ascolto (l'utente perde controllo dentro DrinPhone); scrivere su disco file permanenti non richiesti (il salvataggio resta un'azione esplicita).
+   - **Da rivedere se:** si apre il porting macOS/Linux (aggiungere un `AudioBackend` specifico per piattaforma).
+2. **Operazioni avanzate pannello `Live`:** pickup diretto su BLF che squillano (`feature_code/get` `ext_pickup`/`pickup` → composizione codice+interno), stato pausa agente nelle code (`queue/agent_pause` / `agent/pause`), ripresa rapida parcheggio e trasferimento con consultazione (`call/transfer` `type: "attended"` + `attended_operate`: `swap`/`threeway`/`complete`/`abort`) dall'elenco chiamate.
+   - **Da rivedere se:** Yeastar cambia i campi di `feature_code/get` o `queue/agent_pause` in versioni firmware future (ogni chiamata resta `DA VALIDARE` contro PBX reale).
+3. **Audio desktop e scorciatoie globali:** callback nativo `linphone_core_cbs_set_audio_devices_list_updated` + ripristino automatico dei dispositivi salvati in `Settings.audio`, priorità/abilitazione codec audio via `linphone_core_set_audio_payload_types` / `linphone_payload_type_enable`, risposta automatica opzionale in `CallOptions` (solo se nessuna chiamata attiva/uscente), e scorciatoie globali Win32 opzionali (`RegisterHotKey` disattivate di default nel runner Windows, `Ctrl+Alt+D` passa da `pendingCallLink` con finestra di conferma).
+   - **Scartato:** composizione immediata senza conferma su `Ctrl+Alt+D` (rischio di chiamare testo arbitrario dagli appunti); scorciatoie globali attive di default (possibili conflitti con altre app Windows).
+   - **Da rivedere se:** su alcune macchine USB/Bluetooth Windows WASAPI non notifica `audio_devices_list_updated` fuori chiamata (valutare `IMMNotificationClient` nativo) o un'altra app occupa le combinazioni scelte.
+
 ## 2026-11-13 · Sezione "Live" (pannello operatore): trasferimento cieco drag & drop, controllo chiamate e monitoraggio condizionale
 Cita "Modello di fiducia: utente finale meno fidato dell'amministratore" (2026-10-30).
 Richiesto da Luigi: rinominare "Chiamate in corso" in **"Live"** e dotare la

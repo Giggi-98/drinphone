@@ -44,6 +44,7 @@ typedef _TransferCb = Void Function(
   Pointer<Void> call,
   Int32 state,
 );
+typedef _AudioDevicesCb = Void Function(Pointer<Void> core);
 
 typedef _VoidP = Void Function(Pointer<Void>);
 typedef _VoidPDart = void Function(Pointer<Void>);
@@ -80,7 +81,9 @@ class LinphoneFfiEngine implements SipEngine {
   final _dialogs = StreamController<BlfEvent>.broadcast();
   final _voicemail = StreamController<VoicemailEvent>.broadcast();
   final _transfers = StreamController<bool>.broadcast();
+  final _audioDevicesChanged = StreamController<bool>.broadcast();
   NativeCallable<_TransferCb>? _transferCb;
+  NativeCallable<_AudioDevicesCb>? _audioListCb;
   NativeCallable<_MwiCb>? _mwiCb;
 
   late final DynamicLibrary _lib;
@@ -112,6 +115,8 @@ class LinphoneFfiEngine implements SipEngine {
   Stream<VoicemailEvent> get voicemail => _voicemail.stream;
   @override
   Stream<bool> get transfers => _transfers.stream;
+  @override
+  Stream<bool> get audioDevicesChanged => _audioDevicesChanged.stream;
 
   late final _createCallParams = _lib.lookupFunction<_PPP, _PPP>(
     'linphone_core_create_call_params',
@@ -143,12 +148,24 @@ class LinphoneFfiEngine implements SipEngine {
         Void Function(Pointer<Void>, Pointer<NativeFunction<_TransferCb>>),
         void Function(Pointer<Void>, Pointer<NativeFunction<_TransferCb>>)
       >('linphone_core_cbs_set_transfer_state_changed');
+  late final _setAudioListUpdatedCb = _lib
+      .lookupFunction<
+        Void Function(Pointer<Void>, Pointer<NativeFunction<_AudioDevicesCb>>),
+        void Function(Pointer<Void>, Pointer<NativeFunction<_AudioDevicesCb>>)
+      >('linphone_core_cbs_set_audio_devices_list_updated');
 
   // Stato della chiamata trasferita (LinphoneCallState): Connected 7 /
   // StreamsRunning 8 = trasferimento riuscito, Error 13 = rifiutato.
   void _onTransfer(Pointer<Void> core, Pointer<Void> call, int state) {
     if (state == 7 || state == 8) _transfers.add(true);
     if (state == 13) _transfers.add(false);
+  }
+
+  void _onAudioDevicesUpdated(Pointer<Void> core) {
+    Future.microtask(() {
+      if (_core != nullptr) _reloadSound(_core);
+      _audioDevicesChanged.add(true);
+    });
   }
 
   late final _callGetParams = _lib.lookupFunction<_PP, _PP>(
@@ -597,6 +614,9 @@ class LinphoneFfiEngine implements SipEngine {
         : 'libbctoolbox.so',
   );
   late final _listNew = _bctbx.lookupFunction<_PP, _PP>('bctbx_list_new');
+  late final _listAppend = _bctbx.lookupFunction<_PPP, _PPP>(
+    'bctbx_list_append',
+  );
   late final _listFree = _bctbx.lookupFunction<_PP, _PP>('bctbx_list_free');
   late final _setRoutes = _lib.lookupFunction<_IntPP, _IntPPDart>(
     'linphone_account_params_set_routes_addresses',
@@ -699,11 +719,23 @@ class LinphoneFfiEngine implements SipEngine {
         Pointer<Void> Function(Pointer<Void>, Pointer<Utf8>),
         Pointer<Void> Function(Pointer<Void>, Pointer<Utf8>)
       >('linphone_core_interpret_url');
+  late final _audioPayloads = _lib.lookupFunction<_PP, _PP>(
+    'linphone_core_get_audio_payload_types',
+  );
+  late final _setAudioPayloads = _lib.lookupFunction<_VoidPP, _VoidPPDart>(
+    'linphone_core_set_audio_payload_types',
+  );
   late final _videoPayloads = _lib.lookupFunction<_PP, _PP>(
     'linphone_core_get_video_payload_types',
   );
   late final _ptMime = _lib.lookupFunction<_PS, _PS>(
     'linphone_payload_type_get_mime_type',
+  );
+  late final _ptClockRate = _lib.lookupFunction<_IntP, _IntPDart>(
+    'linphone_payload_type_get_clock_rate',
+  );
+  late final _ptChannels = _lib.lookupFunction<_IntP, _IntPDart>(
+    'linphone_payload_type_get_channels',
   );
   late final _ptUsable = _lib
       .lookupFunction<
@@ -715,6 +747,11 @@ class LinphoneFfiEngine implements SipEngine {
         Uint8 Function(Pointer<Void>),
         int Function(Pointer<Void>)
       >('linphone_payload_type_enabled');
+  late final _ptEnable = _lib
+      .lookupFunction<
+        Int32 Function(Pointer<Void>, Uint8),
+        int Function(Pointer<Void>, int)
+      >('linphone_payload_type_enable');
   late final _ptUnref = _lib.lookupFunction<_VoidP, _VoidPDart>(
     'linphone_payload_type_unref',
   );
@@ -900,6 +937,10 @@ class LinphoneFfiEngine implements SipEngine {
     _setSubStateCb(cbs, _subStateCb!.nativeFunction);
     _transferCb = NativeCallable<_TransferCb>.isolateLocal(_onTransfer);
     _setTransferCb(cbs, _transferCb!.nativeFunction);
+    _audioListCb = NativeCallable<_AudioDevicesCb>.isolateLocal(
+      _onAudioDevicesUpdated,
+    );
+    _setAudioListUpdatedCb(cbs, _audioListCb!.nativeFunction);
     _addCbs(_core, cbs);
     _cbsUnref(cbs);
 
@@ -1237,6 +1278,75 @@ class LinphoneFfiEngine implements SipEngine {
   }
 
   @override
+  List<AudioCodecInfo> audioCodecs() {
+    if (_core == nullptr) return const [];
+    final list = _audioPayloads(_core);
+    final out = <AudioCodecInfo>[];
+    var node = list.cast<IntPtr>();
+    while (node != nullptr) {
+      final pt = Pointer<Void>.fromAddress(node[2]);
+      if (_ptUsable(pt) != 0) {
+        final mime = _ptMime(pt).toDartString();
+        final rate = _ptClockRate(pt);
+        final ch = _ptChannels(pt);
+        out.add(
+          AudioCodecInfo(
+            id: '$mime/$rate/$ch',
+            mime: mime,
+            clockRate: rate,
+            channels: ch,
+            enabled: _ptEnabled(pt) != 0,
+          ),
+        );
+      }
+      _ptUnref(pt);
+      node = Pointer<IntPtr>.fromAddress(node[0]);
+    }
+    if (list != nullptr) _listFree(list);
+    return out;
+  }
+
+  @override
+  Future<void> setAudioCodecs(List<AudioCodecPref> codecs) async {
+    if (_core == nullptr || codecs.isEmpty) return;
+    final list = _audioPayloads(_core);
+    if (list == nullptr) return;
+    final entries = <({String id, Pointer<Void> pt})>[];
+    var node = list.cast<IntPtr>();
+    while (node != nullptr) {
+      final pt = Pointer<Void>.fromAddress(node[2]);
+      final id =
+          '${_ptMime(pt).toDartString()}/${_ptClockRate(pt)}/${_ptChannels(pt)}';
+      entries.add((id: id, pt: pt));
+      node = Pointer<IntPtr>.fromAddress(node[0]);
+    }
+    final byId = {for (final e in entries) e.id: e.pt};
+    Pointer<Void> ordered = nullptr;
+    final placed = <int>{};
+    for (final pref in codecs) {
+      final pt = byId[pref.id];
+      if (pt == null) continue;
+      _ptEnable(pt, pref.enabled ? 1 : 0);
+      if (placed.add(pt.address)) {
+        ordered = _listAppend(ordered, pt);
+      }
+    }
+    for (final e in entries) {
+      if (placed.add(e.pt.address)) {
+        ordered = _listAppend(ordered, e.pt);
+      }
+    }
+    if (ordered != nullptr) {
+      _setAudioPayloads(_core, ordered);
+      _listFree(ordered);
+    }
+    for (final e in entries) {
+      _ptUnref(e.pt);
+    }
+    _listFree(list);
+  }
+
+  @override
   List<String> videoCodecs() {
     final list = _videoPayloads(_core);
     final out = <String>[];
@@ -1469,6 +1579,7 @@ class LinphoneFfiEngine implements SipEngine {
     _notifyCb?.close();
     _mwiCb?.close();
     _transferCb?.close();
+    _audioListCb?.close();
     _subStateCb?.close();
   }
 

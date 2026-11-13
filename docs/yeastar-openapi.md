@@ -134,5 +134,11 @@ reale di `extension/list`, `organization/list`, `company_contact/list`; payload
 - Event 30008: https://help.yeastar.com/en/p-series-cloud-edition/developer-guide/event-extension-call-status-changed.html
 - Monitor Events via WebSocket: https://help.yeastar.com/en/p-series-appliance-edition/developer-guide/monitor-events-via-websocket.html
 - API Events Overview: https://help.yeastar.com/en/p-series-cloud-edition/developer-guide/api-events-overview.html
+- Download Voicemail (`vm/download`): https://help.yeastar.com/en/p-series-cloud-edition/developer-guide/download-a-voicemail.html
+- Query Recording List (`recording/list`): https://help.yeastar.com/en/p-series-cloud-edition/developer-guide/query-recording-list.html
+- Download Recording (`recording/download`): https://help.yeastar.com/en/p-series-cloud-edition/developer-guide/download-recording-files.html
+- Transfer a Call (`call/transfer` blind & attended): https://help.yeastar.com/en/p-series-cloud-edition/developer-guide/transfer-a-call.html
+- Pause / Unpause Agent in Queue (`queue/agent_pause`, `agent/pause`): https://help.yeastar.com/en/p-series-cloud-edition/developer-guide/pause-an-agent.html
+- Feature Codes (`feature_code/get`): https://help.yeastar.com/en/p-series-cloud-edition/developer-guide/query-feature-code.html
 - Developer Guide Appliance (PDF): https://help.yeastar.com/download/docs/p-series-developer-guide-appliance-edition-en.pdf
 - Login API (supporto Yeastar): https://support.yeastar.com/hc/en-us/articles/23744152078361-How-To-Login-the-API-of-Yeastar-P-Series-PBX

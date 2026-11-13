@@ -43,6 +43,13 @@ class FlutterWindow : public Win32Window {
   // Riga di comando di un'altra copia verso Dart ("drinphone/instance").
   std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>>
       instance_channel_;
+
+  // Scorciatoie globali Win32 opzionali ("drinphone/hotkeys").
+  std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>>
+      hotkeys_channel_;
+  void RegisterGlobalHotkeys(HWND hwnd, bool enabled,
+                             flutter::EncodableMap* status);
+  void UnregisterGlobalHotkeys(HWND hwnd);
 };
 
 #endif  // RUNNER_FLUTTER_WINDOW_H_

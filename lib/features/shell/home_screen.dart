@@ -12,6 +12,7 @@ import '../../core/pbx/yeastar_api.dart' show YeastarApiException;
 import '../../core/pbx/pbx_connection.dart'
     show ExtensionLive, LiveCall, LiveState;
 import '../../core/platform/call_links.dart';
+import '../../core/platform/global_hotkeys.dart';
 import '../../core/platform/window_attention.dart';
 import '../../core/security/settings_store.dart';
 import '../../core/sip/sip_engine.dart';
@@ -130,6 +131,15 @@ class _HomeScreenState extends State<HomeScreen> {
       _onCallLink();
     });
     pendingCallLink.addListener(_onCallLink);
+    GlobalHotkeys.instance.listen(
+      (action) => unawaited(
+        GlobalHotkeys.handleAction(
+          action,
+          p,
+          onShowWindow: WindowAttention.instance.show,
+        ),
+      ),
+    );
     HardwareKeyboard.instance.addHandler(_onKey);
     _lifecycle = AppLifecycleListener(
       // Rientro nella finestra: riallinea i dati PBX (saltato se letti da < 10 s).
@@ -155,6 +165,7 @@ class _HomeScreenState extends State<HomeScreen> {
     _lifecycle.dispose();
     HardwareKeyboard.instance.removeHandler(_onKey);
     _searchFocus.dispose();
+    GlobalHotkeys.instance.unlisten();
     pendingCallLink.removeListener(_onCallLink);
     p.removeListener(_onPhone);
     p.updater?.removeListener(_onUpdater);

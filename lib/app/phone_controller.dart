@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:math';
 
 import 'package:flutter/foundation.dart';
@@ -6,6 +7,8 @@ import 'package:flutter/material.dart' show ThemeMode;
 
 import '../core/call_history.dart';
 import '../core/contacts/personal_contacts.dart';
+import '../core/platform/audio_player.dart';
+import '../core/platform/global_hotkeys.dart';
 import 'l10n.dart';
 import 'theme.dart' show DrinScale, appThemeMode, appZoom;
 import '../core/pbx/pbx_cache.dart';
@@ -41,7 +44,12 @@ class PhoneController extends ChangeNotifier {
     this.recordingsDir = '',
     this.onIncomingCall,
     YeastarApi Function(ApiCredentials)? apiFactory,
-  }) : _apiFactory = apiFactory ?? YeastarApi.new;
+    AudioBackend? audioBackend,
+  }) : _apiFactory = apiFactory ?? YeastarApi.new,
+       mediaPlayer = InAppAudioPlayer(backend: audioBackend);
+
+  /// Lettore audio condiviso per messaggi vocali e registrazioni CDR.
+  final InAppAudioPlayer mediaPlayer;
 
   /// Registro chiamate per profilo (DECISIONS "Profili").
   final CallHistoryStore Function(String profileId)? historyStoreFor;
@@ -221,6 +229,11 @@ class PhoneController extends ChangeNotifier {
         notifyListeners();
       }),
     );
+    _subs.add(
+      _engine.audioDevicesChanged.listen((_) {
+        unawaited(syncAudioDevicesAfterChange());
+      }),
+    );
     h264Installed = await openH264?.verified() ?? false;
     try {
       engineVersion = await _engine.start(
@@ -231,6 +244,9 @@ class PhoneController extends ChangeNotifier {
       );
       debugPrint('[drinphone] motore liblinphone $engineVersion avviato');
       await _engine.setCallOptions(settings.callOptions);
+      if (settings.audioCodecs.isNotEmpty) {
+        await _engine.setAudioCodecs(settings.audioCodecs);
+      }
       await _engine.setVideo(settings.video);
       _engine.setRecordingDir(recordingsDir);
       // Dispositivi audio scelti in Preferenze > Audio ('' = predefinito).
@@ -239,6 +255,9 @@ class PhoneController extends ChangeNotifier {
     } catch (e) {
       engineError = '$e';
       debugPrint('[drinphone] avvio motore fallito: $e');
+    }
+    if (settings.globalHotkeys) {
+      hotkeyStatus = await GlobalHotkeys.instance.apply(true);
     }
     // Un solo account, o un predefinito: si entra subito; altrimenti si sceglie.
     // Primo avvio: si entra nel profilo vuoto per la procedura guidata.
@@ -627,6 +646,18 @@ class PhoneController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Stato registrazione scorciatoie globali Win32 (`action -> attiva`).
+  Map<String, bool> hotkeyStatus = const {};
+
+  /// Attiva o disattiva le scorciatoie globali di sistema (Windows).
+  Future<Map<String, bool>> setGlobalHotkeys(bool on) async {
+    settings = settings.copyWith(globalHotkeys: on);
+    await _store.save(settings);
+    hotkeyStatus = await GlobalHotkeys.instance.apply(on);
+    notifyListeners();
+    return hotkeyStatus;
+  }
+
   /// Tema (Sistema, Chiaro, Scuro), salvato con le impostazioni.
   Future<void> setThemeMode(ThemeMode mode) async {
     appThemeMode.value = mode;
@@ -796,6 +827,7 @@ class PhoneController extends ChangeNotifier {
   /// Ferma l'account attivo: connessioni PBX (la revoca del token prosegue in
   /// sottofondo), registrazioni e BLF, ricordati per il rientro.
   void _unload() {
+    unawaited(mediaPlayer.stop());
     for (final c in connections) {
       unawaited(c.stop());
     }
@@ -1064,6 +1096,27 @@ class PhoneController extends ChangeNotifier {
     return dial(own.isNotEmpty ? own : settings.voicemailCode);
   }
 
+  Directory get _audioCacheDir =>
+      Directory('$engineDataDir${Platform.pathSeparator}audio_cache');
+
+  /// Scarica il file audio di un messaggio in casella vocale (`vm/download`).
+  Future<(String fileName, File file)> downloadVoicemailAudio(
+    PbxVoicemail msg, {
+    File? targetFile,
+  }) {
+    final c = primaryConnection;
+    if (c == null) throw StateError('nessun PBX collegato');
+    return c.downloadVoicemailAudio(msg, _audioCacheDir, targetFile: targetFile);
+  }
+
+  /// Scarica la registrazione di una chiamata CDR dal PBX (`recording/list`
+  /// + `recording/download`).
+  Future<(String fileName, File file)> downloadRecordingAudio(
+    PbxConnection conn,
+    CdrRecord rec, {
+    File? targetFile,
+  }) => conn.downloadRecordingAudio(rec, _audioCacheDir, targetFile: targetFile);
+
   /// Opzioni globali delle chiamate (Preferenze > Avanzate).
   Future<void> setCallOptions(CallOptions o) async {
     settings = settings.copyWith(callOptions: o);
@@ -1284,6 +1337,59 @@ class PhoneController extends ChangeNotifier {
       playback: playback,
       ringer: ringer,
     );
+    notifyListeners();
+  }
+
+  /// Incrementato solo quando cambia l'elenco dei dispositivi audio di sistema.
+  int audioDeviceRevision = 0;
+
+  /// Rilegge i dispositivi audio dopo una variazione hardware (USB/Bluetooth)
+  /// e ripristina quelli salvati nelle impostazioni se sono tornati disponibili.
+  Future<void> syncAudioDevicesAfterChange() async {
+    if (engineError != null) return;
+    final devs = _engine.soundDevices();
+    audioDeviceRevision++;
+    final (wantCap, wantPlay, wantRing) = settings.audio;
+    final (curCap, curPlay, curRing) = _engine.audioDevices();
+    final restoreCap =
+        wantCap.isNotEmpty &&
+            wantCap != curCap &&
+            devs.any((d) => d.capture && d.id == wantCap)
+        ? wantCap
+        : null;
+    final restorePlay =
+        wantPlay.isNotEmpty &&
+            wantPlay != curPlay &&
+            devs.any((d) => d.playback && d.id == wantPlay)
+        ? wantPlay
+        : null;
+    final restoreRing =
+        wantRing.isNotEmpty &&
+            wantRing != curRing &&
+            devs.any((d) => d.playback && d.id == wantRing)
+        ? wantRing
+        : null;
+    if (restoreCap != null || restorePlay != null || restoreRing != null) {
+      await _engine.setAudioDevices(
+        capture: restoreCap,
+        playback: restorePlay,
+        ringer: restoreRing,
+      );
+    }
+    notifyListeners();
+  }
+
+  /// Codec audio esposti dal motore, in ordine di priorità.
+  List<AudioCodecInfo> audioCodecs() =>
+      engineError == null ? _engine.audioCodecs() : const [];
+
+  /// Salva e applica abilitazione/priorità dei codec audio (vuoto = default).
+  Future<void> setAudioCodecs(List<AudioCodecPref> codecs) async {
+    settings = settings.copyWith(audioCodecs: codecs);
+    await _store.save(settings);
+    if (engineError == null && codecs.isNotEmpty) {
+      await _engine.setAudioCodecs(codecs);
+    }
     notifyListeners();
   }
 
@@ -1519,16 +1625,31 @@ class PhoneController extends ChangeNotifier {
     });
   }
 
+  final Map<int, Timer> _autoAnswerTimers = {};
+
+  void _cancelAutoAnswer([int? id]) {
+    if (id != null) {
+      _autoAnswerTimers.remove(id)?.cancel();
+    } else {
+      for (final t in _autoAnswerTimers.values) {
+        t.cancel();
+      }
+      _autoAnswerTimers.clear();
+    }
+  }
+
   void _onCall(CallEvent e) {
     debugPrint(
       '[drinphone] chiamata ${e.id} ${e.direction.name} ${e.phase.name} ${e.message}',
     );
     final isNew = !calls.containsKey(e.id);
     if (isNew && e.phase == CallPhase.incoming) onIncomingCall?.call();
+    if (e.phase != CallPhase.incoming) _cancelAutoAnswer(e.id);
     final m =
         _meta[e.id] ??
         (start: DateTime.now(), connected: null, answered: false);
     if (e.phase == CallPhase.ended || e.phase == CallPhase.error) {
+      _cancelAutoAnswer(e.id);
       _record(e, calls[e.id], m);
       if (e.phase == CallPhase.error) {
         notice = tr('Chiamata non riuscita: {m}', {'m': e.message});
@@ -1572,6 +1693,33 @@ class PhoneController extends ChangeNotifier {
           : e;
     }
     notifyListeners();
+    if (isNew &&
+        e.phase == CallPhase.incoming &&
+        settings.callOptions.autoAnswer) {
+      final hasBusyCall = calls.values.any(
+        (c) =>
+            c.id != e.id &&
+            (c.phase == CallPhase.active || c.phase == CallPhase.outgoing),
+      );
+      if (!hasBusyCall) {
+        _cancelAutoAnswer(e.id);
+        final delay = Duration(
+          seconds: settings.callOptions.autoAnswerDelaySeconds.clamp(0, 30),
+        );
+        _autoAnswerTimers[e.id] = Timer(delay, () {
+          _autoAnswerTimers.remove(e.id);
+          final live = calls[e.id];
+          final busyNow = calls.values.any(
+            (c) =>
+                c.id != e.id &&
+                (c.phase == CallPhase.active || c.phase == CallPhase.outgoing),
+          );
+          if (live != null && live.phase == CallPhase.incoming && !busyNow) {
+            unawaited(answer(e.id));
+          }
+        });
+      }
+    }
   }
 
   void _record(
@@ -1620,6 +1768,11 @@ class PhoneController extends ChangeNotifier {
   /// Chiusura ordinata (uscita dall'app): revoca i token API e ferma il motore,
   /// che invia l'un-REGISTER e scarica il log.
   Future<void> shutdown() async {
+    _cancelAutoAnswer();
+    if (settings.globalHotkeys) {
+      await GlobalHotkeys.instance.apply(false);
+    }
+    await mediaPlayer.stop();
     for (final c in connections) {
       await c.stop();
     }
@@ -1628,9 +1781,11 @@ class PhoneController extends ChangeNotifier {
 
   @override
   void dispose() {
+    _cancelAutoAnswer();
     _notifyTimer?.cancel();
     _zoomSave?.cancel();
     _watchdog?.cancel();
+    mediaPlayer.dispose();
     for (final c in connections) {
       c.stop();
     }

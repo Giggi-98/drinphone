@@ -81,6 +81,7 @@ class _PreferencesViewState extends State<PreferencesView> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             AudioSettings(phone: phone),
+            _AudioCodecsCard(phone: phone),
             _AdvancedTab(phone: phone),
             _FeaturesTab(phone: phone),
           ],
@@ -283,12 +284,16 @@ class _Card extends StatelessWidget {
             ),
           ),
           Divider(color: c.border, height: 1),
-          Padding(padding: const EdgeInsets.all(18), child: child),
+          Padding(
+            padding: const EdgeInsets.all(18),
+            child: Material(type: MaterialType.transparency, child: child),
+          ),
         ],
       ),
     );
   }
 }
+
 
 /// Campi su griglia a 2 colonne (1 sotto i 640 px, misurati dopo scala e
 /// zoom): stessa larghezza e altezza per tutti, come le sezioni ordinate dei
@@ -407,6 +412,7 @@ class _Field extends StatelessWidget {
     );
   }
 }
+
 
 // ------------------------------------------------------------------- Utente
 
@@ -581,6 +587,7 @@ class _AccountTile extends StatelessWidget {
     );
   }
 }
+
 
 /// Aggiunta o modifica di un account SIP, con il PBX a cui appartiene.
 class AccountEditor extends StatefulWidget {
@@ -1011,6 +1018,7 @@ class _VoicemailTabState extends State<_VoicemailTab> {
   }
 }
 
+
 // -------------------------------------------------------------------- Audio
 
 /// Microfono, altoparlante e suoneria (anche nella procedura guidata).
@@ -1024,6 +1032,37 @@ class AudioSettings extends StatefulWidget {
 
 class _AudioSettingsState extends State<AudioSettings> {
   late List<SoundDevice> _devices = widget.phone.soundDevices();
+  late int _rev = widget.phone.audioDeviceRevision;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.phone.addListener(_onPhone);
+  }
+
+  @override
+  void didUpdateWidget(covariant AudioSettings oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.phone != widget.phone) {
+      oldWidget.phone.removeListener(_onPhone);
+      widget.phone.addListener(_onPhone);
+      _rev = widget.phone.audioDeviceRevision;
+      _devices = widget.phone.soundDevices();
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.phone.removeListener(_onPhone);
+    super.dispose();
+  }
+
+  void _onPhone() {
+    if (_rev != widget.phone.audioDeviceRevision && mounted) {
+      _rev = widget.phone.audioDeviceRevision;
+      setState(() => _devices = widget.phone.soundDevices());
+    }
+  }
 
   Widget _picker(
     String label,
@@ -1117,6 +1156,117 @@ class _AudioSettingsState extends State<AudioSettings> {
   }
 }
 
+class _AudioCodecsCard extends StatefulWidget {
+  const _AudioCodecsCard({required this.phone});
+  final PhoneController phone;
+
+  @override
+  State<_AudioCodecsCard> createState() => _AudioCodecsCardState();
+}
+
+class _AudioCodecsCardState extends State<_AudioCodecsCard> {
+  Future<void> _apply(List<AudioCodecInfo> list) async {
+    await widget.phone.setAudioCodecs([
+      for (final c in list) AudioCodecPref(c.id, enabled: c.enabled),
+    ]);
+    if (mounted) setState(() {});
+  }
+
+  void _move(List<AudioCodecInfo> list, int i, int delta) {
+    final target = i + delta;
+    if (target < 0 || target >= list.length) return;
+    final copy = [...list];
+    final item = copy.removeAt(i);
+    copy.insert(target, item);
+    _apply(copy);
+  }
+
+  void _toggle(List<AudioCodecInfo> list, int i, bool value) {
+    if (!value && list.where((x) => x.enabled).length <= 1) return;
+    final cur = list[i];
+    final copy = [...list];
+    copy[i] = AudioCodecInfo(
+      id: cur.id,
+      mime: cur.mime,
+      clockRate: cur.clockRate,
+      channels: cur.channels,
+      enabled: value,
+    );
+    _apply(copy);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.drin;
+    final codecs = widget.phone.audioCodecs();
+    return _Card(
+      title: tr('Codec audio'),
+      child: codecs.isEmpty
+          ? Text(
+              tr('Nessun codec audio disponibile dal motore.'),
+              style: TextStyle(fontSize: 13, color: c.muted),
+            )
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                for (var i = 0; i < codecs.length; i++)
+                  () {
+                    final x = codecs[i];
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 6),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              '${x.mime} · ${x.clockRate} Hz'
+                              '${x.channels > 1 ? ' · ${x.channels} ch' : ''}',
+                              style: DrinText.body.copyWith(
+                                color: x.enabled ? c.ink : c.muted,
+                              ),
+                            ),
+                          ),
+                          IconButton(
+                            tooltip: tr('Sposta su'),
+                            onPressed: i == 0
+                                ? null
+                                : () => _move(codecs, i, -1),
+                            icon: const Icon(
+                              Icons.arrow_upward_rounded,
+                              size: 16,
+                            ),
+                          ),
+                          IconButton(
+                            tooltip: tr('Sposta giù'),
+                            onPressed: i == codecs.length - 1
+                                ? null
+                                : () => _move(codecs, i, 1),
+                            icon: const Icon(
+                              Icons.arrow_downward_rounded,
+                              size: 16,
+                            ),
+                          ),
+                          Switch(
+                            value: x.enabled,
+                            onChanged: (v) => _toggle(codecs, i, v),
+                          ),
+                        ],
+                      ),
+                    );
+                  }(),
+                const SizedBox(height: 4),
+                Text(
+                  tr(
+                    'Ordine di preferenza nella negoziazione SIP (dall’alto al basso).',
+                  ),
+                  style: TextStyle(fontSize: 12, color: c.muted),
+                ),
+              ],
+            ),
+    );
+  }
+}
+
+
 // ------------------------------------------------------------ Funzionalità
 
 class _FeaturesTab extends StatefulWidget {
@@ -1135,32 +1285,10 @@ class _FeaturesTabState extends State<_FeaturesTab> {
   Widget build(BuildContext context) {
     final c = context.drin;
     final p = widget.phone;
-    Widget row(IconData icon, String title, String why) => ListTile(
-      contentPadding: EdgeInsets.zero,
-      leading: Icon(icon, color: c.muted),
-      title: Text(title, style: TextStyle(color: c.text)),
-      subtitle: Text(why, style: TextStyle(fontSize: 12, color: c.muted)),
-      trailing: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-        decoration: BoxDecoration(
-          color: c.keyBtn,
-          borderRadius: BorderRadius.circular(999),
-        ),
-        child: Text(
-          tr('In preparazione'),
-          style: TextStyle(fontSize: 11, color: c.muted),
-        ),
-      ),
-    );
     return _Card(
       title: tr('Funzionalità'),
       child: Column(
         children: [
-          row(
-            Icons.call_received_outlined,
-            tr('Risposta automatica'),
-            tr('Lato app: per interfono e citofoni'),
-          ),
           if (Platform.isWindows) ...[
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
@@ -1191,6 +1319,22 @@ class _FeaturesTabState extends State<_FeaturesTab> {
                 if (mounted) setState(() {});
               },
             ),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              secondary: Icon(Icons.keyboard_command_key_rounded, color: c.muted),
+              title: Text(tr('Scorciatoie globali (Windows)')),
+              subtitle: Text(
+                tr(
+                  'Ctrl+Alt+A rispondi/termina · Ctrl+Alt+M muto · '
+                  'Ctrl+Alt+D chiama numero negli appunti (anche ridotto a icona).',
+                ),
+              ),
+              value: p.settings.globalHotkeys,
+              onChanged: (v) async {
+                await p.setGlobalHotkeys(v);
+                if (mounted) setState(() {});
+              },
+            ),
             ListTile(
               contentPadding: EdgeInsets.zero,
               leading: Icon(Icons.link_rounded, color: c.muted),
@@ -1217,6 +1361,7 @@ class _FeaturesTabState extends State<_FeaturesTab> {
     );
   }
 }
+
 
 /// Videochiamate: webcam, anteprima, codec (VP8 incluso; H264 da Cisco).
 class _VideoTab extends StatefulWidget {
@@ -1501,12 +1646,17 @@ class _AdvancedTab extends StatelessWidget {
       bool? mandatory,
       bool? keepAlive,
       bool? dtmfInfo,
+      bool? autoAnswer,
+      int? autoAnswerDelaySeconds,
     }) => phone.setCallOptions(
       CallOptions(
         encryption: encryption ?? o.encryption,
         encryptionMandatory: mandatory ?? o.encryptionMandatory,
         keepAlive: keepAlive ?? o.keepAlive,
         dtmfInfo: dtmfInfo ?? o.dtmfInfo,
+        autoAnswer: autoAnswer ?? o.autoAnswer,
+        autoAnswerDelaySeconds:
+            autoAnswerDelaySeconds ?? o.autoAnswerDelaySeconds,
       ),
     );
     return Column(
@@ -1521,6 +1671,7 @@ class _AdvancedTab extends StatelessWidget {
                 width: 380,
                 child: DropdownButtonFormField<MediaEncryption>(
                   initialValue: o.encryption,
+                  isExpanded: true,
                   decoration: InputDecoration(labelText: tr('Cifratura media')),
                   items: [
                     for (final e in MediaEncryption.values)
@@ -1581,6 +1732,7 @@ class _AdvancedTab extends StatelessWidget {
                 width: 380,
                 child: DropdownButtonFormField<bool>(
                   initialValue: o.dtmfInfo,
+                  isExpanded: true,
                   decoration: InputDecoration(labelText: tr('Toni DTMF')),
                   items: [
                     DropdownMenuItem(
@@ -1592,6 +1744,50 @@ class _AdvancedTab extends StatelessWidget {
                   onChanged: (v) => set(dtmfInfo: v),
                 ),
               ),
+            ],
+          ),
+        ),
+        _Card(
+          title: tr('Risposta automatica'),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: Text(tr('Rispondi automaticamente alle chiamate')),
+                subtitle: Text(
+                  tr(
+                    'Risponde da sola alle chiamate entranti se non hai già '
+                    'un’altra conversazione attiva.',
+                  ),
+                ),
+                value: o.autoAnswer,
+                onChanged: (v) => set(autoAnswer: v),
+              ),
+              if (o.autoAnswer) ...[
+                const SizedBox(height: 6),
+                SizedBox(
+                  width: 380,
+                  child: DropdownButtonFormField<int>(
+                    initialValue: const [0, 2, 3, 5].contains(
+                      o.autoAnswerDelaySeconds,
+                    )
+                        ? o.autoAnswerDelaySeconds
+                        : 0,
+                    isExpanded: true,
+                    decoration: InputDecoration(
+                      labelText: tr('Ritardo prima di rispondere'),
+                    ),
+                    items: [
+                      DropdownMenuItem(value: 0, child: Text(tr('Subito (0 s)'))),
+                      DropdownMenuItem(value: 2, child: Text(tr('2 secondi'))),
+                      DropdownMenuItem(value: 3, child: Text(tr('3 secondi'))),
+                      DropdownMenuItem(value: 5, child: Text(tr('5 secondi'))),
+                    ],
+                    onChanged: (v) => set(autoAnswerDelaySeconds: v),
+                  ),
+                ),
+              ],
             ],
           ),
         ),
@@ -1656,3 +1852,4 @@ class _DiagnosticsTab extends StatelessWidget {
     );
   }
 }
+

@@ -1,5 +1,6 @@
 // Componenti condivisi: avatar con stato linea + presenza, paginatore, badge.
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -7,6 +8,7 @@ import 'package:flutter/services.dart';
 import '../../app/l10n.dart';
 import '../../app/theme.dart';
 import '../../core/pbx/pbx_connection.dart' show ExtensionLive, LiveState;
+import '../../core/platform/audio_player.dart';
 import '../../core/sip/sip_engine.dart';
 
 /// Iniziali delle parole che cominciano con una lettera ('' per "305", "*2").
@@ -856,6 +858,213 @@ class LiveBadge extends StatelessWidget {
                 ),
               ),
             ),
+    );
+  }
+}
+
+/// Barra compatta di riproduzione + scaricamento per messaggi vocali e
+/// registrazioni di chiamata (condivide un solo [InAppAudioPlayer]).
+class InlineAudioPlayerBar extends StatefulWidget {
+  const InlineAudioPlayerBar({
+    super.key,
+    required this.player,
+    required this.trackKey,
+    required this.resolveFile,
+    this.fallbackDurationSec = 0,
+    this.onDownload,
+    this.compact = false,
+  });
+
+  final InAppAudioPlayer player;
+  final String trackKey;
+  final Future<File> Function() resolveFile;
+  final int fallbackDurationSec;
+  final Future<void> Function()? onDownload;
+  final bool compact;
+
+  @override
+  State<InlineAudioPlayerBar> createState() => _InlineAudioPlayerBarState();
+}
+
+class _InlineAudioPlayerBarState extends State<InlineAudioPlayerBar> {
+  bool _downloading = false;
+
+  static String _mmss(int ms) {
+    final s = (ms < 0 ? 0 : ms) ~/ 1000;
+    final m = s ~/ 60;
+    final rem = s % 60;
+    return '${m.toString().padLeft(2, '0')}:${rem.toString().padLeft(2, '0')}';
+  }
+
+  Future<void> _download() async {
+    final fn = widget.onDownload;
+    if (fn == null || _downloading) return;
+    setState(() => _downloading = true);
+    try {
+      await fn();
+    } finally {
+      if (mounted) setState(() => _downloading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.drin;
+    return ListenableBuilder(
+      listenable: widget.player,
+      builder: (_, _) {
+        final active = widget.player.isActive(widget.trackKey);
+        final loading = active && widget.player.isLoading;
+        final playing = active && widget.player.isPlaying;
+        final totalMs = active && widget.player.durationMs > 0
+            ? widget.player.durationMs
+            : widget.fallbackDurationSec * 1000;
+        final posMs = active
+            ? widget.player.positionMs.clamp(0, totalMs > 0 ? totalMs : 0)
+            : 0;
+
+        Widget buildPlayBtn() => IconButton(
+          tooltip: playing ? tr('Pausa') : tr('Ascolta'),
+          onPressed: loading
+              ? null
+              : () => widget.player.togglePlay(
+                  widget.trackKey,
+                  widget.resolveFile,
+                ),
+          style: IconButton.styleFrom(
+            backgroundColor: c.primary.withValues(alpha: 0.14),
+            foregroundColor: c.primary,
+            minimumSize: const Size(34, 34),
+            fixedSize: const Size(34, 34),
+            padding: EdgeInsets.zero,
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          ),
+          icon: loading
+              ? SizedBox(
+                  width: 15,
+                  height: 15,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: c.primary,
+                  ),
+                )
+              : Icon(
+                  playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                  size: 19,
+                ),
+        );
+
+        Widget buildSlider(double trackPad) => SliderTheme(
+          data: SliderTheme.of(context).copyWith(
+            trackHeight: 3,
+            padding: EdgeInsets.symmetric(horizontal: trackPad),
+            thumbShape: RoundSliderThumbShape(
+              enabledThumbRadius: widget.compact ? 5 : 6,
+            ),
+            overlayShape: RoundSliderOverlayShape(
+              overlayRadius: widget.compact ? 10 : 12,
+            ),
+          ),
+          child: Slider(
+            value: totalMs > 0 ? posMs.toDouble() : 0,
+            max: totalMs > 0 ? totalMs.toDouble() : 1,
+            onChanged: totalMs > 0
+                ? (v) => widget.player.seek(v.round())
+                : null,
+          ),
+        );
+
+        final timeText = Text(
+          '${_mmss(posMs)}${totalMs > 0 ? ' / ${_mmss(totalMs)}' : ''}',
+          style: DrinText.number.copyWith(fontSize: 12, color: c.muted),
+        );
+
+        final stopBtn = IconButton(
+          tooltip: tr('Ferma'),
+          onPressed: widget.player.stop,
+          icon: Icon(Icons.stop_rounded, size: 17, color: c.muted),
+          style: IconButton.styleFrom(
+            minimumSize: const Size(30, 30),
+            fixedSize: const Size(30, 30),
+            padding: EdgeInsets.zero,
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          ),
+        );
+
+        final dlBtn = widget.onDownload == null
+            ? null
+            : IconButton(
+                tooltip: tr('Scarica audio'),
+                onPressed: _downloading ? null : _download,
+                style: IconButton.styleFrom(
+                  minimumSize: const Size(32, 32),
+                  fixedSize: const Size(32, 32),
+                  padding: EdgeInsets.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+                icon: _downloading
+                    ? const SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : Icon(Icons.download_rounded, size: 18, color: c.muted),
+              );
+
+        if (widget.compact) {
+          return Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              buildPlayBtn(),
+              if (active && !loading) ...[
+                const SizedBox(width: DrinSpace.s2),
+                SizedBox(width: 96, child: buildSlider(4)),
+                timeText,
+                stopBtn,
+              ],
+              if (dlBtn != null) ...[
+                const SizedBox(width: DrinSpace.s1),
+                dlBtn,
+              ],
+            ],
+          );
+        }
+
+        return LayoutBuilder(
+          builder: (_, box) {
+            final narrow = box.maxWidth.isFinite && box.maxWidth < 340;
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    buildPlayBtn(),
+                    if (active && !loading) ...[
+                      const SizedBox(width: DrinSpace.s2),
+                      Expanded(child: buildSlider(narrow ? 6 : 12)),
+                      if (!narrow) ...[
+                        const SizedBox(width: DrinSpace.s2),
+                        timeText,
+                      ],
+                      stopBtn,
+                    ],
+                    if (dlBtn != null) ...[
+                      const SizedBox(width: DrinSpace.s1),
+                      dlBtn,
+                    ],
+                  ],
+                ),
+                if (active && !loading && narrow)
+                  Padding(
+                    padding: const EdgeInsets.only(left: 42),
+                    child: timeText,
+                  ),
+              ],
+            );
+          },
+        );
+      },
     );
   }
 }

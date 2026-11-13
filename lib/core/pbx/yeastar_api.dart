@@ -347,6 +347,28 @@ class PbxVoicemail {
   final bool read;
 }
 
+/// Registrazione di chiamata sul PBX (`recording/list`).
+class PbxRecording {
+  const PbxRecording({
+    required this.id,
+    this.uid = '',
+    required this.file,
+    this.time = '',
+    this.duration = 0,
+    this.size = 0,
+    this.callFrom = '',
+    this.callTo = '',
+  });
+  final int id;
+  final String uid;
+  final String file;
+  final String time;
+  final int duration;
+  final int size;
+  final String callFrom;
+  final String callTo;
+}
+
 class PbxOrg {
   const PbxOrg({
     required this.id,
@@ -431,6 +453,8 @@ class PbxFeatureCodes {
   const PbxFeatureCodes({
     this.recordCode,
     this.parkCode,
+    this.extPickupCode,
+    this.groupPickupCode,
     this.parkingSlots = const [],
     this.listenEnabled = true,
     this.whisperEnabled = true,
@@ -438,6 +462,8 @@ class PbxFeatureCodes {
   });
   final String? recordCode;
   final String? parkCode;
+  final String? extPickupCode;
+  final String? groupPickupCode;
   final List<String> parkingSlots;
   final bool listenEnabled;
   final bool whisperEnabled;
@@ -702,6 +728,12 @@ class YeastarApi {
         '${f['enb_auto_record']}' == '1' && rec.isNotEmpty ? rec : null;
     final pk = '${f['park'] ?? ''}';
     final parkCode = '${f['enb_park']}' == '1' && pk.isNotEmpty ? pk : null;
+    final ep = '${f['ext_pickup'] ?? ''}';
+    final extPickupCode =
+        '${f['enb_ext_pickup']}' == '1' && ep.isNotEmpty ? ep : null;
+    final gp = '${f['pickup'] ?? ''}';
+    final groupPickupCode =
+        '${f['enb_pickup']}' == '1' && gp.isNotEmpty ? gp : null;
     final slots = <String>[];
     void addRange(String sStart, String sEnd) {
       final a = int.tryParse(sStart.trim());
@@ -730,6 +762,8 @@ class YeastarApi {
     return PbxFeatureCodes(
       recordCode: recordCode,
       parkCode: parkCode,
+      extPickupCode: extPickupCode,
+      groupPickupCode: groupPickupCode,
       parkingSlots: slots,
       listenEnabled: '${f['enb_listen'] ?? '1'}' != '0',
       whisperEnabled: '${f['enb_whisper'] ?? '1'}' != '0',
@@ -941,20 +975,75 @@ class YeastarApi {
   }
 
   /// Trasferimento di una chiamata in corso (`POST call/transfer`).
-  /// Per il trasferimento cieco nel pannello operatore: `type: 'blind'`.
+  /// - Cieco: `type: 'blind'`, `channelId` del trasferito, `number`.
+  /// - Con consultazione: `type: 'attended'`, `channelId` del trasferitore,
+  ///   `number` + `dialPermission` (avvio) oppure `attendedOperate`
+  ///   (`abort`, `complete`, `threeway`, `swap`).
   Future<void> transferCall({
     required String channelId,
-    required String number,
+    String? number,
     String type = 'blind',
+    String? dialPermission,
+    String? attendedOperate,
   }) async {
-    if (channelId.isEmpty || number.isEmpty) {
-      throw ArgumentError('channel_id e number obbligatori');
+    if (channelId.isEmpty) {
+      throw ArgumentError('channel_id obbligatorio');
     }
-    await _call('call/transfer', 'POST', _uri('call/transfer'), {
+    if (attendedOperate == null && (number == null || number.isEmpty)) {
+      throw ArgumentError('number obbligatorio');
+    }
+    final body = <String, Object>{
       'type': type,
       'channel_id': channelId,
-      'number': number,
-    });
+      if (number != null && number.isNotEmpty) 'number': number,
+      if (dialPermission != null && dialPermission.isNotEmpty)
+        'dial_permission': dialPermission,
+      if (attendedOperate != null && attendedOperate.isNotEmpty)
+        'attended_operate': attendedOperate,
+    };
+    await _call('call/transfer', 'POST', _uri('call/transfer'), body);
+  }
+
+  /// Mette in pausa o riprende uno o più agenti in una coda specifica
+  /// (`GET /openapi/v1.0/queue/agent_pause`).
+  Future<void> setQueueAgentPause({
+    required int queueId,
+    required List<int> extIds,
+    required bool pause,
+    int? maxThresholdSec,
+    String? reason,
+  }) async {
+    if (queueId <= 0 || extIds.isEmpty) {
+      throw ArgumentError('queue_id e ext_ids obbligatori');
+    }
+    final query = <String, String>{
+      'queue_id': '$queueId',
+      'ext_ids': extIds.join(','),
+      'operation': pause ? 'pause' : 'unpause',
+      if (maxThresholdSec != null)
+        'max_threshold_for_pause_time': '$maxThresholdSec',
+      if (reason != null && reason.isNotEmpty) 'reason': reason,
+    };
+    await _call('queue/agent_pause', 'GET', _uri('queue/agent_pause', query));
+  }
+
+  /// Mette in pausa o riprende un agente su tutte le proprie code
+  /// (`GET /openapi/v1.0/agent/pause`).
+  Future<void> setAgentPause({
+    required int extId,
+    required bool pause,
+    int? maxThresholdSec,
+    String? reason,
+  }) async {
+    if (extId <= 0) throw ArgumentError('ext_id obbligatorio');
+    final query = <String, String>{
+      'ext_id': '$extId',
+      'operation': pause ? 'pause' : 'unpause',
+      if (maxThresholdSec != null)
+        'max_threshold_for_pause_time': '$maxThresholdSec',
+      if (reason != null && reason.isNotEmpty) 'reason': reason,
+    };
+    await _call('agent/pause', 'GET', _uri('agent/pause', query));
   }
 
   /// Riaggancia un canale attivo (`POST call/hangup`).
@@ -1078,6 +1167,164 @@ class YeastarApi {
           read: m['is_read'] == 1,
         ),
     ]..sort((a, b) => b.time.compareTo(a.time));
+  }
+
+  /// Risolve `download_resource_url` rispetto a `_creds.baseUrl` assicurando
+  /// che lo schema, l'host e la porta coincidano (nessun invio token altrove).
+  Uri _resolveDownloadUri(String op, String rawUrl) {
+    final clean = rawUrl.trim();
+    if (clean.isEmpty) {
+      throw YeastarApiException(op, -1, 'download_resource_url mancante');
+    }
+    final base = Uri.parse(_creds.baseUrl);
+    final resolved = base.resolve(clean);
+    if (resolved.scheme != base.scheme ||
+        resolved.host != base.host ||
+        resolved.port != base.port) {
+      throw StateError('URL di download su host diverso dal PBX');
+    }
+    return resolved;
+  }
+
+  /// Ottiene nome file e URI temporaneo di download (30 min) per un messaggio
+  /// vocale (`GET /openapi/v1.0/vm/download?msg_id=...`).
+  Future<(String fileName, Uri downloadUri)> getVoicemailDownloadUrl(
+    String msgId,
+  ) async {
+    if (msgId.trim().isEmpty) throw ArgumentError('msg_id obbligatorio');
+    final j = await _call(
+      'vm/download',
+      'GET',
+      _uri('vm/download', {'msg_id': msgId.trim()}),
+    );
+    final url = _resolveDownloadUri(
+      'vm/download',
+      '${j['download_resource_url'] ?? ''}',
+    );
+    final file = '${j['file'] ?? ''}'.trim();
+    return (file.isNotEmpty ? file : '$msgId.wav', url);
+  }
+
+  /// Elenco registrazioni sul PBX (`GET /openapi/v1.0/recording/list`).
+  Future<List<PbxRecording>> listRecordings({
+    int page = 1,
+    int pageSize = 100,
+    String sortBy = 'id',
+    String orderBy = 'desc',
+  }) async {
+    final j = await _call(
+      'recording/list',
+      'GET',
+      _uri('recording/list', {
+        'page': '$page',
+        'page_size': '$pageSize',
+        'sort_by': sortBy,
+        'order_by': orderBy,
+      }),
+    );
+    final data = (j['data'] as List? ?? const [])
+        .whereType<Map<String, dynamic>>();
+    return [
+      for (final r in data)
+        PbxRecording(
+          id: (r['id'] as num?)?.toInt() ?? 0,
+          uid: '${r['uid'] ?? ''}',
+          file: '${r['file'] ?? ''}',
+          time: '${r['time'] ?? ''}',
+          duration: (r['duration'] as num?)?.toInt() ?? 0,
+          size: (r['size'] as num?)?.toInt() ?? 0,
+          callFrom: '${r['call_from_number'] ?? r['call_from'] ?? ''}',
+          callTo: '${r['call_to_number'] ?? r['call_to'] ?? ''}',
+        ),
+    ];
+  }
+
+  /// Cerca la registrazione associata a un CDR tramite `uid` nelle pagine più
+  /// recenti di `recording/list`.
+  Future<PbxRecording?> findRecordingByUid(
+    String uid, {
+    int maxPages = 6,
+  }) async {
+    final target = uid.trim();
+    if (target.isEmpty) return null;
+    for (var page = 1; page <= maxPages; page++) {
+      final list = await listRecordings(page: page, pageSize: 100);
+      for (final r in list) {
+        if (r.uid == target) return r;
+      }
+      if (list.length < 100) break;
+    }
+    return null;
+  }
+
+  /// Ottiene nome file e URI temporaneo di download per una registrazione
+  /// (`GET /openapi/v1.0/recording/download`).
+  Future<(String fileName, Uri downloadUri)> getRecordingDownloadUrl({
+    int? id,
+    String? file,
+  }) async {
+    if (id == null && (file == null || file.trim().isEmpty)) {
+      throw ArgumentError('id o file obbligatori');
+    }
+    final query = <String, String>{
+      if (id != null) 'id': '$id',
+      if (file != null && file.trim().isNotEmpty) 'file': file.trim(),
+    };
+    final j = await _call(
+      'recording/download',
+      'GET',
+      _uri('recording/download', query),
+    );
+    final url = _resolveDownloadUri(
+      'recording/download',
+      '${j['download_resource_url'] ?? ''}',
+    );
+    final name = '${j['file'] ?? file ?? ''}'.trim();
+    return (name.isNotEmpty ? name : 'recording_${id ?? 'audio'}.wav', url);
+  }
+
+  /// Scarica una risorsa audio temporanea dal PBX (aggiungendo `access_token`
+  /// solo verso l'host di `_creds.baseUrl`, senza mai esporre l'URL nei log).
+  Future<File> downloadResource(Uri downloadUri, File destination) async {
+    final base = Uri.parse(_creds.baseUrl);
+    if (downloadUri.scheme != base.scheme ||
+        downloadUri.host != base.host ||
+        downloadUri.port != base.port) {
+      throw StateError('URL di download su host diverso dal PBX');
+    }
+    final authed = downloadUri.replace(
+      queryParameters: {
+        ...downloadUri.queryParameters,
+        'access_token': _accessToken ?? '',
+      },
+    );
+    final req = await _http
+        .getUrl(authed)
+        .timeout(const Duration(seconds: 20));
+    req
+      ..followRedirects = false
+      ..headers.set(HttpHeaders.userAgentHeader, _userAgent);
+    final res = await req.close().timeout(const Duration(seconds: 60));
+    if (res.statusCode != 200) {
+      await res.drain<void>();
+      throw YeastarApiException(
+        'download',
+        -res.statusCode,
+        'HTTP ${res.statusCode}',
+      );
+    }
+    await destination.parent.create(recursive: true);
+    final part = File('${destination.path}.part');
+    final sink = part.openWrite();
+    try {
+      await res.pipe(sink).timeout(const Duration(seconds: 60));
+    } catch (_) {
+      await sink.close();
+      if (part.existsSync()) part.deleteSync();
+      rethrow;
+    }
+    if (destination.existsSync()) destination.deleteSync();
+    return part.rename(destination.path);
   }
 
   /// Revoca il token: alla chiusura, per non consumare uno degli 8 slot.

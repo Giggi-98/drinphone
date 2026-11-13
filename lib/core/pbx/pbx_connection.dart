@@ -383,6 +383,10 @@ class PbxConnection {
   /// Codice di registrazione del PBX (`feature_code/get`), se abilitato.
   String? recordCode;
 
+  /// Codici di risposta per assenza (pickup diretto `*04` e di gruppo `*4`).
+  String? extPickupCode;
+  String? groupPickupCode;
+
   /// Codice di parcheggio (`feature_code/get`, es. `*5`) e numeri degli slot
   /// di parcheggio (`6000`–`6009`), se abilitati sul PBX.
   String? parkCode;
@@ -393,6 +397,10 @@ class PbxConnection {
   List<PbxRingGroup> ringGroups = const [];
   List<PbxQueue> queues = const [];
   List<PbxVmGroup> vmGroups = const [];
+
+  /// ID delle code in cui il proprio interno risulta messo in pausa nella
+  /// sessione corrente (via OpenAPI `queue/agent_pause` o `agent/pause`).
+  final Set<int> pausedQueueIds = {};
 
   PbxFeatureCodes _featureCodes = const PbxFeatureCodes();
   bool _groupMonitorAllowed = false;
@@ -532,6 +540,7 @@ class PbxConnection {
     // Staccato nel frattempo: chi l'ha staccato chiude anche questo client.
     if (gen != _gen) return;
     _readAt.clear();
+    pausedQueueIds.clear();
     if (cached != null) {
       if (cached.contactsAt case final at?) _readAt[PbxSync.contacts] = at;
       directory = cached.directory;
@@ -590,6 +599,8 @@ class PbxConnection {
       }
       var newRecordCode = recordCode;
       var newParkCode = parkCode;
+      var newExtPickupCode = extPickupCode;
+      var newGroupPickupCode = groupPickupCode;
       var newParkingSlots = parkingSlots;
       var newFeatureCodes = _featureCodes;
       if (_due(PbxSync.featureCodes, now: force)) {
@@ -597,6 +608,8 @@ class PbxConnection {
           final fc = await api.getFeatureCodes();
           newRecordCode = fc.recordCode;
           newParkCode = fc.parkCode;
+          newExtPickupCode = fc.extPickupCode;
+          newGroupPickupCode = fc.groupPickupCode;
           newParkingSlots = fc.parkingSlots;
           newFeatureCodes = fc;
         } catch (e) {
@@ -707,6 +720,8 @@ class PbxConnection {
       ownDetail = newDetail;
       recordCode = newRecordCode;
       parkCode = newParkCode;
+      extPickupCode = newExtPickupCode;
+      groupPickupCode = newGroupPickupCode;
       parkingSlots = newParkingSlots;
       parkedCalls = newParkedCalls;
       _featureCodes = newFeatureCodes;
@@ -853,6 +868,132 @@ class PbxConnection {
     _scheduleCallsCheck(const Duration(seconds: 1));
   }
 
+  /// Canale del trasferitore per trasferimento con consultazione (`attended`).
+  String? attendedTransferChannelOf(LiveCall call, {String? preferExt}) {
+    final all = _allMembersOf(call);
+    if (preferExt != null && preferExt.isNotEmpty) {
+      for (final m in all) {
+        if (m.kind == 'extension' &&
+            m.number == preferExt &&
+            m.channel.isNotEmpty) {
+          return m.channel;
+        }
+      }
+    }
+    final own = voicemailOf;
+    if (own != null && own.isNotEmpty) {
+      for (final m in all) {
+        if (m.kind == 'extension' && m.number == own && m.channel.isNotEmpty) {
+          return m.channel;
+        }
+      }
+    }
+    for (final m in all) {
+      if (m.kind == 'extension' && m.channel.isNotEmpty) return m.channel;
+    }
+    return null;
+  }
+
+  /// Avvia un trasferimento con consultazione (`type: 'attended'`) per
+  /// [call] verso [destination]. Ritorna il `channel_id` usato come
+  /// trasferitore per i comandi successivi (`complete`/`abort`/`swap`/`threeway`).
+  Future<String> attendedTransferCall(
+    LiveCall call,
+    String destination, {
+    String? transferorChannelId,
+  }) async {
+    final api = _api;
+    if (api == null) throw StateError('PBX non connesso');
+    final all = _allMembersOf(call);
+    final ch =
+        transferorChannelId ??
+        attendedTransferChannelOf(call) ??
+        '';
+    if (ch.isEmpty) {
+      throw StateError('nessun canale interno trasferitore sulla chiamata');
+    }
+    final member = all.where((m) => m.channel == ch).firstOrNull;
+    final perm = (member?.number ?? '').isNotEmpty
+        ? member!.number
+        : (voicemailOf ?? '');
+    if (!api.connected) await api.connect();
+    await api.transferCall(
+      channelId: ch,
+      number: destination,
+      type: 'attended',
+      dialPermission: perm.isNotEmpty ? perm : null,
+    );
+    _scheduleCallsCheck(const Duration(seconds: 1));
+    return ch;
+  }
+
+  /// Completa (`complete`), annulla (`abort`), scambia (`swap`) o fonde in
+  /// conferenza a 3 (`threeway`) un trasferimento con consultazione avviato.
+  Future<void> operateAttendedTransfer({
+    required String channelId,
+    required String operate,
+  }) async {
+    final api = _api;
+    if (api == null) throw StateError('PBX non connesso');
+    if (!api.connected) await api.connect();
+    await api.transferCall(
+      channelId: channelId,
+      type: 'attended',
+      attendedOperate: operate,
+    );
+    _scheduleCallsCheck(const Duration(seconds: 1));
+  }
+
+  /// Code del PBX in cui il proprio interno risulta agente (numero o ID).
+  List<PbxQueue> get ownAgentQueues {
+    final own = voicemailOf;
+    if (own == null || own.isEmpty) return const [];
+    final ownId = directory.where((e) => e.number == own).firstOrNull?.id;
+    final ownIdStr = ownId != null && ownId > 0 ? '$ownId' : '';
+    return [
+      for (final q in queues)
+        if (q.agentNumbers.contains(own) ||
+            (ownIdStr.isNotEmpty && q.agentNumbers.contains(ownIdStr)))
+          q,
+    ];
+  }
+
+  /// Mette in pausa o riprende il proprio interno come agente in [queue]
+  /// (o su tutte le code se [queue] è null tramite `agent/pause`).
+  Future<void> setOwnQueuePause({required bool pause, PbxQueue? queue}) async {
+    final api = _api;
+    final own = voicemailOf;
+    if (api == null || own == null || own.isEmpty) {
+      throw StateError('proprio interno non collegato al PBX');
+    }
+    final extId =
+        ownDetail?.id ?? directory.where((e) => e.number == own).firstOrNull?.id;
+    if (extId == null || extId <= 0) {
+      throw StateError('ID del proprio interno non disponibile');
+    }
+    if (!api.connected) await api.connect();
+    if (queue != null && queue.id > 0) {
+      await api.setQueueAgentPause(
+        queueId: queue.id,
+        extIds: [extId],
+        pause: pause,
+      );
+      if (pause) {
+        pausedQueueIds.add(queue.id);
+      } else {
+        pausedQueueIds.remove(queue.id);
+      }
+    } else {
+      await api.setAgentPause(extId: extId, pause: pause);
+      if (pause) {
+        pausedQueueIds.addAll(ownAgentQueues.map((q) => q.id));
+      } else {
+        pausedQueueIds.clear();
+      }
+    }
+    onUpdate(this, false);
+  }
+
   /// Riaggancia una chiamata attiva sul PBX (`POST /openapi/v1.0/call/hangup`).
   Future<void> hangupLiveCall(LiveCall call, {String? channelId}) async {
     final api = _api;
@@ -898,6 +1039,65 @@ class PbxConnection {
     if (!api.connected) await api.connect();
     await api.monitorCall(monitorExt: own, channelId: ch, mode: mode);
   }
+
+  static String _safeAudioName(String raw, String fallback) {
+    final base = raw.split(RegExp(r'[/\\]')).last.trim();
+    final safe = base.replaceAll(RegExp(r'[^A-Za-z0-9._-]'), '_');
+    return safe.isEmpty || safe == '.' || safe == '..' ? fallback : safe;
+  }
+
+  Future<(String fileName, File file)> _downloadAuthed(
+    Future<(String, Uri)> Function(YeastarApi api) resolveUrl,
+    Directory targetDir,
+    String fallbackName, {
+    File? targetFile,
+  }) async {
+    final api = _api;
+    if (api == null) throw StateError('PBX non connesso');
+    if (!api.connected) await api.connect();
+    final (name, uri) = await resolveUrl(api);
+    final safeName = _safeAudioName(name, fallbackName);
+    final dest =
+        targetFile ??
+        File('${targetDir.path}${Platform.pathSeparator}$safeName');
+    final saved = await api.downloadResource(uri, dest);
+    return (safeName, saved);
+  }
+
+  /// Scarica in [targetDir] (o in [targetFile]) il file audio di un messaggio
+  /// della casella vocale (`vm/download`).
+  Future<(String fileName, File file)> downloadVoicemailAudio(
+    PbxVoicemail msg,
+    Directory targetDir, {
+    File? targetFile,
+  }) => _downloadAuthed(
+    (api) => api.getVoicemailDownloadUrl(msg.id),
+    targetDir,
+    'voicemail_${msg.id}.wav',
+    targetFile: targetFile,
+  );
+
+  /// Cerca su `recording/list` e scarica la registrazione della chiamata CDR
+  /// identificata da [rec.uid] (`recording/download`).
+  Future<(String fileName, File file)> downloadRecordingAudio(
+    CdrRecord rec,
+    Directory targetDir, {
+    File? targetFile,
+  }) => _downloadAuthed(
+    (api) async {
+      final hit = await api.findRecordingByUid(rec.uid);
+      if (hit == null) {
+        throw StateError('registrazione non trovata sul PBX');
+      }
+      return api.getRecordingDownloadUrl(
+        id: hit.id > 0 ? hit.id : null,
+        file: hit.file.isNotEmpty ? hit.file : null,
+      );
+    },
+    targetDir,
+    'recording_${rec.uid.isEmpty ? 'call' : rec.uid}.wav',
+    targetFile: targetFile,
+  );
 
   /// Accende o spegne il canale eventi senza riavviare la connessione.
   void setRealtime(bool on) {

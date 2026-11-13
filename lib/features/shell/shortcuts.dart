@@ -16,6 +16,9 @@ List<(String, String)> shortcutList() => [
   ('Ctrl + H', tr('Metti in attesa / riprendi')),
   ('Ctrl + + / −', tr('Ingrandisci / riduci (anche Ctrl + rotella)')),
   ('Ctrl + 0', tr('Zoom al 100 %')),
+  ('Ctrl + Alt + A', tr('Rispondi / termina (globale, se attivo)')),
+  ('Ctrl + Alt + M', tr('Muto / attivo (globale, se attivo)')),
+  ('Ctrl + Alt + D', tr('Chiama numero negli appunti (globale, se attivo)')),
   ('F1', tr('Questo elenco')),
 ];
 

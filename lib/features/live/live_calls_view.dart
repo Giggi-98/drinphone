@@ -39,6 +39,8 @@ class LiveCallsView extends StatefulWidget {
 class _LiveCallsViewState extends State<LiveCallsView> {
   String? _connId;
   late final Timer _tick;
+  String? _attendedChannel;
+  String? _attendedTargetLabel;
 
   PhoneController get p => widget.phone;
 
@@ -176,13 +178,88 @@ class _LiveCallsViewState extends State<LiveCallsView> {
         },
       );
 
-  Future<void> _openTransferPicker(PbxConnection conn, LiveCall call) async {
+  Future<void> _openTransferPicker(
+    PbxConnection conn,
+    LiveCall call, {
+    bool attended = false,
+  }) async {
     final dest = await showDialog<(String, String)>(
       context: context,
-      builder: (ctx) => _TransferPickerDialog(phone: p, conn: conn),
+      builder: (ctx) => _TransferPickerDialog(
+        phone: p,
+        conn: conn,
+        attended: attended,
+      ),
     );
     if (dest == null) return;
-    await _doBlindTransfer(conn, call, dest.$1, label: dest.$2);
+    if (!attended) {
+      await _doBlindTransfer(conn, call, dest.$1, label: dest.$2);
+      return;
+    }
+    try {
+      final ch = await conn.attendedTransferCall(call, dest.$1);
+      if (mounted) {
+        setState(() {
+          _attendedChannel = ch;
+          _attendedTargetLabel = dest.$2;
+        });
+      }
+      _snack(tr('Consultazione avviata verso {n}', {'n': dest.$2}));
+    } catch (e) {
+      _snack(e is YeastarApiException ? '$e' : tr('Operazione non riuscita'));
+    }
+  }
+
+  Future<void> _operateAttended(PbxConnection conn, String op) async {
+    final ch = _attendedChannel;
+    if (ch == null || ch.isEmpty) return;
+    try {
+      await conn.operateAttendedTransfer(channelId: ch, operate: op);
+      if (!mounted) return;
+      if (op == 'complete' || op == 'abort' || op == 'threeway') {
+        setState(() {
+          _attendedChannel = null;
+          _attendedTargetLabel = null;
+        });
+      }
+      _snack(switch (op) {
+        'complete' => tr('Trasferimento completato'),
+        'abort' => tr('Trasferimento annullato'),
+        'swap' => tr('Chiamate scambiate'),
+        'threeway' => tr('Conferenza a 3 avviata'),
+        _ => tr('Operazione completata'),
+      });
+    } catch (e) {
+      _snack(e is YeastarApiException ? '$e' : tr('Operazione non riuscita'));
+    }
+  }
+
+  Future<void> _toggleQueuePause(
+    PbxConnection conn, {
+    required bool pause,
+    PbxQueue? queue,
+  }) async {
+    try {
+      await conn.setOwnQueuePause(pause: pause, queue: queue);
+      if (mounted) setState(() {});
+      _snack(
+        pause
+            ? (queue == null
+                  ? tr('In pausa su tutte le code')
+                  : tr('In pausa su {q}', {'q': queue.name}))
+            : (queue == null
+                  ? tr('Attivo su tutte le code')
+                  : tr('Attivo su {q}', {'q': queue.name})),
+      );
+    } catch (e) {
+      _snack(e is YeastarApiException ? '$e' : tr('Operazione non riuscita'));
+    }
+  }
+
+  void _pickupExtension(PbxConnection conn, String extNumber) {
+    final code = conn.extPickupCode;
+    if (code == null || code.isEmpty || !p.canDial || extNumber.isEmpty) return;
+    p.dial('$code$extNumber');
   }
 
   Future<void> _openParkPicker(PbxConnection conn, LiveCall call) async {
@@ -240,6 +317,13 @@ class _LiveCallsViewState extends State<LiveCallsView> {
 
   @override
   Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: p,
+      builder: (context, _) => _buildBody(context),
+    );
+  }
+
+  Widget _buildBody(BuildContext context) {
     final c = context.drin;
     final conn = _conn;
     if (conn == null) {
@@ -263,6 +347,7 @@ class _LiveCallsViewState extends State<LiveCallsView> {
               children: [
                 _header(c, conn),
                 if (!conn.eventsConnected) _eventsBanner(c, conn),
+                if (_attendedChannel != null) _attendedBanner(c, conn),
                 const SizedBox(height: DrinSpace.s3),
                 if (calls.isEmpty && !hasTargets)
                   Expanded(
@@ -308,6 +393,9 @@ class _LiveCallsViewState extends State<LiveCallsView> {
                           if (!x.outbound) x,
                       ],
                       onTransfer: (call) => _openTransferPicker(conn, call),
+                      onAttendedTransfer: (call) =>
+                          _openTransferPicker(conn, call, attended: true),
+                      onPickup: (ext) => _pickupExtension(conn, ext),
                       onHangup: (call) => _doHangup(conn, call),
                       onRecord: (call) => _doRecord(conn, call),
                       onPark: (call) => _openParkPicker(conn, call),
@@ -330,6 +418,9 @@ class _LiveCallsViewState extends State<LiveCallsView> {
                           if (x.outbound) x,
                       ],
                       onTransfer: (call) => _openTransferPicker(conn, call),
+                      onAttendedTransfer: (call) =>
+                          _openTransferPicker(conn, call, attended: true),
+                      onPickup: (ext) => _pickupExtension(conn, ext),
                       onHangup: (call) => _doHangup(conn, call),
                       onRecord: (call) => _doRecord(conn, call),
                       onPark: (call) => _openParkPicker(conn, call),
@@ -346,6 +437,7 @@ class _LiveCallsViewState extends State<LiveCallsView> {
                       conn: conn,
                       onBlindTransfer: (call, dest, {label}) =>
                           _doBlindTransfer(conn, call, dest, label: label),
+                      onParkCall: (call) => _openParkPicker(conn, call),
                     ),
                   ),
                 ],
@@ -367,47 +459,210 @@ class _LiveCallsViewState extends State<LiveCallsView> {
     );
   }
 
-  Widget _header(DrinColors c, PbxConnection conn) => Row(
-    children: [
-      Text(
-        tr('Live'),
-        style: DrinText.title.copyWith(color: c.ink),
-      ),
-      const SizedBox(width: DrinSpace.s3),
-      CountBadge(conn.visibleCalls.length),
-      const Spacer(),
-      if (conn.orgs.isNotEmpty)
-        IconButton(
-          tooltip: p.viewFlag('live.byDept')
-              ? tr('Tutte insieme')
-              : tr('Raggruppa per reparto'),
-          isSelected: p.viewFlag('live.byDept'),
-          onPressed: () =>
-              p.setViewFlag('live.byDept', !p.viewFlag('live.byDept')),
-          icon: Icon(Icons.groups_outlined, color: c.muted),
-          selectedIcon: Icon(Icons.groups_rounded, color: c.primary),
+  Widget _header(DrinColors c, PbxConnection conn) {
+    final agentQueues = conn.ownAgentQueues;
+    final pausedAny = conn.pausedQueueIds.isNotEmpty;
+    return Row(
+      children: [
+        Text(
+          tr('Live'),
+          style: DrinText.title.copyWith(color: c.ink),
         ),
-      Tooltip(
-        message: conn.eventsStatus,
-        child: Icon(
-          Icons.bolt_rounded,
-          color: conn.eventsConnected ? c.ok : c.muted,
+        const SizedBox(width: DrinSpace.s3),
+        CountBadge(conn.visibleCalls.length),
+        const Spacer(),
+        if (agentQueues.isNotEmpty) ...[
+          PopupMenuButton<String>(
+            tooltip: pausedAny
+                ? tr('Agente coda in pausa')
+                : tr('Stato agente nelle code'),
+            onSelected: (v) {
+              if (v == 'pause_all') {
+                _toggleQueuePause(conn, pause: true);
+              } else if (v == 'unpause_all') {
+                _toggleQueuePause(conn, pause: false);
+              } else if (v.startsWith('q:')) {
+                final qid = int.tryParse(v.substring(2));
+                final q = agentQueues.where((x) => x.id == qid).firstOrNull;
+                if (q != null) {
+                  _toggleQueuePause(
+                    conn,
+                    pause: !conn.pausedQueueIds.contains(q.id),
+                    queue: q,
+                  );
+                }
+              }
+            },
+            itemBuilder: (_) => [
+              PopupMenuItem(
+                value: pausedAny ? 'unpause_all' : 'pause_all',
+                child: Row(
+                  children: [
+                    Icon(
+                      pausedAny
+                          ? Icons.play_arrow_rounded
+                          : Icons.pause_rounded,
+                      size: 17,
+                      color: pausedAny ? c.ok : c.squilloLine,
+                    ),
+                    const SizedBox(width: DrinSpace.s2),
+                    Expanded(
+                      child: Text(
+                        pausedAny
+                            ? tr('Riprendi tutte le code')
+                            : tr('Pausa su tutte le code'),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const PopupMenuDivider(height: 8),
+              for (final q in agentQueues)
+                () {
+                  final paused = conn.pausedQueueIds.contains(q.id);
+                  return PopupMenuItem(
+                    value: 'q:${q.id}',
+                    child: Row(
+                      children: [
+                        Icon(
+                          paused
+                              ? Icons.pause_circle_filled_rounded
+                              : Icons.check_circle_outline_rounded,
+                          size: 16,
+                          color: paused ? c.squilloLine : c.ok,
+                        ),
+                        const SizedBox(width: DrinSpace.s2),
+                        Expanded(
+                          child: Text('${q.number} ${q.name}'),
+                        ),
+                      ],
+                    ),
+                  );
+                }(),
+            ],
+            child: Container(
+              padding: const EdgeInsets.symmetric(
+                horizontal: DrinSpace.s3,
+                vertical: 6,
+              ),
+              decoration: BoxDecoration(
+                color: (pausedAny ? c.squillo : c.ok).withValues(alpha: 0.14),
+                borderRadius: BorderRadius.circular(DrinRadius.pill),
+                border: Border.all(
+                  color: (pausedAny ? c.squilloLine : c.ok).withValues(
+                    alpha: 0.45,
+                  ),
+                ),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    pausedAny
+                        ? Icons.pause_circle_rounded
+                        : Icons.support_agent_rounded,
+                    size: 15,
+                    color: pausedAny ? c.squilloLine : c.okText,
+                  ),
+                  const SizedBox(width: DrinSpace.s1),
+                  Text(
+                    pausedAny ? tr('In pausa coda') : tr('Code attive'),
+                    style: DrinText.label.copyWith(
+                      color: pausedAny ? c.squilloLine : c.okText,
+                    ),
+                  ),
+                  const SizedBox(width: 2),
+                  Icon(
+                    Icons.arrow_drop_down_rounded,
+                    size: 16,
+                    color: pausedAny ? c.squilloLine : c.okText,
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(width: DrinSpace.s2),
+        ],
+        if (conn.orgs.isNotEmpty)
+          IconButton(
+            tooltip: p.viewFlag('live.byDept')
+                ? tr('Tutte insieme')
+                : tr('Raggruppa per reparto'),
+            isSelected: p.viewFlag('live.byDept'),
+            onPressed: () =>
+                p.setViewFlag('live.byDept', !p.viewFlag('live.byDept')),
+            icon: Icon(Icons.groups_outlined, color: c.muted),
+            selectedIcon: Icon(Icons.groups_rounded, color: c.primary),
+          ),
+        Tooltip(
+          message: conn.eventsStatus,
+          child: Icon(
+            Icons.bolt_rounded,
+            color: conn.eventsConnected ? c.ok : c.muted,
+          ),
         ),
-      ),
-      const SizedBox(width: DrinSpace.s2),
-      if (p.connections.length > 1)
-        DropdownButton<String>(
-          value: conn.id,
-          underline: const SizedBox.shrink(),
-          items: [
-            for (final x in p.connections)
-              DropdownMenuItem(value: x.id, child: Text(x.label)),
-          ],
-          onChanged: (v) => setState(() => _connId = v),
-        )
-      else
-        Text(conn.label, style: DrinText.detail.copyWith(color: c.muted)),
-    ],
+        const SizedBox(width: DrinSpace.s2),
+        if (p.connections.length > 1)
+          DropdownButton<String>(
+            value: conn.id,
+            underline: const SizedBox.shrink(),
+            items: [
+              for (final x in p.connections)
+                DropdownMenuItem(value: x.id, child: Text(x.label)),
+            ],
+            onChanged: (v) => setState(() => _connId = v),
+          )
+        else
+          Text(conn.label, style: DrinText.detail.copyWith(color: c.muted)),
+      ],
+    );
+  }
+
+  Widget _attendedBanner(DrinColors c, PbxConnection conn) => Container(
+    margin: const EdgeInsets.only(top: DrinSpace.s3),
+    padding: const EdgeInsets.symmetric(
+      horizontal: DrinSpace.s4,
+      vertical: DrinSpace.s2,
+    ),
+    decoration: BoxDecoration(
+      color: c.primary.withValues(alpha: 0.1),
+      border: Border.all(color: c.primary.withValues(alpha: 0.45)),
+      borderRadius: BorderRadius.circular(DrinRadius.row),
+    ),
+    child: Row(
+      children: [
+        Icon(Icons.phone_forwarded_rounded, size: 18, color: c.primary),
+        const SizedBox(width: DrinSpace.s3),
+        Expanded(
+          child: Text(
+            tr('Consultazione verso {n}', {'n': _attendedTargetLabel ?? ''}),
+            style: DrinText.heading.copyWith(color: c.ink),
+          ),
+        ),
+        TextButton.icon(
+          onPressed: () => _operateAttended(conn, 'swap'),
+          icon: const Icon(Icons.swap_calls_rounded, size: 16),
+          label: Text(tr('Scambia')),
+        ),
+        const SizedBox(width: DrinSpace.s1),
+        TextButton.icon(
+          onPressed: () => _operateAttended(conn, 'threeway'),
+          icon: const Icon(Icons.group_add_rounded, size: 16),
+          label: Text(tr('Conferenza a 3')),
+        ),
+        const SizedBox(width: DrinSpace.s1),
+        FilledButton.icon(
+          onPressed: () => _operateAttended(conn, 'complete'),
+          icon: const Icon(Icons.check_rounded, size: 16),
+          label: Text(tr('Completa')),
+        ),
+        const SizedBox(width: DrinSpace.s1),
+        TextButton(
+          onPressed: () => _operateAttended(conn, 'abort'),
+          child: Text(tr('Annulla'), style: TextStyle(color: c.busy)),
+        ),
+      ],
+    ),
   );
 
   Widget _eventsBanner(DrinColors c, PbxConnection conn) => Container(
@@ -453,6 +708,8 @@ class _CallsTable extends StatefulWidget {
     required this.icon,
     required this.calls,
     required this.onTransfer,
+    required this.onAttendedTransfer,
+    required this.onPickup,
     required this.onHangup,
     required this.onRecord,
     required this.onPark,
@@ -469,6 +726,8 @@ class _CallsTable extends StatefulWidget {
   final IconData icon;
   final List<LiveCall> calls;
   final ValueChanged<LiveCall> onTransfer;
+  final ValueChanged<LiveCall> onAttendedTransfer;
+  final ValueChanged<String> onPickup;
   final ValueChanged<LiveCall> onHangup;
   final ValueChanged<LiveCall> onRecord;
   final ValueChanged<LiveCall> onPark;
@@ -544,13 +803,37 @@ class _CallsTableState extends State<_CallsTable> {
       ),
     );
 
+    final canAttended = conn.attendedTransferChannelOf(call) != null;
+    final pickupExt = call.ringing &&
+            (conn.extPickupCode ?? '').isNotEmpty &&
+            widget.phone.canDial
+        ? call.members
+              .where((m) => m.kind == 'extension' && m.status == 'RING')
+              .firstOrNull
+              ?.number
+        : null;
+
     final entries = <PopupMenuEntry<String>>[
+      if (pickupExt != null && pickupExt.isNotEmpty)
+        item(
+          'pickup',
+          Icons.phone_in_talk_rounded,
+          tr('Rispondi per {n}', {'n': pickupExt}),
+          iconColor: c.ok,
+        ),
       item(
         'transfer',
         Icons.swap_horiz_rounded,
         tr('Trasferisci'),
         trailingArrow: true,
       ),
+      if (canAttended)
+        item(
+          'transfer_attended',
+          Icons.phone_forwarded_rounded,
+          tr('Trasferisci con consultazione'),
+          trailingArrow: true,
+        ),
       item(
         'hangup',
         Icons.call_end_rounded,
@@ -608,8 +891,12 @@ class _CallsTableState extends State<_CallsTable> {
     );
     if (!mounted || chosen == null) return;
     switch (chosen) {
+      case 'pickup':
+        if (pickupExt != null) widget.onPickup(pickupExt);
       case 'transfer':
         widget.onTransfer(call);
+      case 'transfer_attended':
+        widget.onAttendedTransfer(call);
       case 'hangup':
         widget.onHangup(call);
       case 'record':
@@ -1034,12 +1321,14 @@ class _OperatorTargetsRow extends StatelessWidget {
     required this.phone,
     required this.conn,
     required this.onBlindTransfer,
+    required this.onParkCall,
   });
 
   final PhoneController phone;
   final PbxConnection conn;
   final void Function(LiveCall call, String destination, {String? label})
   onBlindTransfer;
+  final ValueChanged<LiveCall> onParkCall;
 
   int _onlineCount(List<String> members) {
     final byId = {for (final e in conn.directory) '${e.id}': e.number};
@@ -1117,6 +1406,7 @@ class _OperatorTargetsRow extends StatelessWidget {
                     title: '$slot ${parked.parkedParty}',
                     searchKey: '$slot ${parked.parkedParty}',
                     busy: true,
+                    actionLabel: phone.canDial ? tr('Riprendi') : null,
                     onTap: phone.canDial ? () => phone.dial(slot) : null,
                   )
                 else
@@ -1128,6 +1418,7 @@ class _OperatorTargetsRow extends StatelessWidget {
                   ),
             ],
             onDrop: onBlindTransfer,
+            onCardDrop: onParkCall,
           ),
         ),
         const SizedBox(width: DrinSpace.s3),
@@ -1158,12 +1449,14 @@ class _TargetItem {
     required this.title,
     required this.searchKey,
     this.busy,
+    this.actionLabel,
     this.onTap,
   });
   final String number;
   final String title;
   final String searchKey;
   final bool? busy;
+  final String? actionLabel;
   final VoidCallback? onTap;
 }
 
@@ -1173,6 +1466,7 @@ class _OperatorTargetCard extends StatefulWidget {
     required this.icon,
     required this.entries,
     required this.onDrop,
+    this.onCardDrop,
   });
 
   final String title;
@@ -1180,6 +1474,7 @@ class _OperatorTargetCard extends StatefulWidget {
   final List<_TargetItem> entries;
   final void Function(LiveCall call, String destination, {String? label})
   onDrop;
+  final ValueChanged<LiveCall>? onCardDrop;
 
   @override
   State<_OperatorTargetCard> createState() => _OperatorTargetCardState();
@@ -1203,157 +1498,207 @@ class _OperatorTargetCardState extends State<_OperatorTargetCard> {
       for (final e in widget.entries)
         if (q.isEmpty || e.searchKey.toLowerCase().contains(q)) e,
     ];
-    return Container(
-      padding: const EdgeInsets.all(DrinSpace.s3),
-      decoration: BoxDecoration(
-        color: c.surface,
-        border: Border.all(color: c.line),
-        borderRadius: BorderRadius.circular(DrinRadius.panel),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
+    return DragTarget<LiveCall>(
+      onWillAcceptWithDetails: (_) => widget.onCardDrop != null,
+      onAcceptWithDetails: (d) => widget.onCardDrop?.call(d.data),
+      builder: (_, cardCandidates, _) {
+        final cardOver = widget.onCardDrop != null && cardCandidates.isNotEmpty;
+        return Container(
+          padding: const EdgeInsets.all(DrinSpace.s3),
+          decoration: BoxDecoration(
+            color: cardOver
+                ? c.primary.withValues(alpha: 0.08)
+                : c.surface,
+            border: Border.all(
+              color: cardOver ? c.primary : c.line,
+              width: cardOver ? 1.5 : 1,
+            ),
+            borderRadius: BorderRadius.circular(DrinRadius.panel),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Icon(widget.icon, size: 16, color: c.primary),
-              const SizedBox(width: DrinSpace.s2),
-              Expanded(
-                child: _searching
-                    ? SizedBox(
-                        height: 28,
-                        child: TextField(
-                          controller: _filter,
-                          autofocus: true,
-                          onChanged: (_) => setState(() {}),
-                          style: DrinText.detail.copyWith(color: c.ink),
-                          decoration: InputDecoration(
-                            isDense: true,
-                            contentPadding: const EdgeInsets.symmetric(
-                              horizontal: DrinSpace.s2,
-                              vertical: 4,
+              Row(
+                children: [
+                  Icon(widget.icon, size: 16, color: c.primary),
+                  const SizedBox(width: DrinSpace.s2),
+                  Expanded(
+                    child: _searching
+                        ? SizedBox(
+                            height: 28,
+                            child: TextField(
+                              controller: _filter,
+                              autofocus: true,
+                              onChanged: (_) => setState(() {}),
+                              style: DrinText.detail.copyWith(color: c.ink),
+                              decoration: InputDecoration(
+                                isDense: true,
+                                contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: DrinSpace.s2,
+                                  vertical: 4,
+                                ),
+                                hintText: widget.title,
+                                hintStyle: DrinText.detail.copyWith(
+                                  color: c.muted,
+                                ),
+                              ),
                             ),
-                            hintText: widget.title,
-                            hintStyle: DrinText.detail.copyWith(color: c.muted),
+                          )
+                        : Text(
+                            widget.title,
+                            overflow: TextOverflow.ellipsis,
+                            style: DrinText.heading.copyWith(color: c.ink),
                           ),
+                  ),
+                  IconButton(
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(
+                      minWidth: 24,
+                      minHeight: 24,
+                    ),
+                    iconSize: 16,
+                    icon: Icon(
+                      _searching ? Icons.close_rounded : Icons.search_rounded,
+                      color: c.muted,
+                    ),
+                    onPressed: () => setState(() {
+                      _searching = !_searching;
+                      if (!_searching) _filter.clear();
+                    }),
+                  ),
+                ],
+              ),
+              Divider(color: c.line, height: DrinSpace.s3),
+              Expanded(
+                child: filtered.isEmpty
+                    ? Center(
+                        child: Text(
+                          '—',
+                          style: DrinText.detail.copyWith(color: c.muted),
                         ),
                       )
-                    : Text(
-                        widget.title,
-                        overflow: TextOverflow.ellipsis,
-                        style: DrinText.heading.copyWith(color: c.ink),
+                    : ListView.separated(
+                        itemCount: filtered.length,
+                        separatorBuilder: (_, _) => Divider(
+                          color: c.line.withValues(alpha: 0.5),
+                          height: 1,
+                        ),
+                        itemBuilder: (_, i) {
+                          final item = filtered[i];
+                          return DragTarget<LiveCall>(
+                            onWillAcceptWithDetails: (_) => true,
+                            onAcceptWithDetails: (d) => widget.onDrop(
+                              d.data,
+                              item.number,
+                              label: item.title,
+                            ),
+                            builder: (_, candidates, _) {
+                              final over = candidates.isNotEmpty;
+                              return AnimatedContainer(
+                                duration: DrinMotion.fast,
+                                decoration: BoxDecoration(
+                                  color: over
+                                      ? c.primary.withValues(alpha: 0.16)
+                                      : Colors.transparent,
+                                  borderRadius: BorderRadius.circular(
+                                    DrinRadius.control,
+                                  ),
+                                  border: over
+                                      ? Border.all(
+                                          color: c.primary,
+                                          width: 1.5,
+                                        )
+                                      : null,
+                                ),
+                                child: InkWell(
+                                  borderRadius: BorderRadius.circular(
+                                    DrinRadius.control,
+                                  ),
+                                  onTap: item.onTap,
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      vertical: 6,
+                                      horizontal: DrinSpace.s2,
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        if (item.busy != null) ...[
+                                          Container(
+                                            width: 9,
+                                            height: 9,
+                                            decoration: BoxDecoration(
+                                              color: item.busy! ? c.busy : c.ok,
+                                              shape: BoxShape.circle,
+                                            ),
+                                          ),
+                                          const SizedBox(width: DrinSpace.s2),
+                                        ],
+                                        Expanded(
+                                          child: Text(
+                                            item.title,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: DrinText.detail.copyWith(
+                                              color: c.ink,
+                                            ),
+                                          ),
+                                        ),
+                                        if (item.actionLabel != null && !over)
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: DrinSpace.s2,
+                                              vertical: 2,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: c.primary.withValues(
+                                                alpha: 0.14,
+                                              ),
+                                              borderRadius:
+                                                  BorderRadius.circular(
+                                                    DrinRadius.pill,
+                                                  ),
+                                            ),
+                                            child: Text(
+                                              item.actionLabel!,
+                                              style: DrinText.detail.copyWith(
+                                                color: c.primary,
+                                                fontWeight: FontWeight.w600,
+                                              ),
+                                            ),
+                                          ),
+                                        if (over)
+                                          Icon(
+                                            Icons.phone_forwarded_rounded,
+                                            size: 14,
+                                            color: c.primary,
+                                          ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              );
+                            },
+                          );
+                        },
                       ),
-              ),
-              IconButton(
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
-                iconSize: 16,
-                icon: Icon(
-                  _searching ? Icons.close_rounded : Icons.search_rounded,
-                  color: c.muted,
-                ),
-                onPressed: () => setState(() {
-                  _searching = !_searching;
-                  if (!_searching) _filter.clear();
-                }),
               ),
             ],
           ),
-          Divider(color: c.line, height: DrinSpace.s3),
-          Expanded(
-            child: filtered.isEmpty
-                ? Center(
-                    child: Text(
-                      '—',
-                      style: DrinText.detail.copyWith(color: c.muted),
-                    ),
-                  )
-                : ListView.separated(
-                    itemCount: filtered.length,
-                    separatorBuilder: (_, _) =>
-                        Divider(color: c.line.withValues(alpha: 0.5), height: 1),
-                    itemBuilder: (_, i) {
-                      final item = filtered[i];
-                      return DragTarget<LiveCall>(
-                        onWillAcceptWithDetails: (_) => true,
-                        onAcceptWithDetails: (d) => widget.onDrop(
-                          d.data,
-                          item.number,
-                          label: item.title,
-                        ),
-                        builder: (_, candidates, _) {
-                          final over = candidates.isNotEmpty;
-                          return AnimatedContainer(
-                            duration: DrinMotion.fast,
-                            decoration: BoxDecoration(
-                              color: over
-                                  ? c.primary.withValues(alpha: 0.16)
-                                  : Colors.transparent,
-                              borderRadius: BorderRadius.circular(
-                                DrinRadius.control,
-                              ),
-                              border: over
-                                  ? Border.all(color: c.primary, width: 1.5)
-                                  : null,
-                            ),
-                            child: InkWell(
-                              borderRadius: BorderRadius.circular(
-                                DrinRadius.control,
-                              ),
-                              onTap: item.onTap,
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 6,
-                                  horizontal: DrinSpace.s2,
-                                ),
-                                child: Row(
-                                  children: [
-                                    if (item.busy != null) ...[
-                                      Container(
-                                        width: 9,
-                                        height: 9,
-                                        decoration: BoxDecoration(
-                                          color: item.busy! ? c.busy : c.ok,
-                                          shape: BoxShape.circle,
-                                        ),
-                                      ),
-                                      const SizedBox(width: DrinSpace.s2),
-                                    ],
-                                    Expanded(
-                                      child: Text(
-                                        item.title,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: DrinText.detail.copyWith(
-                                          color: c.ink,
-                                        ),
-                                      ),
-                                    ),
-                                    if (over)
-                                      Icon(
-                                        Icons.phone_forwarded_rounded,
-                                        size: 14,
-                                        color: c.primary,
-                                      ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          );
-                        },
-                      );
-                    },
-                  ),
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 }
 
 /// Dialogo per il comando "Trasferisci" dal menu contestuale di una chiamata.
 class _TransferPickerDialog extends StatefulWidget {
-  const _TransferPickerDialog({required this.phone, required this.conn});
+  const _TransferPickerDialog({
+    required this.phone,
+    required this.conn,
+    this.attended = false,
+  });
   final PhoneController phone;
   final PbxConnection conn;
+  final bool attended;
 
   @override
   State<_TransferPickerDialog> createState() => _TransferPickerDialogState();
@@ -1391,7 +1736,7 @@ class _TransferPickerDialogState extends State<_TransferPickerDialog> {
 
     return AlertDialog(
       title: Text(
-        tr('Trasferisci a…'),
+        widget.attended ? tr('Trasferisci con consultazione…') : tr('Trasferisci a…'),
         style: DrinText.title.copyWith(color: c.ink),
       ),
       content: SizedBox(
@@ -1447,7 +1792,7 @@ class _TransferPickerDialogState extends State<_TransferPickerDialog> {
                   context,
                   (_ctl.text.trim(), _ctl.text.trim()),
                 ),
-          child: Text(tr('Trasferisci')),
+          child: Text(widget.attended ? tr('Consulta') : tr('Trasferisci')),
         ),
       ],
     );
@@ -1726,6 +2071,28 @@ class _BlfRow extends StatelessWidget {
                       Padding(
                         padding: const EdgeInsets.only(left: 6),
                         child: LiveChip(live, dense: true),
+                      ),
+                    if (s == BlfStatus.ringing &&
+                        (conn.extPickupCode ?? '').isNotEmpty &&
+                        phone.canDial)
+                      Padding(
+                        padding: const EdgeInsets.only(left: 4),
+                        child: IconButton(
+                          tooltip: tr('Rispondi per {n}', {'n': ext.number}),
+                          onPressed: () =>
+                              phone.dial('${conn.extPickupCode}${ext.number}'),
+                          style: IconButton.styleFrom(
+                            backgroundColor: c.ok.withValues(alpha: 0.16),
+                            foregroundColor: c.okText,
+                            minimumSize: const Size(24, 24),
+                            fixedSize: const Size(24, 24),
+                            padding: EdgeInsets.zero,
+                          ),
+                          icon: const Icon(
+                            Icons.phone_in_talk_rounded,
+                            size: 14,
+                          ),
+                        ),
                       ),
                     if (pr != null) Icon(pr.$1, size: 14, color: pr.$2),
                   ],

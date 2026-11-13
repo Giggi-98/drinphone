@@ -11,6 +11,7 @@ class FakeSipEngine implements SipEngine {
   final dialogsCtl = StreamController<BlfEvent>.broadcast(sync: true);
   final voicemailCtl = StreamController<VoicemailEvent>.broadcast(sync: true);
   final transfersCtl = StreamController<bool>.broadcast(sync: true);
+  final devicesChangedCtl = StreamController<bool>.broadcast(sync: true);
   Set<String> watched = {};
   final log = <String>[];
   SipAccount? registered;
@@ -25,6 +26,64 @@ class FakeSipEngine implements SipEngine {
   Stream<VoicemailEvent> get voicemail => voicemailCtl.stream;
   @override
   Stream<bool> get transfers => transfersCtl.stream;
+  @override
+  Stream<bool> get audioDevicesChanged => devicesChangedCtl.stream;
+  List<AudioCodecInfo> audioCodecList = const [
+    AudioCodecInfo(
+      id: 'opus/48000/2',
+      mime: 'opus',
+      clockRate: 48000,
+      channels: 2,
+      enabled: true,
+    ),
+    AudioCodecInfo(
+      id: 'PCMA/8000/1',
+      mime: 'PCMA',
+      clockRate: 8000,
+      channels: 1,
+      enabled: true,
+    ),
+    AudioCodecInfo(
+      id: 'PCMU/8000/1',
+      mime: 'PCMU',
+      clockRate: 8000,
+      channels: 1,
+      enabled: true,
+    ),
+    AudioCodecInfo(
+      id: 'G722/8000/1',
+      mime: 'G722',
+      clockRate: 8000,
+      channels: 1,
+      enabled: true,
+    ),
+  ];
+  @override
+  List<AudioCodecInfo> audioCodecs() => audioCodecList;
+  @override
+  Future<void> setAudioCodecs(List<AudioCodecPref> codecs) async {
+    final byId = {for (final c in audioCodecList) c.id: c};
+    final out = <AudioCodecInfo>[];
+    final seen = <String>{};
+    for (final p in codecs) {
+      final c = byId[p.id];
+      if (c == null || !seen.add(c.id)) continue;
+      out.add(
+        AudioCodecInfo(
+          id: c.id,
+          mime: c.mime,
+          clockRate: c.clockRate,
+          channels: c.channels,
+          enabled: p.enabled,
+        ),
+      );
+    }
+    for (final c in audioCodecList) {
+      if (seen.add(c.id)) out.add(c);
+    }
+    audioCodecList = out;
+    log.add('codecs ${codecs.map((c) => '${c.id}:${c.enabled}').join(',')}');
+  }
   var devices = const [
     SoundDevice('WASAPI: Microfono', capture: true, playback: false),
     SoundDevice('WASAPI: Altoparlanti', capture: false, playback: true),

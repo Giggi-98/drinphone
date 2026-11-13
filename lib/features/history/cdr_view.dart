@@ -6,11 +6,14 @@ import 'dart:math' as math;
 
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../app/l10n.dart';
 import '../../app/theme.dart';
 import '../../core/pbx/pbx_cdr.dart';
 import '../../core/pbx/pbx_connection.dart';
+import '../../core/pbx/yeastar_api.dart';
+import '../../core/platform/audio_player.dart';
 import '../shell/widgets.dart';
 import 'call_table.dart';
 
@@ -36,6 +39,9 @@ class CdrView extends StatefulWidget {
     required this.canDial,
     required this.onCall,
     this.byDay = false,
+    this.player,
+    this.audioCacheDir,
+    this.onSaveContact,
   });
   final PbxConnection conn;
 
@@ -46,6 +52,9 @@ class CdrView extends StatefulWidget {
   final CdrQuery filters;
   final bool canDial;
   final ValueChanged<String> onCall;
+  final InAppAudioPlayer? player;
+  final Directory? audioCacheDir;
+  final Future<void> Function(String name, String number)? onSaveContact;
 
   @override
   State<CdrView> createState() => _CdrViewState();
@@ -340,8 +349,18 @@ class _CdrViewState extends State<CdrView> {
       call: widget.canDial && other.isNotEmpty
           ? () => widget.onCall(other)
           : null,
-      onTap: () =>
-          showDialog<void>(context: context, builder: (_) => _CdrDetails(r)),
+      onTap: () => showDialog<void>(
+        context: context,
+        builder: (_) => _CdrDetails(
+          r,
+          conn: widget.conn,
+          player: widget.player,
+          audioCacheDir: widget.audioCacheDir,
+          canDial: widget.canDial,
+          onCall: widget.onCall,
+          onSaveContact: widget.onSaveContact,
+        ),
+      ),
     );
   }
 
@@ -574,9 +593,54 @@ class _RouteCell extends StatelessWidget {
 /// Dettaglio di una chiamata a 3 pannelli (come CDR Details di Yeastar):
 /// Riepilogo a sinistra, Timeline per Leg al centro (da evento 30039 o
 /// ricostruita dalle gambe CDR), Ripartizione tempi con ciambella a destra.
-class _CdrDetails extends StatefulWidget {
-  const _CdrDetails(this.r);
+class CdrDetailsDialog extends StatelessWidget {
+  const CdrDetailsDialog(
+    this.r, {
+    super.key,
+    this.conn,
+    this.player,
+    this.audioCacheDir,
+    this.canDial = false,
+    this.onCall,
+    this.onSaveContact,
+  });
   final CdrRecord r;
+  final PbxConnection? conn;
+  final InAppAudioPlayer? player;
+  final Directory? audioCacheDir;
+  final bool canDial;
+  final ValueChanged<String>? onCall;
+  final Future<void> Function(String name, String number)? onSaveContact;
+
+  @override
+  Widget build(BuildContext context) => _CdrDetails(
+    r,
+    conn: conn,
+    player: player,
+    audioCacheDir: audioCacheDir,
+    canDial: canDial,
+    onCall: onCall,
+    onSaveContact: onSaveContact,
+  );
+}
+
+class _CdrDetails extends StatefulWidget {
+  const _CdrDetails(
+    this.r, {
+    this.conn,
+    this.player,
+    this.audioCacheDir,
+    this.canDial = false,
+    this.onCall,
+    this.onSaveContact,
+  });
+  final CdrRecord r;
+  final PbxConnection? conn;
+  final InAppAudioPlayer? player;
+  final Directory? audioCacheDir;
+  final bool canDial;
+  final ValueChanged<String>? onCall;
+  final Future<void> Function(String name, String number)? onSaveContact;
 
   static String _party(String name, String number) => number.isEmpty
       ? name
@@ -642,8 +706,60 @@ class _TimelineLeg {
 
 class _CdrDetailsState extends State<_CdrDetails> {
   final Set<String> _collapsed = {};
+  bool _downloadingRecording = false;
+  String? _recordingDownloadError;
 
   CdrRecord get r => widget.r;
+
+  Directory get _cacheDir =>
+      widget.audioCacheDir ??
+      Directory(
+        '${Directory.systemTemp.path}${Platform.pathSeparator}drinphone_audio',
+      );
+
+  Future<void> _downloadRecording() async {
+    final conn = widget.conn;
+    if (conn == null || _downloadingRecording) return;
+    final baseName = r.uid.isNotEmpty
+        ? r.uid
+        : '${r.time?.millisecondsSinceEpoch ?? 0}';
+    final safe = baseName.replaceAll(RegExp(r'[^A-Za-z0-9._-]'), '_');
+    final loc = await getSaveLocation(
+      suggestedName: 'rec-$safe.wav',
+      acceptedTypeGroups: const [
+        XTypeGroup(label: 'Audio', extensions: ['wav', 'mp3']),
+      ],
+    );
+    if (loc == null || !mounted) return;
+    setState(() {
+      _downloadingRecording = true;
+      _recordingDownloadError = null;
+    });
+    try {
+      await conn.downloadRecordingAudio(
+        r,
+        _cacheDir,
+        targetFile: File(loc.path),
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(tr('Registrazione salvata in {p}', {'p': loc.path})),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(
+          () => _recordingDownloadError = e is YeastarApiException
+              ? e.errmsg
+              : e.toString(),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _downloadingRecording = false);
+    }
+  }
 
   String _closedByLabel() {
     final raw = r.disconnectBy.trim();
@@ -1058,6 +1174,11 @@ class _CdrDetailsState extends State<_CdrDetails> {
   ) {
     final (kindIcon, kindLabel) = _CdrViewState.kind(r.callType);
     final closedBy = _closedByLabel();
+    final canPlayRecording =
+        r.hasRecording &&
+        widget.conn != null &&
+        widget.player != null &&
+        r.uid.isNotEmpty;
     final extraFields = <(String, String, bool)>[
       if (r.ivrs.isNotEmpty) (tr('IVR'), r.ivrs.map(_pretty).join(', '), false),
       if (r.callFlows.isNotEmpty)
@@ -1070,7 +1191,8 @@ class _CdrDetailsState extends State<_CdrDetails> {
       if (r.dstTrunk.isNotEmpty) (tr('Trunk in uscita'), r.dstTrunk, false),
       if (r.did.isNotEmpty) (tr('DID'), r.did, true),
       if (r.dod.isNotEmpty) (tr('DOD'), r.dod, true),
-      if (r.hasRecording) (tr('Registrazione'), tr('Sì'), false),
+      if (r.hasRecording && !canPlayRecording)
+        (tr('Registrazione'), tr('Sì'), false),
     ];
 
     Widget sectionItem(String label, Widget child) => Padding(
@@ -1119,11 +1241,25 @@ class _CdrDetailsState extends State<_CdrDetails> {
             sectionItem(tr('Tipo'), KindCell(kindIcon, kindLabel)),
             sectionItem(
               tr('Da'),
-              _PartyChip(name: r.srcName, number: r.src, accent: c.primary),
+              _PartyChip(
+                name: r.srcName,
+                number: r.src,
+                accent: c.primary,
+                canDial: widget.canDial,
+                onCall: widget.onCall,
+                onSaveContact: widget.onSaveContact,
+              ),
             ),
             sectionItem(
               tr('A'),
-              _PartyChip(name: r.dstName, number: r.dst, accent: c.brand),
+              _PartyChip(
+                name: r.dstName,
+                number: r.dst,
+                accent: c.brand,
+                canDial: widget.canDial,
+                onCall: widget.onCall,
+                onSaveContact: widget.onSaveContact,
+              ),
             ),
             if (r.secondDst.isNotEmpty && r.secondDst != r.lastDst)
               sectionItem(
@@ -1132,6 +1268,9 @@ class _CdrDetailsState extends State<_CdrDetails> {
                   name: r.secondDstName,
                   number: r.secondDst,
                   accent: c.brand,
+                  canDial: widget.canDial,
+                  onCall: widget.onCall,
+                  onSaveContact: widget.onSaveContact,
                 ),
               ),
             if (r.lastDst.isNotEmpty)
@@ -1141,9 +1280,61 @@ class _CdrDetailsState extends State<_CdrDetails> {
                   name: r.lastDstName,
                   number: r.lastDst,
                   accent: c.primary,
+                  canDial: widget.canDial,
+                  onCall: widget.onCall,
+                  onSaveContact: widget.onSaveContact,
                 ),
               ),
             sectionItem(tr('Esito'), OutcomePill(outcomeLabel, outcomeColor)),
+            if (canPlayRecording)
+              sectionItem(
+                tr('Registrazione'),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    InlineAudioPlayerBar(
+                      player: widget.player!,
+                      trackKey: 'rec:${r.uid}',
+                      resolveFile: () async =>
+                          (await widget.conn!.downloadRecordingAudio(
+                            r,
+                            _cacheDir,
+                          )).$2,
+                      fallbackDurationSec: r.talk > 0 ? r.talk : r.duration,
+                      onDownload: _downloadingRecording
+                          ? null
+                          : _downloadRecording,
+                      compact: false,
+                    ),
+                    if (_recordingDownloadError != null) ...[
+                      const SizedBox(height: DrinSpace.s1),
+                      Text(
+                        _recordingDownloadError!,
+                        style: DrinText.detail.copyWith(color: c.busyText),
+                      ),
+                    ] else
+                      ListenableBuilder(
+                        listenable: widget.player!,
+                        builder: (_, _) {
+                          final p = widget.player!;
+                          final err = p.isActive('rec:${r.uid}')
+                              ? p.error
+                              : null;
+                          if (err == null || err.isEmpty) {
+                            return const SizedBox.shrink();
+                          }
+                          return Padding(
+                            padding: const EdgeInsets.only(top: DrinSpace.s1),
+                            child: Text(
+                              err,
+                              style: DrinText.detail.copyWith(color: c.busyText),
+                            ),
+                          );
+                        },
+                      ),
+                  ],
+                ),
+              ),
             if (closedBy.isNotEmpty)
               sectionItem(
                 tr('Chiuso da'),
@@ -1615,16 +1806,22 @@ class _CdrDetailsState extends State<_CdrDetails> {
 }
 
 /// Pill con avatar circolare e nome/numero come nei campi Call From / Call To
-/// di Yeastar CDR Details.
+/// di Yeastar CDR Details, con azioni rapide (richiama, copia, salva in rubrica).
 class _PartyChip extends StatelessWidget {
   const _PartyChip({
     required this.name,
     required this.number,
     required this.accent,
+    this.canDial = false,
+    this.onCall,
+    this.onSaveContact,
   });
   final String name;
   final String number;
   final Color accent;
+  final bool canDial;
+  final ValueChanged<String>? onCall;
+  final Future<void> Function(String name, String number)? onSaveContact;
 
   static String? _initials(String s) {
     final words = RegExp(r'[A-Za-zÀ-ÖØ-öø-ÿ]+')
@@ -1639,14 +1836,18 @@ class _PartyChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = context.drin;
-    final hasName = name.isNotEmpty && name != number;
-    final label = _CdrDetails._party(name, number);
-    final seed = hasName ? name : number;
+    final cleanNum = number.trim();
+    final hasName = name.isNotEmpty && name != cleanNum;
+    final label = _CdrDetails._party(name, cleanNum);
+    final seed = hasName ? name : cleanNum;
     final ini = _initials(seed);
+    final showActions = cleanNum.isNotEmpty;
     return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: DrinSpace.s2,
-        vertical: DrinSpace.s1,
+      padding: EdgeInsets.fromLTRB(
+        DrinSpace.s2,
+        DrinSpace.s1,
+        showActions ? DrinSpace.s1 : DrinSpace.s2,
+        DrinSpace.s1,
       ),
       decoration: BoxDecoration(
         color: c.surface,
@@ -1684,6 +1885,70 @@ class _PartyChip extends StatelessWidget {
               ),
             ),
           ),
+          if (showActions) ...[
+            const SizedBox(width: DrinSpace.s1),
+            PopupMenuButton<String>(
+              tooltip: tr('Azioni'),
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
+              icon: Icon(Icons.more_horiz_rounded, size: 16, color: c.muted),
+              onSelected: (action) async {
+                switch (action) {
+                  case 'call':
+                    if (canDial) onCall?.call(cleanNum);
+                  case 'copy':
+                    await Clipboard.setData(ClipboardData(text: cleanNum));
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(tr('Numero copiato: {n}', {'n': cleanNum})),
+                        ),
+                      );
+                    }
+                  case 'save':
+                    await onSaveContact?.call(hasName ? name : '', cleanNum);
+                }
+              },
+              itemBuilder: (_) => [
+                if (canDial && onCall != null)
+                  PopupMenuItem(
+                    value: 'call',
+                    child: Row(
+                      children: [
+                        Icon(Icons.call_rounded, size: 16, color: c.free),
+                        const SizedBox(width: DrinSpace.s2),
+                        Text(tr('Richiama')),
+                      ],
+                    ),
+                  ),
+                PopupMenuItem(
+                  value: 'copy',
+                  child: Row(
+                    children: [
+                      Icon(Icons.copy_rounded, size: 16, color: c.ink),
+                      const SizedBox(width: DrinSpace.s2),
+                      Text(tr('Copia numero')),
+                    ],
+                  ),
+                ),
+                if (onSaveContact != null)
+                  PopupMenuItem(
+                    value: 'save',
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.person_add_outlined,
+                          size: 16,
+                          color: c.ink,
+                        ),
+                        const SizedBox(width: DrinSpace.s2),
+                        Text(tr('Salva in rubrica')),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+          ],
         ],
       ),
     );

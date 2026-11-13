@@ -33,6 +33,26 @@ bool FlutterWindow::OnCreate() {
       std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
           flutter_controller_->engine()->messenger(), "drinphone/instance",
           &flutter::StandardMethodCodec::GetInstance());
+  hotkeys_channel_ =
+      std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
+          flutter_controller_->engine()->messenger(), "drinphone/hotkeys",
+          &flutter::StandardMethodCodec::GetInstance());
+  hotkeys_channel_->SetMethodCallHandler(
+      [this](const flutter::MethodCall<flutter::EncodableValue>& call,
+             std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>>
+                 result) {
+        if (call.method_name() == "setEnabled") {
+          bool enabled = false;
+          if (call.arguments() && std::holds_alternative<bool>(*call.arguments())) {
+            enabled = std::get<bool>(*call.arguments());
+          }
+          flutter::EncodableMap status;
+          RegisterGlobalHotkeys(GetHandle(), enabled, &status);
+          result->Success(flutter::EncodableValue(status));
+          return;
+        }
+        result->NotImplemented();
+      });
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
 
   flutter_controller_->engine()->SetNextFrameCallback([&]() {
@@ -47,7 +67,32 @@ bool FlutterWindow::OnCreate() {
   return true;
 }
 
+void FlutterWindow::UnregisterGlobalHotkeys(HWND hwnd) {
+  if (!hwnd) return;
+  ::UnregisterHotKey(hwnd, 1);
+  ::UnregisterHotKey(hwnd, 2);
+  ::UnregisterHotKey(hwnd, 3);
+}
+
+void FlutterWindow::RegisterGlobalHotkeys(HWND hwnd, bool enabled,
+                                          flutter::EncodableMap* status) {
+  UnregisterGlobalHotkeys(hwnd);
+  constexpr UINT mods = MOD_CONTROL | MOD_ALT | MOD_NOREPEAT;
+  const bool a = hwnd && enabled && ::RegisterHotKey(hwnd, 1, mods, 'A');
+  const bool m = hwnd && enabled && ::RegisterHotKey(hwnd, 2, mods, 'M');
+  const bool d = hwnd && enabled && ::RegisterHotKey(hwnd, 3, mods, 'D');
+  if (status) {
+    (*status)[flutter::EncodableValue("answerHangup")] =
+        flutter::EncodableValue(a);
+    (*status)[flutter::EncodableValue("mute")] = flutter::EncodableValue(m);
+    (*status)[flutter::EncodableValue("dialClipboard")] =
+        flutter::EncodableValue(d);
+  }
+}
+
 void FlutterWindow::OnDestroy() {
+  UnregisterGlobalHotkeys(GetHandle());
+  hotkeys_channel_.reset();
   if (flutter_controller_) {
     flutter_controller_ = nullptr;
   }
@@ -73,6 +118,18 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
     case WM_FONTCHANGE:
       flutter_controller_->engine()->ReloadSystemFonts();
       break;
+    case WM_HOTKEY: {
+      const char* action = nullptr;
+      if (wparam == 1) action = "answerHangup";
+      if (wparam == 2) action = "mute";
+      if (wparam == 3) action = "dialClipboard";
+      if (action && hotkeys_channel_) {
+        hotkeys_channel_->InvokeMethod(
+            "triggered",
+            std::make_unique<flutter::EncodableValue>(std::string(action)));
+      }
+      return 0;
+    }
     case WM_COPYDATA: {
       // Solo il formato della nostra seconda copia, con limite di lunghezza;
       // il contenuto lo valuta Dart (call_links.dart) e chiede conferma.
