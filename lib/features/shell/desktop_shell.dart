@@ -24,6 +24,7 @@ class DesktopShell with TrayListener {
 
   final _toasts = <int, LocalNotification>{};
   final _reminderToasts = <String, LocalNotification>{};
+  final _busyToasts = <String, LocalNotification>{};
   String _tooltip = '';
 
   static Future<void> start(PhoneController phone) async {
@@ -135,6 +136,36 @@ class DesktopShell with TrayListener {
       _reminderToasts[r.id] = n;
       n.show();
     }
+    final readyBusy = {for (final w in p.readyBusyCallbacks) w.key: w};
+    for (final key in [..._busyToasts.keys]) {
+      if (!readyBusy.containsKey(key)) _busyToasts.remove(key)?.destroy();
+    }
+    for (final w in readyBusy.values) {
+      if (_busyToasts.containsKey(w.key)) continue;
+      final ext = w.extension;
+      final who = ext.name.isNotEmpty && ext.name != ext.number
+          ? '${ext.name} (${ext.number})'
+          : ext.number;
+      final n = LocalNotification(
+        title: tr('Interno libero'),
+        body: tr('{w} ora è libero', {'w': who}),
+        actions: [
+          LocalNotificationAction(text: tr('Chiama ora')),
+          LocalNotificationAction(text: tr('Chiudi')),
+        ],
+      );
+      n.onClick = WindowAttention.instance.show;
+      n.onClickAction = (i) {
+        if (i == 0) {
+          WindowAttention.instance.show();
+          p.callBusyCallback(w.key);
+        } else {
+          p.dismissBusyCallback(w.key);
+        }
+      };
+      _busyToasts[w.key] = n;
+      n.show();
+    }
   }
 
   @override
@@ -168,6 +199,14 @@ class DesktopShell with TrayListener {
       await n.destroy();
     }
     _toasts.clear();
+    for (final n in _reminderToasts.values) {
+      await n.destroy();
+    }
+    _reminderToasts.clear();
+    for (final n in _busyToasts.values) {
+      await n.destroy();
+    }
+    _busyToasts.clear();
     trayManager.removeListener(this);
     await trayManager.destroy();
     instance = null;

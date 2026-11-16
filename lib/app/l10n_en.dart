@@ -933,4 +933,8 @@ const en = <String, String>{
   'Passphrase del file': 'File passphrase',
   'Importazione…': 'Importing…',
   'Profilo importato: {n}': 'Profile imported: {n}',
+  'Interno libero': 'Extension available',
+  '{w} ora è libero': '{w} is now free',
+  'Avvisami appena si libera': 'Notify me when free',
+  'Annulla avviso quando si libera': 'Cancel free alert',
 };

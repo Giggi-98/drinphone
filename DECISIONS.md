@@ -6,6 +6,13 @@ aggiungi una voce nuova in cima che cita la vecchia. Il campo chiave è
 
 ---
 
+## 2026-11-16 · Azioni BLF su Interni: Pickup 1-clic & Busy Callback ("Avvisami appena si libera") (`IMPLEMENTATO`, `DA VALIDARE` su PBX reale)
+1. **Pickup BLF 1-clic da `Interni` (`PhoneController.pickupExtension`, `_ExtensionTile`):** quando un interno squilla (`BlfStatus.ringing` o `LiveState.ringing`) e il PBX espone `extPickupCode` (`feature_code/get`), la scheda/riga mostra il pulsante `squillo` (`c.squillo` / `c.onSquillo`) e la voce nel menu contestuale per rispondere subito con `<extPickupCode><interno>`.
+   - **Scartato:** limitare il pickup alla sola vista `Live` (l'utente passa gran parte del tempo su `Interni`).
+2. **Busy Callback lato client (`PhoneController.toggleBusyWatch`, `BusyCallbackWatch`, `HomeScreen._busyCallbackBanner`, `DesktopShell._busyToasts`):** monitoraggio effimero di sessione (non persistito, azzerato al logout) su interni occupati (`BlfStatus.busy`); al rientro a `BlfStatus.idle` senza chiamate live `30011` sull'interno, mostra un banner in-app e un toast Windows con `Chiama ora` / `Chiudi`.
+   - **Scartato:** inviare `SUBSCRIBE` o codici proprietari `CCBS` lato PBX (dipendenza da firmware/trunk eterogenei e permessi operatore); l'osservazione su BLF/WebSocket già aperti è a costo zero sul PBX.
+   - **Da rivedere se:** in futuro si desidera persistenza tra riavvii o accodamento automatico lato PBX.
+
 ## 2026-11-16 · Esportazione & Importazione profilo cifrato `.drinprof` (`IMPLEMENTATO`, `DA VALIDARE` su Windows interattivo)
 1. **Formato portabile cifrato (`lib/core/security/profile_bundle.dart`):** busta JSON `drinprof-v1` cifrata con `PBKDF2-HMAC-SHA256` (120.000 iterazioni di default, sale 16 byte casuali) + `AES-256-GCM` (`package:cryptography`), con passphrase utente obbligatoria di almeno 8 caratteri e controllo anti-DoS sul numero di iterazioni in apertura.
 2. **Controllo granulare ed isolamento:** all'esportazione l'utente sceglie se includere password SIP, credenziali PBX API/CDR e contatti personali; le credenziali API/CDR restano gestite esclusivamente dentro `PhoneController` / `ProfileBundleCodec` (mai esposte o stampate nei log). All'importazione tutti gli ID interni di profilo, account e connessioni PBX vengono rigenerati (rimappando `pbxId` e `favorites`) e sostituiti al profilo segnaposto vuoto se si tratta del primo avvio.

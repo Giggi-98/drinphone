@@ -271,24 +271,30 @@ class CallIconButton extends StatelessWidget {
     required this.onPressed,
     this.tooltip,
     this.icon = Icons.call_rounded,
+    this.backgroundColor,
+    this.foregroundColor,
   });
   final VoidCallback? onPressed;
   final String? tooltip;
 
   /// `Icons.videocam_rounded` per la videochiamata.
   final IconData icon;
+  final Color? backgroundColor;
+  final Color? foregroundColor;
 
   @override
   Widget build(BuildContext context) {
     final c = context.drin;
+    final bg = backgroundColor ?? c.panel;
+    final fg = foregroundColor ?? c.primary;
     return Pressable(
       enabled: onPressed != null,
       child: IconButton.filledTonal(
         tooltip: tooltip ?? tr('Chiama'),
         style: IconButton.styleFrom(
-          backgroundColor: c.keyBtn,
-          foregroundColor: c.accent,
-          disabledBackgroundColor: c.keyBtn.withValues(alpha: 0.4),
+          backgroundColor: bg,
+          foregroundColor: fg,
+          disabledBackgroundColor: bg.withValues(alpha: 0.4),
           minimumSize: const Size(40, 40),
         ),
         onPressed: onPressed,
@@ -476,6 +482,7 @@ Future<void> showActionsMenu(
   final c = context.drin;
   return showMenu<void>(
     context: context,
+    constraints: const BoxConstraints(minWidth: 192, maxWidth: 340),
     position: RelativeRect.fromLTRB(at.dx, at.dy, at.dx, at.dy),
     items: [
       for (final a in actions)
@@ -490,7 +497,7 @@ Future<void> showActionsMenu(
               children: [
                 Icon(a.$1, size: 18, color: c.muted),
                 const SizedBox(width: DrinSpace.s3),
-                Text(a.$2),
+                Flexible(child: Text(a.$2, overflow: TextOverflow.ellipsis)),
               ],
             ),
           ),

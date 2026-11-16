@@ -82,6 +82,9 @@ spikes/f0a/                         spike F0-A (non prodotto)
   `<state>unregister</state>` di Yeastar -> `offline` (Non registrato).
   Subscription terminata o rifiutata: stato sconosciuto con motivo, ritentata al
   rinnovo REGISTER successivo. Registrazione caduta: tutto sconosciuto.
+  Su `Interni`: Pickup BLF 1-clic (`PhoneController.pickupExtension` quando `ringing`
+  e `extPickupCode` disponibile) e Busy Callback di sessione (`BusyCallbackWatch`,
+  avviso in-app + toast Windows quando un interno `busy` osservato torna `idle`).
 - **Account SIP multipli** (`IMPLEMENTATO`, verificato solo l'account principale) —
   `SipEngine.setAccounts`, eventi di registrazione per account, `dial(numero,
   accountId)`; `Settings.accounts` (password per account nello storage sicuro,

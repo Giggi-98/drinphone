@@ -406,6 +406,7 @@ class PhoneController extends ChangeNotifier {
     // Il PBX principale si riconosce dall'host, noto solo dopo aver letto le
     // credenziali: si riassegna qui (arriva a inizio sync, prima delle letture).
     _assignVoicemail();
+    final busyChanged = _checkBusyWatches();
     if (!c.syncing && (!c.ok || c.optionalErrors.isNotEmpty)) {
       debugPrint(
         '[drinphone] pbx ${c.id}: ${c.status} ${c.optionalErrors.join('; ')}',
@@ -420,6 +421,8 @@ class PhoneController extends ChangeNotifier {
       final g = selectedGroup;
       if (g != null && !_groupExists(g)) selectedGroup = null;
       _syncDialogs();
+      notifyListeners();
+    } else if (busyChanged) {
       notifyListeners();
     } else {
       // Eventi in tempo reale a raffica (stato chiamata, presenza): raggruppati.
@@ -615,6 +618,101 @@ class PhoneController extends ChangeNotifier {
 
   /// Chiamabile solo se è sul PBX dell'account SIP (o inserito a mano).
   bool isCallable(Extension e) => accountFor(e) != null;
+
+  /// Codice pickup del PBX per l'interno [e], se disponibile.
+  String? pickupCodeFor(Extension e) {
+    final code = _connectionOf(e)?.extPickupCode;
+    if (code == null || code.isEmpty) return null;
+    return code;
+  }
+
+  /// Vero se l'interno sta squillando e possiamo rispondere per lui (pickup BLF).
+  bool canPickupExtension(Extension e, {ExtensionLive? live}) {
+    if (!canDial || !isCallable(e) || e.number.isEmpty) return false;
+    if (pickupCodeFor(e) == null) return false;
+    return blfOf(e) == BlfStatus.ringing || live?.state == LiveState.ringing;
+  }
+
+  /// Risponde alla chiamata che squilla sull'interno [e] tramite codice pickup.
+  Future<void> pickupExtension(Extension e) async {
+    final code = pickupCodeFor(e);
+    if (code == null || !canDial || !isCallable(e) || e.number.isEmpty) {
+      return;
+    }
+    await dial('$code${e.number}', via: e);
+  }
+
+  final Map<String, BusyCallbackWatch> _busyWatches = {};
+
+  String _busyWatchKey(Extension e) =>
+      '${e.source.isEmpty ? (primaryConnection?.id ?? '') : e.source}:${e.number}';
+
+  List<BusyCallbackWatch> get activeBusyWatches =>
+      _busyWatches.values.where((w) => !w.ready).toList();
+
+  List<BusyCallbackWatch> get readyBusyCallbacks =>
+      _busyWatches.values.where((w) => w.ready).toList();
+
+  bool isWatchingBusy(Extension e) =>
+      _busyWatches.containsKey(_busyWatchKey(e));
+
+  bool _isExtensionBusyNow(Extension e) {
+    if (blfOf(e) == BlfStatus.busy) return true;
+    final live = _connectionOf(e)?.extensionCalls[e.number];
+    return live != null && live.state != LiveState.ringing;
+  }
+
+  bool _isExtensionIdleNow(Extension e) {
+    final live = _connectionOf(e)?.extensionCalls[e.number];
+    if (live != null) return false;
+    return blfOf(e) == BlfStatus.idle;
+  }
+
+  /// Attiva o disattiva "Avvisami appena si libera" sull'interno occupato [e].
+  void toggleBusyWatch(Extension e) {
+    final k = _busyWatchKey(e);
+    if (_busyWatches.containsKey(k)) {
+      _busyWatches.remove(k);
+      notifyListeners();
+      return;
+    }
+    if (!isCallable(e) || e.number.isEmpty || !_isExtensionBusyNow(e)) return;
+    _busyWatches[k] = BusyCallbackWatch(
+      key: k,
+      extension: e,
+      createdAt: _clock(),
+    );
+    notifyListeners();
+  }
+
+  bool _checkBusyWatches() {
+    if (_busyWatches.isEmpty) return false;
+    var changed = false;
+    final now = _clock();
+    for (final entry in _busyWatches.entries.toList()) {
+      final w = entry.value;
+      if (w.ready) continue;
+      if (_isExtensionIdleNow(w.extension)) {
+        _busyWatches[entry.key] = w.markReady(now);
+        changed = true;
+      }
+    }
+    return changed;
+  }
+
+  void dismissBusyCallback(String key) {
+    if (_busyWatches.remove(key) != null) {
+      notifyListeners();
+    }
+  }
+
+  Future<void> callBusyCallback(String key) async {
+    final w = _busyWatches[key];
+    if (w == null || !canDial) return;
+    _busyWatches.remove(key);
+    notifyListeners();
+    await dial(w.extension.number, via: w.extension);
+  }
 
   /// Risultati per il popup di ricerca: interni, poi contatti della rubrica.
   /// Prima le corrispondenze a inizio parola o numero.
@@ -1053,6 +1151,7 @@ class PhoneController extends ChangeNotifier {
       };
     }
     blf.clear();
+    _busyWatches.clear();
     _mwiNew = 0;
     _mwiOld = 0;
   }
@@ -1994,6 +2093,14 @@ class PhoneController extends ChangeNotifier {
   Future<void> dial(String number, {Extension? via, bool video = false}) async {
     final n = number.trim();
     if (n.isEmpty || !canDial) return;
+    final cleared = <String>[
+      for (final e in _busyWatches.entries)
+        if (e.value.ready && e.value.extension.number == n) e.key,
+    ];
+    for (final k in cleared) {
+      _busyWatches.remove(k);
+    }
+    if (cleared.isNotEmpty) notifyListeners();
     final a = via == null ? settings.account : accountFor(via);
     await _engine.dial(
       n,
@@ -2113,7 +2220,11 @@ class PhoneController extends ChangeNotifier {
   void _onDialog(BlfEvent e) {
     debugPrint('[drinphone] blf ${e.number} ${e.status.name} ${e.reason}');
     blf[e.number] = e;
-    _notifySoon();
+    if (_checkBusyWatches()) {
+      notifyListeners();
+    } else {
+      _notifySoon();
+    }
   }
 
   // ─── PERCHÉ NON BASTA aspettare il BYE del PBX ───
@@ -2392,4 +2503,29 @@ class CallerContext {
       todayCalls > 0 ||
       lastNote.isNotEmpty ||
       activeReminder != null;
+}
+
+/// Monitoraggio di sessione su un interno occupato: avvisa appena torna libero.
+class BusyCallbackWatch {
+  const BusyCallbackWatch({
+    required this.key,
+    required this.extension,
+    required this.createdAt,
+    this.ready = false,
+    this.readyAt,
+  });
+
+  final String key;
+  final Extension extension;
+  final DateTime createdAt;
+  final bool ready;
+  final DateTime? readyAt;
+
+  BusyCallbackWatch markReady(DateTime at) => BusyCallbackWatch(
+    key: key,
+    extension: extension,
+    createdAt: createdAt,
+    ready: true,
+    readyAt: at,
+  );
 }

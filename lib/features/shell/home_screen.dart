@@ -569,6 +569,8 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                     for (final rem in p.dueReminders)
                       _reminderBanner(c, p, rem),
+                    for (final w in p.readyBusyCallbacks)
+                      _busyCallbackBanner(c, p, w),
                     Expanded(
                       // Live Calls sparisce senza eventi o nei profili SIP generici.
                       child: AnimatedSectionSwitch(
@@ -687,6 +689,62 @@ class _HomeScreenState extends State<HomeScreen> {
           IconButton(
             tooltip: tr('Chiudi'),
             onPressed: () => p.dismissReminder(rem.id as String),
+            icon: Icon(Icons.close_rounded, size: 18, color: c.muted),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _busyCallbackBanner(
+    DrinColors c,
+    PhoneController p,
+    BusyCallbackWatch w,
+  ) {
+    final ext = w.extension;
+    final who = ext.name.isNotEmpty && ext.name != ext.number
+        ? '${ext.name} (${ext.number})'
+        : ext.number;
+    return Container(
+      margin: const EdgeInsets.fromLTRB(
+        DrinSpace.s4,
+        DrinSpace.s3,
+        DrinSpace.s4,
+        0,
+      ),
+      padding: const EdgeInsets.symmetric(
+        horizontal: DrinSpace.s4,
+        vertical: DrinSpace.s2,
+      ),
+      decoration: BoxDecoration(
+        color: c.surface,
+        border: Border.all(color: c.free),
+        borderRadius: BorderRadius.circular(DrinRadius.row),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.notifications_active_rounded, size: 18, color: c.freeText),
+          const SizedBox(width: DrinSpace.s3),
+          Expanded(
+            child: Text(
+              tr('{w} ora è libero', {'w': who}),
+              overflow: TextOverflow.ellipsis,
+              style: DrinText.body.copyWith(color: c.ink),
+            ),
+          ),
+          FilledButton.icon(
+            style: FilledButton.styleFrom(
+              backgroundColor: c.free,
+              foregroundColor: c.onFree,
+            ),
+            onPressed: p.canDial ? () => p.callBusyCallback(w.key) : null,
+            icon: const Icon(Icons.call_rounded, size: 16),
+            label: Text(tr('Chiama ora')),
+          ),
+          const SizedBox(width: DrinSpace.s1),
+          IconButton(
+            tooltip: tr('Chiudi'),
+            onPressed: () => p.dismissBusyCallback(w.key),
             icon: Icon(Icons.close_rounded, size: 18, color: c.muted),
           ),
         ],
@@ -1555,6 +1613,13 @@ class _ExtensionsViewState extends State<_ExtensionsView> {
           .where((x) => x.number == e.number)
           .firstOrNull;
       final live = lives[e.source.isEmpty ? primaryId : e.source]?[e.number];
+      final blf = phone.blfOf(e);
+      final canPickup = phone.canPickupExtension(e, live: live);
+      final watchingBusy = phone.isWatchingBusy(e);
+      final canWatchBusy =
+          phone.isCallable(e) &&
+          (blf == BlfStatus.busy ||
+              (live != null && live.state != LiveState.ringing));
       return _ExtensionTile(
         live: live,
         liveName: live == null ? '' : phone.nameFor(live.other),
@@ -1568,13 +1633,17 @@ class _ExtensionsViewState extends State<_ExtensionsView> {
         ext: e,
         callable: phone.isCallable(e),
         canDial: phone.canDial,
-        blf: phone.blfOf(e),
+        blf: blf,
         blfStale: phone.blfStale(e),
         presence: phone.presenceOf(e),
         favorite: phone.isFavorite(e),
         onFavorite: () => _toggleFavorite(e),
         // Tramite l'account SIP del PBX dell'interno.
         onCall: () => phone.dial(e.number, via: e),
+        onPickup: canPickup ? () => phone.pickupExtension(e) : null,
+        watchingBusy: watchingBusy,
+        canWatchBusy: canWatchBusy,
+        onToggleBusyWatch: () => phone.toggleBusyWatch(e),
         onVideoCall: phone.videoEnabled
             ? () => phone.dial(e.number, via: e, video: true)
             : null,
@@ -1861,6 +1930,10 @@ class _ExtensionTile extends StatefulWidget {
     required this.favorite,
     required this.onFavorite,
     required this.onCall,
+    this.onPickup,
+    this.watchingBusy = false,
+    this.canWatchBusy = false,
+    this.onToggleBusyWatch,
     this.onVideoCall,
     required this.onRemove,
     this.compact = false,
@@ -1889,6 +1962,10 @@ class _ExtensionTile extends StatefulWidget {
   final bool favorite;
   final VoidCallback onFavorite;
   final VoidCallback onCall;
+  final VoidCallback? onPickup;
+  final bool watchingBusy;
+  final bool canWatchBusy;
+  final VoidCallback? onToggleBusyWatch;
 
   /// Null se le videochiamate sono spente in Preferenze > Video.
   final VoidCallback? onVideoCall;
@@ -1980,6 +2057,21 @@ class _ExtensionTileState extends State<_ExtensionTile> {
             message: tr('Inserito a mano · tasto destro per rimuovere'),
             child: Icon(Icons.push_pin_outlined, size: 14, color: c.muted),
           ),
+        if (w.watchingBusy || (w.canWatchBusy && _hover))
+          IconButton(
+            tooltip: w.watchingBusy
+                ? tr('Annulla avviso quando si libera')
+                : tr('Avvisami appena si libera'),
+            visualDensity: VisualDensity.compact,
+            onPressed: w.onToggleBusyWatch,
+            icon: Icon(
+              w.watchingBusy
+                  ? Icons.notifications_active_rounded
+                  : Icons.notifications_none_rounded,
+              size: 19,
+              color: w.watchingBusy ? c.primary : c.muted,
+            ),
+          ),
         if (favorite || _hover)
           IconButton(
             tooltip: favorite
@@ -2011,6 +2103,12 @@ class _ExtensionTileState extends State<_ExtensionTile> {
           // Tasto destro: tutte le azioni sull'interno.
           onSecondaryTapDown: (d) =>
               showActionsMenu(context, d.globalPosition, [
+                if (w.onPickup != null)
+                  (
+                    Icons.phone_in_talk_rounded,
+                    tr('Rispondi per {n}', {'n': ext.number}),
+                    w.onPickup,
+                  ),
                 (
                   Icons.call_rounded,
                   tr('Chiama'),
@@ -2021,6 +2119,16 @@ class _ExtensionTileState extends State<_ExtensionTile> {
                     Icons.videocam_rounded,
                     tr('Videochiamata'),
                     canDial && callable ? w.onVideoCall : null,
+                  ),
+                if (w.watchingBusy || w.canWatchBusy)
+                  (
+                    w.watchingBusy
+                        ? Icons.notifications_off_outlined
+                        : Icons.notifications_active_outlined,
+                    w.watchingBusy
+                        ? tr('Annulla avviso quando si libera')
+                        : tr('Avvisami appena si libera'),
+                    w.onToggleBusyWatch,
                   ),
                 copyAction(context, ext.number),
                 (
@@ -2049,10 +2157,20 @@ class _ExtensionTileState extends State<_ExtensionTile> {
                 // alta quanto serve, i pulsanti vanno in fondo (Spacer).
                 if (w.compact) Expanded(child: identity) else identity,
                 if (!w.compact) const Spacer(),
-                // Pulsanti su una riga a parte: chiamata e videochiamata.
+                // Pulsanti su una riga a parte: pickup (se squilla), chiamata e video.
                 Row(
                   mainAxisAlignment: MainAxisAlignment.end,
                   children: [
+                    if (w.onPickup != null) ...[
+                      CallIconButton(
+                        icon: Icons.phone_in_talk_rounded,
+                        backgroundColor: c.squillo,
+                        foregroundColor: c.onSquillo,
+                        tooltip: tr('Rispondi per {n}', {'n': ext.number}),
+                        onPressed: w.onPickup,
+                      ),
+                      const SizedBox(width: DrinSpace.s2),
+                    ],
                     CallIconButton(
                       tooltip: callable
                           ? tr('Chiama {n}', {'n': ext.number})
