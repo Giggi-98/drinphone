@@ -8,6 +8,17 @@ import 'dart:io';
 
 import 'package:ffi/ffi.dart';
 
+final class _Rect extends Struct {
+  @Int32()
+  external int left;
+  @Int32()
+  external int top;
+  @Int32()
+  external int right;
+  @Int32()
+  external int bottom;
+}
+
 final class _FlashInfo extends Struct {
   @Uint32()
   external int cbSize;
@@ -66,6 +77,93 @@ class WindowAttention {
       .lookupFunction<Pointer<Void> Function(), Pointer<Void> Function()>(
         'GetForegroundWindow',
       );
+  late final _getWindowRect = _user32
+      .lookupFunction<
+        Int32 Function(Pointer<Void>, Pointer<_Rect>),
+        int Function(Pointer<Void>, Pointer<_Rect>)
+      >('GetWindowRect');
+  late final _setWindowPos = _user32
+      .lookupFunction<
+        Int32 Function(
+          Pointer<Void>,
+          Pointer<Void>,
+          Int32,
+          Int32,
+          Int32,
+          Int32,
+          Uint32,
+        ),
+        int Function(Pointer<Void>, Pointer<Void>, int, int, int, int, int)
+      >('SetWindowPos');
+  late final _getSystemMetrics = _user32
+      .lookupFunction<Int32 Function(Int32), int Function(int)>(
+        'GetSystemMetrics',
+      );
+
+  ({int left, int top, int width, int height})? _savedBounds;
+  bool isMiniHud = false;
+
+  /// Attiva/disattiva la modalità compatta Always-on-top su Windows salvando e
+  /// ripristinando posizione/dimensioni originali della finestra.
+  void setMiniHud(bool on) {
+    isMiniHud = on;
+    if (!Platform.isWindows) return;
+    final hwnd = _hwnd();
+    if (hwnd == nullptr) return;
+    using((a) {
+      const swpShowWindow = 0x0040;
+      const swpNoActivate = 0x0010;
+      final hwndTopMost = Pointer<Void>.fromAddress(-1);
+      final hwndNoTopMost = Pointer<Void>.fromAddress(-2);
+      if (on) {
+        final rect = a<_Rect>();
+        if (_getWindowRect(hwnd, rect) != 0) {
+          final w = rect.ref.right - rect.ref.left;
+          final h = rect.ref.bottom - rect.ref.top;
+          if (w > 460 && h > 280) {
+            _savedBounds = (
+              left: rect.ref.left,
+              top: rect.ref.top,
+              width: w,
+              height: h,
+            );
+          }
+        }
+        if (_isIconic(hwnd) != 0) _showWindow(hwnd, _swRestore);
+        final screenW = _getSystemMetrics(0); // SM_CXSCREEN
+        const hudW = 420;
+        const hudH = 230;
+        final x = (screenW > hudW + 24) ? screenW - hudW - 24 : 24;
+        const y = 24;
+        _setWindowPos(
+          hwnd,
+          hwndTopMost,
+          x,
+          y,
+          hudW,
+          hudH,
+          swpShowWindow | swpNoActivate,
+        );
+      } else {
+        final b = _savedBounds;
+        _savedBounds = null;
+        if (b != null) {
+          _setWindowPos(
+            hwnd,
+            hwndNoTopMost,
+            b.left,
+            b.top,
+            b.width,
+            b.height,
+            swpShowWindow,
+          );
+        } else {
+          // Fallback SWP_NOMOVE | SWP_NOSIZE
+          _setWindowPos(hwnd, hwndNoTopMost, 0, 0, 0, 0, 0x0001 | 0x0002);
+        }
+      }
+    });
+  }
 
   Pointer<Void> _hwnd() => using(
     (a) => _findWindow(_className.toNativeUtf16(allocator: a), nullptr),

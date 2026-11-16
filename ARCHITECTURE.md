@@ -21,14 +21,19 @@ lib/core/update/updater.dart        aggiornamenti dalle GitHub Releases (manifes
 lib/features/update/                pannello e finestra "Aggiornamento"
 assets/brand/                       logo "Drin!" bianco monocromatico (1x, 2.0x)
 lib/core/app_paths.dart             cartelle dati: %APPDATA%\Econnet\DrinPhone
+lib/core/call_history.dart          cronologia chiamate locale e note per chiamata
+lib/core/recall_reminders.dart      promemoria locali di richiamata (JSON)
 lib/core/install_id.dart            ID casuale dell'installazione (supporto, solo locale)
 lib/core/sip/sip_engine.dart        porta astratta SipEngine + tipi neutri
 lib/core/pbx/pbx_sync.dart          registro delle voci sincronizzabili dalle API PBX
 lib/core/pbx/pbx_cdr.dart           CDR dal database del PBX (Database Grant, MySQL)
 lib/core/security/cdr_db_store.dart credenziali Database Grant cifrate (DPAPI)
+lib/core/security/profile_bundle.dart esportazione/importazione profilo cifrato .drinprof (PBKDF2+AES-256-GCM)
 lib/core/sip/linphone_ffi_engine.dart  unico adattatore liblinphone (FFI, API C)
-lib/core/platform/audio_player.dart player audio in-app (winmm.dll MCI) per VM e registrazioni CDR
+lib/core/platform/audio_player.dart player audio in-app (winmm.dll MCI) per VM/CDR + Echo Test microfono (MicEchoTester)
 lib/core/platform/global_hotkeys.dart scorciatoie globali Win32 opzionali (RegisterHotKey + conferma appunti)
+lib/core/platform/mic_busy_monitor.dart rilevamento microfono in uso da altre app Windows + fasce orarie Auto-DND
+lib/core/platform/screen_pop.dart   Screen Pop HTTP/HTTPS verso CRM via ShellExecuteW (shell32.dll)
 lib/core/security/settings_store.dart  impostazioni JSON + password in storage sicuro
 lib/features/shell/home_screen.dart barra sezioni, barra composizione, griglia interni
 lib/features/call/                  pannello chiamata, tastierino (anche DTMF)

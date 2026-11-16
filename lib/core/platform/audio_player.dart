@@ -159,8 +159,9 @@ class InAppAudioPlayer extends ChangeNotifier {
 
   Future<void> togglePlay(
     String key,
-    Future<File> Function() resolveFile,
-  ) async {
+    Future<File> Function() resolveFile, {
+    bool cacheFile = true,
+  }) async {
     if (activeKey == key) {
       if (state == PlaybackState.playing) {
         await _backend.pause();
@@ -188,10 +189,10 @@ class InAppAudioPlayer extends ChangeNotifier {
     notifyListeners();
 
     try {
-      var file = _cachedFiles[key];
+      var file = cacheFile ? _cachedFiles[key] : null;
       if (file == null || !file.existsSync()) {
         file = await resolveFile();
-        _cachedFiles[key] = file;
+        if (cacheFile) _cachedFiles[key] = file;
       }
       if (activeKey != key) return;
       final len = await _backend.open(file.path);
@@ -271,6 +272,224 @@ class InAppAudioPlayer extends ChangeNotifier {
       } catch (_) {}
     }
     _cachedFiles.clear();
+    super.dispose();
+  }
+}
+
+/// Backend per cattura breve microfono ("Echo Test" in Preferenze > Audio).
+abstract class EchoRecorderBackend {
+  Future<void> startRecording();
+  Future<void> stopAndSave(String outputPath);
+  Future<void> cancel();
+}
+
+/// Implementazione Windows tramite `winmm.dll` MCI (`waveaudio`).
+class WindowsMciEchoRecorder implements EchoRecorderBackend {
+  DynamicLibrary? _winmm;
+  _MciSendDart? _mci;
+  int _seq = 0;
+  String? _alias;
+
+  _MciSendDart get _send {
+    _winmm ??= DynamicLibrary.open('winmm.dll');
+    return _mci ??= _winmm!.lookupFunction<_MciSendNative, _MciSendDart>(
+      'mciSendStringW',
+    );
+  }
+
+  void _exec(String command, {bool ignoreError = false}) {
+    if (!Platform.isWindows) {
+      if (ignoreError) return;
+      throw UnsupportedError('Prova microfono supportata solo su Windows');
+    }
+    using((a) {
+      const bufChars = 256;
+      final cmd = command.toNativeUtf16(allocator: a);
+      final out = a<Uint16>(bufChars).cast<Utf16>();
+      final err = _send(cmd, out, bufChars, nullptr);
+      if (err != 0 && !ignoreError) {
+        throw StateError('Errore registrazione microfono (MCI $err)');
+      }
+    });
+  }
+
+  @override
+  Future<void> startRecording() async {
+    await cancel();
+    final alias = 'drin_echo_${++_seq}';
+    _exec('open new type waveaudio alias $alias');
+    _alias = alias;
+    _exec(
+      'set $alias time format ms bitspersample 16 channels 1 samplespersec 16000',
+      ignoreError: true,
+    );
+    _exec('record $alias');
+  }
+
+  @override
+  Future<void> stopAndSave(String outputPath) async {
+    final a = _alias;
+    _alias = null;
+    if (a == null) return;
+    if (outputPath.contains('"') ||
+        outputPath.contains('\n') ||
+        outputPath.contains('\r')) {
+      _exec('close $a', ignoreError: true);
+      throw ArgumentError('Percorso file audio non valido');
+    }
+    try {
+      _exec('stop $a', ignoreError: true);
+      _exec('save $a "$outputPath"');
+    } finally {
+      _exec('close $a', ignoreError: true);
+    }
+  }
+
+  @override
+  Future<void> cancel() async {
+    final a = _alias;
+    _alias = null;
+    if (a != null) {
+      _exec('stop $a', ignoreError: true);
+      _exec('close $a', ignoreError: true);
+    }
+  }
+}
+
+enum EchoTestPhase { idle, recording, playing }
+
+/// Registra fino a [maxSeconds] secondi dal microfono e li riproduce subito
+/// tramite [InAppAudioPlayer] per verificare microfono e cuffia.
+class MicEchoTester extends ChangeNotifier {
+  MicEchoTester(
+    this.player, {
+    EchoRecorderBackend? backend,
+    String? tempDir,
+    this.maxSeconds = 5,
+  }) : _backend = backend ?? WindowsMciEchoRecorder(),
+       _tempDir = tempDir ?? Directory.systemTemp.path;
+
+  final InAppAudioPlayer player;
+  final EchoRecorderBackend _backend;
+  final String _tempDir;
+  final int maxSeconds;
+
+  EchoTestPhase phase = EchoTestPhase.idle;
+  int secondsLeft = 0;
+  String? error;
+
+  Timer? _countdown;
+  File? _tempFile;
+  VoidCallback? _playerListener;
+
+  Future<void> start() async {
+    if (phase != EchoTestPhase.idle) return;
+    error = null;
+    try {
+      await player.stop();
+      await _backend.startRecording();
+      phase = EchoTestPhase.recording;
+      secondsLeft = maxSeconds;
+      notifyListeners();
+      _countdown?.cancel();
+      _countdown = Timer.periodic(const Duration(seconds: 1), (_) {
+        if (phase != EchoTestPhase.recording) return;
+        secondsLeft--;
+        if (secondsLeft <= 0) {
+          unawaited(finishRecordingAndPlay());
+        } else {
+          notifyListeners();
+        }
+      });
+    } catch (e) {
+      error = e is Exception || e is Error ? '$e' : 'Errore microfono';
+      phase = EchoTestPhase.idle;
+      await _backend.cancel();
+      notifyListeners();
+    }
+  }
+
+  Future<void> finishRecordingAndPlay() async {
+    if (phase != EchoTestPhase.recording) return;
+    _countdown?.cancel();
+    _countdown = null;
+    try {
+      final path =
+          '$_tempDir${Platform.pathSeparator}drinphone-echo-${DateTime.now().millisecondsSinceEpoch}.wav';
+      final f = File(path);
+      _deleteTemp();
+      _tempFile = f;
+      await _backend.stopAndSave(path);
+      phase = EchoTestPhase.playing;
+      secondsLeft = 0;
+      notifyListeners();
+      _detachPlayer();
+      _playerListener = () {
+        if (phase == EchoTestPhase.playing &&
+            player.state == PlaybackState.idle &&
+            player.activeKey != 'echo_test') {
+          _detachPlayer();
+          phase = EchoTestPhase.idle;
+          error = player.error;
+          _deleteTemp();
+          notifyListeners();
+        }
+      };
+      player.addListener(_playerListener!);
+      await player.togglePlay('echo_test', () async => f, cacheFile: false);
+      if (player.state == PlaybackState.idle && phase == EchoTestPhase.playing) {
+        _detachPlayer();
+        phase = EchoTestPhase.idle;
+        error = player.error;
+        _deleteTemp();
+        notifyListeners();
+      }
+    } catch (e) {
+      _detachPlayer();
+      error = e is Exception || e is Error ? '$e' : 'Errore audio';
+      phase = EchoTestPhase.idle;
+      _deleteTemp();
+      notifyListeners();
+    }
+  }
+
+  Future<void> stop() async {
+    _countdown?.cancel();
+    _countdown = null;
+    _detachPlayer();
+    await _backend.cancel();
+    if (player.activeKey == 'echo_test') {
+      await player.stop();
+    }
+    phase = EchoTestPhase.idle;
+    secondsLeft = 0;
+    _deleteTemp();
+    notifyListeners();
+  }
+
+  void _detachPlayer() {
+    if (_playerListener != null) {
+      player.removeListener(_playerListener!);
+      _playerListener = null;
+    }
+  }
+
+  void _deleteTemp() {
+    final f = _tempFile;
+    _tempFile = null;
+    if (f != null) {
+      try {
+        if (f.existsSync()) f.deleteSync();
+      } catch (_) {}
+    }
+  }
+
+  @override
+  void dispose() {
+    _countdown?.cancel();
+    _detachPlayer();
+    unawaited(_backend.cancel());
+    _deleteTemp();
     super.dispose();
   }
 }

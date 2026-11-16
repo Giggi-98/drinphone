@@ -8,6 +8,7 @@ import 'package:tray_manager/tray_manager.dart';
 
 import '../../app/l10n.dart';
 import '../../app/phone_controller.dart';
+import '../../core/platform/call_links.dart';
 import '../../core/platform/window_attention.dart';
 import '../../core/sip/sip_engine.dart';
 
@@ -22,6 +23,7 @@ class DesktopShell with TrayListener {
   bool quitting = false;
 
   final _toasts = <int, LocalNotification>{};
+  final _reminderToasts = <String, LocalNotification>{};
   String _tooltip = '';
 
   static Future<void> start(PhoneController phone) async {
@@ -103,6 +105,34 @@ class DesktopShell with TrayListener {
         }
       };
       _toasts[c.id] = n;
+      n.show();
+    }
+    final due = {for (final r in p.dueReminders) r.id: r};
+    for (final id in [..._reminderToasts.keys]) {
+      if (!due.containsKey(id)) _reminderToasts.remove(id)?.destroy();
+    }
+    for (final r in due.values) {
+      if (_reminderToasts.containsKey(r.id)) continue;
+      final label = r.name.isNotEmpty ? '${r.name} · ${r.number}' : r.number;
+      final n = LocalNotification(
+        title: tr('Promemoria richiamata'),
+        body: r.note.isNotEmpty ? '$label — ${r.note}' : label,
+        actions: [
+          LocalNotificationAction(text: tr('Chiama ora')),
+          LocalNotificationAction(text: tr('Rimanda 15 min')),
+        ],
+      );
+      n.onClick = WindowAttention.instance.show;
+      n.onClickAction = (i) {
+        if (i == 0) {
+          WindowAttention.instance.show();
+          pendingCallLink.value = r.number;
+          p.dismissReminder(r.id);
+        } else {
+          p.postponeReminder(r.id, const Duration(minutes: 15));
+        }
+      };
+      _reminderToasts[r.id] = n;
       n.show();
     }
   }

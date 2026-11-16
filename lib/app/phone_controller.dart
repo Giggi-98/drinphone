@@ -9,6 +9,9 @@ import '../core/call_history.dart';
 import '../core/contacts/personal_contacts.dart';
 import '../core/platform/audio_player.dart';
 import '../core/platform/global_hotkeys.dart';
+import '../core/platform/mic_busy_monitor.dart';
+import '../core/platform/screen_pop.dart';
+import '../core/recall_reminders.dart';
 import 'l10n.dart';
 import 'theme.dart' show DrinScale, appThemeMode, appZoom;
 import '../core/pbx/pbx_cache.dart';
@@ -21,6 +24,7 @@ import '../core/pbx/pbx_sync.dart';
 import '../core/pbx/yeastar_api.dart';
 import '../core/security/api_credential_store.dart';
 import '../core/security/cdr_db_store.dart';
+import '../core/security/profile_bundle.dart';
 import '../core/security/settings_store.dart';
 import '../core/sip/sip_engine.dart';
 
@@ -43,13 +47,35 @@ class PhoneController extends ChangeNotifier {
     this.updater,
     this.recordingsDir = '',
     this.onIncomingCall,
+    this.reminderStore,
+    this.screenPopOpener,
+    this.externalMicBusyProbe,
+    DateTime Function()? clock,
     YeastarApi Function(ApiCredentials)? apiFactory,
     AudioBackend? audioBackend,
+    EchoRecorderBackend? echoBackend,
   }) : _apiFactory = apiFactory ?? YeastarApi.new,
-       mediaPlayer = InAppAudioPlayer(backend: audioBackend);
+       _clock = clock ?? DateTime.now,
+       mediaPlayer = InAppAudioPlayer(backend: audioBackend) {
+    echoTester = MicEchoTester(mediaPlayer, backend: echoBackend);
+  }
+
+  /// Promemoria locali di richiamata.
+  final RecallReminderStore? reminderStore;
+
+  /// Opener iniettabile nei test per verificare lo Screen Pop HTTP/HTTPS.
+  final bool Function(Uri)? screenPopOpener;
+
+  /// Probe iniettabile nei test per simulare microfono occupato su Windows.
+  final bool Function()? externalMicBusyProbe;
+
+  final DateTime Function() _clock;
 
   /// Lettore audio condiviso per messaggi vocali e registrazioni CDR.
   final InAppAudioPlayer mediaPlayer;
+
+  /// Prova microfono/cuffia in Preferenze > Audio ("Echo Test" 5 s).
+  late final MicEchoTester echoTester;
 
   /// Registro chiamate per profilo (DECISIONS "Profili").
   final CallHistoryStore Function(String profileId)? historyStoreFor;
@@ -259,6 +285,11 @@ class PhoneController extends ChangeNotifier {
     if (settings.globalHotkeys) {
       hotkeyStatus = await GlobalHotkeys.instance.apply(true);
     }
+    if (reminderStore != null) {
+      _allReminders = await reminderStore!.load();
+    }
+    _startReminderTimer();
+    _syncAutoDndTimer();
     // Un solo account, o un predefinito: si entra subito; altrimenti si sceglie.
     // Primo avvio: si entra nel profilo vuoto per la procedura guidata.
     final auto = needsSetup ? settings.profileId : autoLoginId;
@@ -824,6 +855,186 @@ class PhoneController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Esporta il profilo attivo cifrato con [passphrase] (formato `.drinprof`).
+  Future<String> exportProfileBundle(
+    String passphrase, {
+    bool includeSipPassword = true,
+    bool includePbxSecrets = true,
+    bool includeContacts = true,
+    int iterations = ProfileBundleCodec.defaultIterations,
+  }) async {
+    final active = settings.active;
+    final pbxList = <ExportedPbxConnection>[];
+    for (final c in active.pbx) {
+      final api = includePbxSecrets
+          ? await apiStoreFor?.call(c.id).load()
+          : null;
+      final cdr = includePbxSecrets
+          ? await cdrStoreFor?.call(c.id).load()
+          : null;
+      pbxList.add(
+        ExportedPbxConnection(
+          oldId: c.id,
+          label: c.label,
+          realtime: c.realtime,
+          sync: c.sync,
+          apiCreds: api,
+          cdrCreds: cdr,
+        ),
+      );
+    }
+    final accounts = [
+      for (final a in active.accounts)
+        includeSipPassword
+            ? a
+            : SipAccount(
+                id: a.id,
+                pbxId: a.pbxId,
+                username: a.username,
+                password: '',
+                domain: a.domain,
+                transport: a.transport,
+                displayName: a.displayName,
+                proxy: a.proxy,
+                registrar: a.registrar,
+                authUser: a.authUser,
+                realm: a.realm,
+                expires: a.expires,
+                registerEnabled: a.registerEnabled,
+                hideCallerId: a.hideCallerId,
+                voicemailCode: a.voicemailCode,
+                stunServer: a.stunServer,
+                ice: a.ice,
+                turn: a.turn,
+                turnUser: a.turnUser,
+                recording: a.recording,
+                recordCode: a.recordCode,
+              ),
+    ];
+    final bundle = ProfileBundle(
+      name: active.name,
+      kind: active.kind,
+      accounts: accounts,
+      extensions: active.extensions,
+      pbx: pbxList,
+      voicemailCode: active.voicemailCode,
+      favorites: active.favorites,
+      personalContacts: includeContacts ? personal : const [],
+      crmUrlTemplate: settings.crmUrlTemplate,
+    );
+    return ProfileBundleCodec.seal(bundle, passphrase, iterations: iterations);
+  }
+
+  /// Importa un profilo `.drinprof` cifrato generando nuovi ID locali e,
+  /// se [activate] è vero e non ci sono chiamate, effettua subito l'accesso.
+  Future<Profile> importProfileBundle(
+    String raw,
+    String passphrase, {
+    bool activate = true,
+  }) async {
+    final bundle = await ProfileBundleCodec.open(raw, passphrase);
+    final connIdMap = <String, String>{};
+    final newPbx = <PbxConnectionInfo>[];
+    for (final c in bundle.pbx) {
+      final newCid = _newId();
+      if (c.oldId.isNotEmpty) connIdMap[c.oldId] = newCid;
+      newPbx.add(
+        PbxConnectionInfo(
+          newCid,
+          c.label,
+          realtime: c.realtime,
+          sync: c.sync,
+        ),
+      );
+      if (c.apiCreds != null) {
+        await apiStoreFor?.call(newCid).save(c.apiCreds!);
+      }
+      if (c.cdrCreds != null) {
+        await cdrStoreFor?.call(newCid).save(c.cdrCreds!);
+      }
+    }
+    var accSeq = settings.allAccounts.isEmpty ? 0 : 1;
+    final newAccounts = <SipAccount>[];
+    for (final a in bundle.accounts) {
+      final aid = accSeq++ == 0 ? 'main' : _newId();
+      final mappedPbx = connIdMap[a.pbxId] ??
+          (a.pbxId.isEmpty && newPbx.length == 1 ? newPbx.first.id : a.pbxId);
+      newAccounts.add(
+        SipAccount(
+          id: aid,
+          pbxId: mappedPbx,
+          username: a.username,
+          password: a.password,
+          domain: a.domain,
+          transport: a.transport,
+          displayName: a.displayName,
+          proxy: a.proxy,
+          registrar: a.registrar,
+          authUser: a.authUser,
+          realm: a.realm,
+          expires: a.expires,
+          registerEnabled: a.registerEnabled,
+          hideCallerId: a.hideCallerId,
+          voicemailCode: a.voicemailCode,
+          stunServer: a.stunServer,
+          ice: a.ice,
+          turn: a.turn,
+          turnUser: a.turnUser,
+          turnPassword: a.turnPassword,
+          recording: a.recording,
+          recordCode: a.recordCode,
+        ),
+      );
+    }
+    final newFavorites = <String>[
+      for (final f in bundle.favorites)
+        () {
+          final sep = f.indexOf(':');
+          if (sep <= 0) return f;
+          final oldCid = f.substring(0, sep);
+          final mapped = connIdMap[oldCid];
+          return mapped == null ? f : '$mapped${f.substring(sep)}';
+        }(),
+    ];
+    final profileId = _newId();
+    if (bundle.personalContacts.isNotEmpty) {
+      await personalStoreFor?.call(profileId).save(bundle.personalContacts);
+    }
+    final placeholder =
+        settings.allAccounts.isEmpty &&
+        settings.pbx.isEmpty &&
+        settings.others.isEmpty &&
+        settings.profileName.isEmpty;
+    final fallbackName = newAccounts.firstOrNull?.domain.isNotEmpty == true
+        ? newAccounts.first.domain
+        : 'Profilo importato';
+    final profile = Profile(
+      id: profileId,
+      name: bundle.name.trim().isNotEmpty ? bundle.name.trim() : fallbackName,
+      kind: bundle.kind,
+      accounts: newAccounts,
+      extensions: bundle.extensions,
+      pbx: newPbx,
+      voicemailCode: bundle.voicemailCode,
+      favorites: newFavorites,
+    );
+    final baseProfiles = placeholder
+        ? const <Profile>[]
+        : settings.profiles;
+    var next = settings.withProfiles([...baseProfiles, profile]);
+    if (next.crmUrlTemplate.isEmpty && bundle.crmUrlTemplate.isNotEmpty) {
+      next = next.copyWith(crmUrlTemplate: bundle.crmUrlTemplate);
+    }
+    settings = next;
+    await _store.save(settings);
+    if (activate && calls.isEmpty) {
+      await _loadProfile(next.switchTo(profile.id));
+    } else {
+      notifyListeners();
+    }
+    return profile;
+  }
+
   /// Ferma l'account attivo: connessioni PBX (la revoca del token prosegue in
   /// sottofondo), registrazioni e BLF, ricordati per il rientro.
   void _unload() {
@@ -965,9 +1176,33 @@ class PhoneController extends ChangeNotifier {
     notifyListeners();
   }
 
+  final _audioMetrics = <int, CallAudioMetrics>{};
+
   /// Qualità della chiamata da 0 a 5 (-1 = non nota), per le tacche del segnale.
   double callQuality(int id) =>
       engineError == null ? _engine.callQuality(id) : -1;
+
+  /// Metriche QoS dettagliate (banda RX/TX, perdita, jitter, RTT, codec).
+  CallAudioMetrics? callAudioMetrics(int id) => _audioMetrics[id];
+
+  /// Elenco file di registrazione locale salvati in [recordingsDir] (più recenti primi).
+  Future<List<File>> listLocalRecordings() async {
+    if (recordingsDir.isEmpty) return const [];
+    final dir = Directory(recordingsDir);
+    if (!await dir.exists()) return const [];
+    final files = <File>[];
+    await for (final e in dir.list(followLinks: false)) {
+      if (e is! File) continue;
+      final lower = e.path.toLowerCase();
+      if (lower.endsWith('.mkv') ||
+          lower.endsWith('.wav') ||
+          lower.endsWith('.mp3')) {
+        files.add(e);
+      }
+    }
+    files.sort((a, b) => b.path.compareTo(a.path));
+    return files;
+  }
 
   /// Nuova chiamata durante una conversazione: quella attuale va in attesa.
   Future<void> newCall(String number) => consult(number);
@@ -1291,6 +1526,307 @@ class PhoneController extends ChangeNotifier {
     return x.endsWith(y) || y.endsWith(x);
   }
 
+  /// Modifica o aggiunge una nota su una chiamata già salvata nel registro.
+  Future<void> updateHistoryNote(CallRecord target, String note) async {
+    final trimmed = note.trim();
+    final idx = history.indexWhere(
+      (r) =>
+          identical(r, target) ||
+          (r.start == target.start &&
+              r.number == target.number &&
+              r.direction == target.direction),
+    );
+    if (idx < 0) return;
+    final prev = history[idx];
+    if (prev.note == trimmed) return;
+    history = [
+      for (var i = 0; i < history.length; i++)
+        if (i == idx)
+          CallRecord(
+            number: prev.number,
+            name: prev.name,
+            direction: prev.direction,
+            start: prev.start,
+            seconds: prev.seconds,
+            answered: prev.answered,
+            note: trimmed,
+          )
+        else
+          history[i],
+    ];
+    final store = historyStore;
+    final snapshot = history;
+    if (store != null) {
+      _historySaving = _historySaving.then((_) => store.save(snapshot));
+      await _historySaving;
+    }
+    notifyListeners();
+  }
+
+  static bool _sameDay(DateTime a, DateTime b) =>
+      a.year == b.year && a.month == b.month && a.day == b.day;
+
+  /// Vero se [r] è una chiamata persa cui non è seguita nessuna chiamata
+  /// risposta (entrante o uscente) o richiamata verso lo stesso numero.
+  static bool isUnreturnedMissed(CallRecord r, List<CallRecord> all) {
+    if (!r.missed || r.number.isEmpty) return false;
+    return !all.any(
+      (other) =>
+          other.start.isAfter(r.start) &&
+          sameNumber(other.number, r.number) &&
+          (other.answered || other.direction == CallDirection.outgoing),
+    );
+  }
+
+  /// Numero di interlocutori distinti con chiamate perse ancora da richiamare.
+  int get unreturnedMissedCount {
+    final seen = <String>[];
+    for (final r in history) {
+      if (!isUnreturnedMissed(r, history)) continue;
+      if (!seen.any((n) => sameNumber(n, r.number))) {
+        seen.add(r.number);
+      }
+    }
+    return seen.length;
+  }
+
+  /// Contesto storico del chiamante per la finestra di chiamata.
+  CallerContext callerContext(String number) {
+    if (number.trim().isEmpty) {
+      return const CallerContext(
+        lastCall: null,
+        todayCalls: 0,
+        lastNote: '',
+        activeReminder: null,
+      );
+    }
+    final now = _clock();
+    CallRecord? lastCall;
+    var todayCalls = 0;
+    var lastNote = '';
+    for (final r in history) {
+      if (!sameNumber(r.number, number)) continue;
+      lastCall ??= r;
+      if (_sameDay(r.start, now)) todayCalls++;
+      if (lastNote.isEmpty && r.note.isNotEmpty) lastNote = r.note;
+    }
+    RecallReminder? activeReminder;
+    for (final rem in reminders) {
+      if (sameNumber(rem.number, number)) {
+        activeReminder = rem;
+        break;
+      }
+    }
+    return CallerContext(
+      lastCall: lastCall,
+      todayCalls: todayCalls,
+      lastNote: lastNote,
+      activeReminder: activeReminder,
+    );
+  }
+
+  // --------------------------------------------------- promemoria e CRM
+
+  List<RecallReminder> _allReminders = [];
+  Timer? _reminderTimer;
+  String _lastDueKey = '';
+
+  List<RecallReminder> get reminders {
+    final list = [
+      for (final r in _allReminders)
+        if (r.profileId == settings.profileId) r,
+    ]..sort((a, b) => a.dueAt.compareTo(b.dueAt));
+    return list;
+  }
+
+  List<RecallReminder> get dueReminders {
+    final now = _clock();
+    return [
+      for (final r in reminders)
+        if (!r.dueAt.isAfter(now)) r,
+    ];
+  }
+
+  void _startReminderTimer() {
+    _reminderTimer?.cancel();
+    _reminderTimer = Timer.periodic(
+      const Duration(seconds: 15),
+      (_) => checkReminders(),
+    );
+  }
+
+  void checkReminders() {
+    final key = dueReminders.map((r) => '${r.id}@${r.dueAt.toIso8601String()}').join(',');
+    if (key != _lastDueKey) {
+      _lastDueKey = key;
+      notifyListeners();
+    }
+  }
+
+  Future<void> scheduleReminder({
+    required String number,
+    String name = '',
+    String note = '',
+    Duration? delay,
+    DateTime? dueAt,
+  }) async {
+    final n = number.trim();
+    if (n.isEmpty) return;
+    final now = _clock();
+    final targetDue = dueAt ?? now.add(delay ?? const Duration(minutes: 15));
+    final resolvedName = name.trim().isNotEmpty ? name.trim() : nameFor(n);
+    _allReminders = [
+      for (final r in _allReminders)
+        if (!(r.profileId == settings.profileId && sameNumber(r.number, n))) r,
+      RecallReminder(
+        id: _newId(),
+        profileId: settings.profileId,
+        number: n,
+        name: resolvedName,
+        note: note.trim(),
+        dueAt: targetDue,
+        createdAt: now,
+      ),
+    ];
+    await reminderStore?.save(_allReminders);
+    _lastDueKey = '';
+    notifyListeners();
+  }
+
+  Future<void> postponeReminder(String id, Duration delay) async {
+    final now = _clock();
+    _allReminders = [
+      for (final r in _allReminders)
+        if (r.id == id) r.postpone(delay, now: now) else r,
+    ];
+    await reminderStore?.save(_allReminders);
+    _lastDueKey = '';
+    notifyListeners();
+  }
+
+  Future<void> dismissReminder(String id) async {
+    _allReminders = [
+      for (final r in _allReminders)
+        if (r.id != id) r,
+    ];
+    await reminderStore?.save(_allReminders);
+    _lastDueKey = '';
+    notifyListeners();
+  }
+
+  Future<void> setCrmPreferences({
+    required String urlTemplate,
+    required bool autoOpen,
+  }) async {
+    settings = settings.copyWith(
+      crmUrlTemplate: urlTemplate.trim(),
+      crmAutoOpen: autoOpen,
+    );
+    await _store.save(settings);
+    notifyListeners();
+  }
+
+  Uri? screenPopUriFor(String number, {String? name}) => buildScreenPopUri(
+    settings.crmUrlTemplate,
+    number: number,
+    name: (name != null && name.trim().isNotEmpty) ? name : nameFor(number),
+  );
+
+  Future<bool> openScreenPop(String number, {String? name}) async {
+    final uri = screenPopUriFor(number, name: name);
+    if (uri == null) return false;
+    return openScreenPopUrl(uri, opener: screenPopOpener);
+  }
+
+  /// Auto-DND attivo in questo momento (microfono esterno o fascia oraria).
+  bool autoDndActive = false;
+  String _autoDndSavedPresence = '';
+  Timer? _autoDndTimer;
+  bool _autoDndBusy = false;
+
+  Future<void> setAutoDndPreferences({
+    bool? onExternalMic,
+    bool? scheduleEnabled,
+    int? fromMinute,
+    int? toMinute,
+  }) async {
+    settings = settings.copyWith(
+      autoDndOnExternalMic: onExternalMic,
+      autoDndScheduleEnabled: scheduleEnabled,
+      autoDndFromMinute: fromMinute,
+      autoDndToMinute: toMinute,
+    );
+    await _store.save(settings);
+    _syncAutoDndTimer();
+    await evaluateAutoDnd();
+    notifyListeners();
+  }
+
+  void _syncAutoDndTimer() {
+    _autoDndTimer?.cancel();
+    _autoDndTimer = null;
+    if (settings.autoDndOnExternalMic || settings.autoDndScheduleEnabled) {
+      _autoDndTimer = Timer.periodic(
+        const Duration(seconds: 10),
+        (_) => unawaited(evaluateAutoDnd()),
+      );
+    }
+  }
+
+  Future<void> evaluateAutoDnd() async {
+    if (_autoDndBusy) return;
+    _autoDndBusy = true;
+    try {
+      final scheduleOn =
+          settings.autoDndScheduleEnabled &&
+          isWithinDndSchedule(
+            _clock(),
+            settings.autoDndFromMinute,
+            settings.autoDndToMinute,
+          );
+      final micOn =
+          settings.autoDndOnExternalMic &&
+          calls.isEmpty &&
+          (externalMicBusyProbe?.call() ?? isExternalMicInUseWindows());
+      final wantDnd = scheduleOn || micOn;
+
+      if (wantDnd && !autoDndActive) {
+        final cur = ownPresence;
+        _autoDndSavedPresence = cur;
+        autoDndActive = true;
+        final d = ownDetail;
+        if (d != null && cur != 'do_not_disturb') {
+          try {
+            await updateOwnExtension(d.withPresence('do_not_disturb'));
+          } catch (_) {}
+        }
+        notifyListeners();
+      } else if (!wantDnd && autoDndActive) {
+        autoDndActive = false;
+        final restore = _autoDndSavedPresence;
+        _autoDndSavedPresence = '';
+        final d = ownDetail;
+        if (d != null &&
+            ownPresence == 'do_not_disturb' &&
+            restore.isNotEmpty &&
+            restore != 'do_not_disturb') {
+          try {
+            await updateOwnExtension(d.withPresence(restore));
+          } catch (_) {}
+        }
+        notifyListeners();
+      }
+    } finally {
+      _autoDndBusy = false;
+    }
+  }
+
+  /// Interni preferiti (risolti dall'elenco completo, nell'ordine trovato).
+  List<Extension> get favoriteExtensions => [
+    for (final e in allExtensions)
+      if (isFavorite(e)) e,
+  ];
+
   /// Nome per un numero: interni (anche di altri PBX), contatti personali,
   /// poi rubrica aziendale.
   String nameFor(String number) {
@@ -1604,10 +2140,18 @@ class PhoneController extends ChangeNotifier {
         return;
       }
       _silentFor.removeWhere((id, _) => !active.any((c) => c.id == id));
+      _audioMetrics.removeWhere((id, _) => !calls.containsKey(id));
       for (final c in active) {
         double? kbps;
         try {
-          kbps = await _engine.inboundAudioKbps(c.id);
+          final m = await _engine.callAudioMetrics(c.id);
+          if (m != null) {
+            _audioMetrics[c.id] = m;
+            kbps = m.downloadKbps ?? await _engine.inboundAudioKbps(c.id);
+            notifyListeners();
+          } else {
+            kbps = await _engine.inboundAudioKbps(c.id);
+          }
         } on Object {
           kbps = null; // statistiche non leggibili: mai chiudere per questo
         }
@@ -1649,7 +2193,12 @@ class PhoneController extends ChangeNotifier {
       '[drinphone] chiamata ${e.id} ${e.direction.name} ${e.phase.name} ${e.message}',
     );
     final isNew = !calls.containsKey(e.id);
-    if (isNew && e.phase == CallPhase.incoming) onIncomingCall?.call();
+    if (isNew && e.phase == CallPhase.incoming) {
+      onIncomingCall?.call();
+      if (settings.crmAutoOpen && e.remoteNumber.isNotEmpty) {
+        unawaited(openScreenPop(e.remoteNumber, name: e.remoteName));
+      }
+    }
     if (e.phase != CallPhase.incoming) _cancelAutoAnswer(e.id);
     final m =
         _meta[e.id] ??
@@ -1663,6 +2212,7 @@ class PhoneController extends ChangeNotifier {
       calls.remove(e.id);
       _meta.remove(e.id);
       _recording.remove(e.id);
+      _audioMetrics.remove(e.id);
       if (e.id == _consultFrom || e.id == _consultTo) {
         _consultFrom = null;
         _consultTo = null;
@@ -1701,7 +2251,8 @@ class PhoneController extends ChangeNotifier {
     notifyListeners();
     if (isNew &&
         e.phase == CallPhase.incoming &&
-        settings.callOptions.autoAnswer) {
+        settings.callOptions.autoAnswer &&
+        !autoDndActive) {
       final hasBusyCall = calls.values.any(
         (c) =>
             c.id != e.id &&
@@ -1775,9 +2326,12 @@ class PhoneController extends ChangeNotifier {
   /// che invia l'un-REGISTER e scarica il log.
   Future<void> shutdown() async {
     _cancelAutoAnswer();
+    _reminderTimer?.cancel();
+    _autoDndTimer?.cancel();
     if (settings.globalHotkeys) {
       await GlobalHotkeys.instance.apply(false);
     }
+    await echoTester.stop();
     await mediaPlayer.stop();
     for (final c in connections) {
       await c.stop();
@@ -1788,9 +2342,12 @@ class PhoneController extends ChangeNotifier {
   @override
   void dispose() {
     _cancelAutoAnswer();
+    _reminderTimer?.cancel();
+    _autoDndTimer?.cancel();
     _notifyTimer?.cancel();
     _zoomSave?.cancel();
     _watchdog?.cancel();
+    echoTester.dispose();
     mediaPlayer.dispose();
     for (final c in connections) {
       c.stop();
@@ -1814,4 +2371,25 @@ class SearchHit {
 
   /// Etichetta del numero in rubrica (Ufficio, Cellulare…).
   final String label;
+}
+
+/// Riepilogo storico immediato per chi sta chiamando o è in chiamata.
+class CallerContext {
+  const CallerContext({
+    required this.lastCall,
+    required this.todayCalls,
+    required this.lastNote,
+    required this.activeReminder,
+  });
+
+  final CallRecord? lastCall;
+  final int todayCalls;
+  final String lastNote;
+  final RecallReminder? activeReminder;
+
+  bool get hasInfo =>
+      lastCall != null ||
+      todayCalls > 0 ||
+      lastNote.isNotEmpty ||
+      activeReminder != null;
 }

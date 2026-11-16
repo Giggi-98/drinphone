@@ -41,6 +41,7 @@ class CallRow {
     this.callTooltip,
     this.onTap,
     this.number = '',
+    this.extraActions = const [],
   }) : section = null,
        sectionDetail = '';
 
@@ -50,7 +51,8 @@ class CallRow {
       call = null,
       callTooltip = null,
       onTap = null,
-      number = '';
+      number = '',
+      extraActions = const [];
 
   final String? section;
   final String sectionDetail;
@@ -63,6 +65,9 @@ class CallRow {
 
   /// Clic sulla riga (dettaglio).
   final VoidCallback? onTap;
+
+  /// Voci aggiuntive nel menu del tasto destro.
+  final List<MenuAction?> extraActions;
 }
 
 class CallTable extends StatelessWidget {
@@ -227,6 +232,10 @@ class _HoverRowState extends State<_HoverRow> {
           copyAction(context, row.number),
           if (row.onTap != null)
             (Icons.info_outline_rounded, tr('Dettagli chiamata'), row.onTap),
+          if (row.extraActions.isNotEmpty) ...[
+            null,
+            ...row.extraActions,
+          ],
         ]),
         child: AnimatedContainer(
           duration: fast,

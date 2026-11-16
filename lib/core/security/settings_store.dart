@@ -113,6 +113,12 @@ class Settings {
     this.seenMissedAt = '',
     this.seenVoicemail = const [],
     this.defaultProfile = '',
+    this.crmUrlTemplate = '',
+    this.crmAutoOpen = false,
+    this.autoDndOnExternalMic = false,
+    this.autoDndScheduleEnabled = false,
+    this.autoDndFromMinute = 18 * 60,
+    this.autoDndToMinute = 9 * 60,
   });
 
   /// Id del profilo nato dalla configurazione senza profili (file storici).
@@ -180,6 +186,19 @@ class Settings {
   /// se gli account sono più di uno).
   final String defaultProfile;
 
+  /// Globale: modello URL HTTP/HTTPS per Screen Pop verso CRM/gestionale
+  /// (`{number}` e `{name}` sostituiti). Vuoto = disattivato.
+  final String crmUrlTemplate;
+
+  /// Globale: apre automaticamente l'URL Screen Pop su chiamata entrante.
+  final bool crmAutoOpen;
+
+  /// Globale: Auto-DND quando un'altra app usa il microfono o in fascia oraria.
+  final bool autoDndOnExternalMic;
+  final bool autoDndScheduleEnabled;
+  final int autoDndFromMinute;
+  final int autoDndToMinute;
+
   /// Il profilo attivo come [Profile].
   Profile get active => Profile(
     id: profileId,
@@ -226,14 +245,22 @@ class Settings {
       zoom: zoom,
       view: view,
       closeToTray: closeToTray,
+      globalHotkeys: globalHotkeys,
       voicemailCode: t.voicemailCode,
       favorites: t.favorites,
       audio: audio,
+      audioCodecs: audioCodecs,
       callOptions: callOptions,
       video: video,
       seenMissedAt: t.seenMissedAt,
       seenVoicemail: t.seenVoicemail,
       defaultProfile: defaultProfile,
+      crmUrlTemplate: crmUrlTemplate,
+      crmAutoOpen: crmAutoOpen,
+      autoDndOnExternalMic: autoDndOnExternalMic,
+      autoDndScheduleEnabled: autoDndScheduleEnabled,
+      autoDndFromMinute: autoDndFromMinute,
+      autoDndToMinute: autoDndToMinute,
     );
   }
 
@@ -268,6 +295,12 @@ class Settings {
       seenMissedAt: a.seenMissedAt,
       seenVoicemail: a.seenVoicemail,
       defaultProfile: defaultProfile,
+      crmUrlTemplate: crmUrlTemplate,
+      crmAutoOpen: crmAutoOpen,
+      autoDndOnExternalMic: autoDndOnExternalMic,
+      autoDndScheduleEnabled: autoDndScheduleEnabled,
+      autoDndFromMinute: autoDndFromMinute,
+      autoDndToMinute: autoDndToMinute,
     );
   }
 
@@ -294,6 +327,12 @@ class Settings {
     String? seenMissedAt,
     List<String>? seenVoicemail,
     String? defaultProfile,
+    String? crmUrlTemplate,
+    bool? crmAutoOpen,
+    bool? autoDndOnExternalMic,
+    bool? autoDndScheduleEnabled,
+    int? autoDndFromMinute,
+    int? autoDndToMinute,
   }) => Settings(
     profileId: profileId,
     profileName: profileName ?? this.profileName,
@@ -318,6 +357,13 @@ class Settings {
     seenMissedAt: seenMissedAt ?? this.seenMissedAt,
     seenVoicemail: seenVoicemail ?? this.seenVoicemail,
     defaultProfile: defaultProfile ?? this.defaultProfile,
+    crmUrlTemplate: crmUrlTemplate ?? this.crmUrlTemplate,
+    crmAutoOpen: crmAutoOpen ?? this.crmAutoOpen,
+    autoDndOnExternalMic: autoDndOnExternalMic ?? this.autoDndOnExternalMic,
+    autoDndScheduleEnabled:
+        autoDndScheduleEnabled ?? this.autoDndScheduleEnabled,
+    autoDndFromMinute: autoDndFromMinute ?? this.autoDndFromMinute,
+    autoDndToMinute: autoDndToMinute ?? this.autoDndToMinute,
   );
 }
 
@@ -461,6 +507,12 @@ class SettingsStore {
       seenMissedAt: active?.seenMissedAt ?? '',
       seenVoicemail: active?.seenVoicemail ?? const [],
       defaultProfile: j['defaultProfile'] as String? ?? '',
+      crmUrlTemplate: j['crmUrlTemplate'] as String? ?? '',
+      crmAutoOpen: j['crmAutoOpen'] as bool? ?? false,
+      autoDndOnExternalMic: j['autoDndOnExternalMic'] as bool? ?? false,
+      autoDndScheduleEnabled: j['autoDndScheduleEnabled'] as bool? ?? false,
+      autoDndFromMinute: (j['autoDndFromMinute'] as num?)?.toInt() ?? 18 * 60,
+      autoDndToMinute: (j['autoDndToMinute'] as num?)?.toInt() ?? 9 * 60,
       audio: (
         j['audioCapture'] as String? ?? '',
         j['audioPlayback'] as String? ?? '',
@@ -595,6 +647,12 @@ class SettingsStore {
         'view': s.view,
         'closeToTray': s.closeToTray,
         'globalHotkeys': s.globalHotkeys,
+        'crmUrlTemplate': s.crmUrlTemplate,
+        'crmAutoOpen': s.crmAutoOpen,
+        'autoDndOnExternalMic': s.autoDndOnExternalMic,
+        'autoDndScheduleEnabled': s.autoDndScheduleEnabled,
+        'autoDndFromMinute': s.autoDndFromMinute,
+        'autoDndToMinute': s.autoDndToMinute,
         'audioCapture': s.audio.$1,
         'audioPlayback': s.audio.$2,
         'audioRinger': s.audio.$3,

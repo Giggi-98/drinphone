@@ -5,6 +5,7 @@ import '../../app/l10n.dart';
 import '../../app/phone_controller.dart';
 import '../../app/theme.dart';
 import '../../core/security/settings_store.dart';
+import 'profile_bundle_dialog.dart';
 import 'setup_wizard.dart';
 
 /// Scelta dell'account (DECISIONS "Un account vivo alla volta"): all'avvio
@@ -141,13 +142,21 @@ class AccountPicker extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 16),
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: OutlinedButton.icon(
-                        onPressed: () => _add(context),
-                        icon: const Icon(Icons.add_rounded),
-                        label: Text(tr('Aggiungi account')),
-                      ),
+                    Wrap(
+                      spacing: 10,
+                      runSpacing: 8,
+                      children: [
+                        OutlinedButton.icon(
+                          onPressed: () => _add(context),
+                          icon: const Icon(Icons.add_rounded),
+                          label: Text(tr('Aggiungi account')),
+                        ),
+                        OutlinedButton.icon(
+                          onPressed: () => showImportProfileDialog(context, phone),
+                          icon: const Icon(Icons.file_open_outlined),
+                          label: Text(tr('Importa (.drinprof)')),
+                        ),
+                      ],
                     ),
                   ],
                 );

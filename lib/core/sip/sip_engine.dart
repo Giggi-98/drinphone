@@ -291,6 +291,28 @@ class VoicemailEvent {
   final int oldMessages;
 }
 
+/// Statistiche audio live della chiamata (RTCP/RTP da liblinphone).
+class CallAudioMetrics {
+  const CallAudioMetrics({
+    required this.quality,
+    this.downloadKbps,
+    this.uploadKbps,
+    this.lossPct,
+    this.jitterMs,
+    this.rttMs,
+    this.codec = '',
+  });
+
+  /// Qualità 0..5 (-1 se non disponibile).
+  final double quality;
+  final double? downloadKbps;
+  final double? uploadKbps;
+  final double? lossPct;
+  final double? jitterMs;
+  final double? rttMs;
+  final String codec;
+}
+
 abstract class SipEngine {
   Stream<RegistrationEvent> get registrations;
   Stream<VoicemailEvent> get voicemail;
@@ -356,6 +378,9 @@ abstract class SipEngine {
   /// Audio RTP ricevuto adesso nella chiamata [id], in kbit/s (null se non
   /// noto): serve a riconoscere le chiamate rimaste aperte senza l'altro capo.
   Future<double?> inboundAudioKbps(int id);
+
+  /// Metriche QoS live (banda RX/TX, perdita pacchetti, jitter, RTT, codec).
+  Future<CallAudioMetrics?> callAudioMetrics(int id) async => null;
 
   /// Notifica quando il sistema aggiunge o rimuove un dispositivo audio.
   Stream<bool> get audioDevicesChanged => const Stream.empty();

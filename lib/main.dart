@@ -13,6 +13,7 @@ import 'app/zoom.dart';
 import 'core/app_paths.dart';
 import 'core/call_history.dart';
 import 'core/install_id.dart';
+import 'core/recall_reminders.dart';
 import 'core/contacts/personal_contacts.dart';
 import 'core/pbx/pbx_cache.dart';
 import 'core/video/openh264.dart';
@@ -54,6 +55,7 @@ Future<void> main(List<String> args) async {
     // DPAPI esiste solo su Windows: altrove niente integrazione API per ora.
     historyStoreFor: (id) => CallHistoryStore(paths.historyFileFor(id)),
     personalStoreFor: (id) => PersonalContactsStore(paths.contactsFileFor(id)),
+    reminderStore: RecallReminderStore(paths.remindersFile),
     onIncomingCall: WindowAttention.instance.request,
     apiStoreFor: Platform.isWindows
         ? (id) => ApiCredentialStore(paths.apiCredentialsFileFor(id))

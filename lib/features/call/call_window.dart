@@ -210,6 +210,7 @@ class _CallWindowState extends State<CallWindow> {
                   call.remoteNumber,
                   style: DrinText.numberLarge.copyWith(color: c.muted),
                 ),
+              _CallerContextStrip(phone: p, call: call, name: name, compact: true),
               const SizedBox(height: DrinSpace.s5),
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
@@ -342,6 +343,7 @@ class _CallWindowState extends State<CallWindow> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _header(call, name, full),
+          _CallerContextStrip(phone: p, call: call, name: name),
           if (p.otherCalls.isNotEmpty)
             Container(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
@@ -382,7 +384,10 @@ class _CallWindowState extends State<CallWindow> {
 
   Widget _header(CallEvent call, String name, bool full) {
     final c = context.drin;
-    final quality = p.callQuality(call.id);
+    final metrics = p.callAudioMetrics(call.id);
+    final quality = metrics != null && metrics.quality >= 0
+        ? metrics.quality
+        : p.callQuality(call.id);
     final status = switch (call.phase) {
       CallPhase.outgoing => tr('Chiamata in corso…'),
       CallPhase.paused => tr('In attesa'),
@@ -420,7 +425,11 @@ class _CallWindowState extends State<CallWindow> {
           Text(status, style: mono(c.muted, size: 13)),
           if (quality >= 0) ...[
             const SizedBox(width: 12),
-            _SignalBars(quality: quality),
+            _SignalBars(quality: quality, metrics: metrics),
+          ],
+          if (metrics != null && metrics.codec.isNotEmpty) ...[
+            const SizedBox(width: 8),
+            _Tag(text: metrics.codec, color: c.muted),
           ],
           if (call.inConference) ...[
             const SizedBox(width: 12),
@@ -431,6 +440,12 @@ class _CallWindowState extends State<CallWindow> {
             _Tag(text: 'REC', color: c.busy),
           ],
           const Spacer(),
+          if (p.screenPopUriFor(call.remoteNumber, name: name) != null)
+            TextButton.icon(
+              onPressed: () => p.openScreenPop(call.remoteNumber, name: name),
+              icon: const Icon(Icons.open_in_new_rounded, size: 17),
+              label: Text(tr('Apri CRM')),
+            ),
           TextButton.icon(
             onPressed: () => _toggle(_Panel.note),
             icon: Icon(
@@ -1229,10 +1244,11 @@ class _BangState extends State<_Bang> with SingleTickerProviderStateMixin {
   );
 }
 
-/// Qualità della chiamata (0–5 da liblinphone) come tacche del segnale.
+/// Qualità della chiamata (0–5 da liblinphone) come tacche del segnale + QoS.
 class _SignalBars extends StatelessWidget {
-  const _SignalBars({required this.quality});
+  const _SignalBars({required this.quality, this.metrics});
   final double quality;
+  final CallAudioMetrics? metrics;
 
   @override
   Widget build(BuildContext context) {
@@ -1247,8 +1263,22 @@ class _SignalBars extends StatelessWidget {
         ? 1
         : 0;
     final color = bars >= 3 ? c.ok : (bars == 2 ? c.away : c.busy);
+    final parts = <String>[
+      tr('Qualità {q}/5', {'q': quality.toStringAsFixed(1)}),
+      if (metrics != null) ...[
+        if (metrics!.codec.isNotEmpty) 'Codec: ${metrics!.codec}',
+        if (metrics!.downloadKbps != null || metrics!.uploadKbps != null)
+          '↓ ${metrics!.downloadKbps?.toStringAsFixed(0) ?? '-'} ↑ ${metrics!.uploadKbps?.toStringAsFixed(0) ?? '-'} kbps',
+        if (metrics!.jitterMs != null)
+          'Jitter: ${metrics!.jitterMs!.toStringAsFixed(0)} ms',
+        if (metrics!.lossPct != null)
+          '${tr('Perdita')}: ${metrics!.lossPct!.toStringAsFixed(1)}%',
+        if (metrics!.rttMs != null)
+          'RTT: ${metrics!.rttMs!.toStringAsFixed(0)} ms',
+      ],
+    ];
     return Tooltip(
-      message: tr('Qualità {q}/5', {'q': quality.toStringAsFixed(1)}),
+      message: parts.join(' · '),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
@@ -1286,4 +1316,136 @@ class _Tag extends StatelessWidget {
       style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: color),
     ),
   );
+}
+
+class _CallerContextStrip extends StatelessWidget {
+  const _CallerContextStrip({
+    required this.phone,
+    required this.call,
+    required this.name,
+    this.compact = false,
+  });
+
+  final PhoneController phone;
+  final CallEvent call;
+  final String name;
+  final bool compact;
+
+  static String _when(DateTime dt) {
+    final now = DateTime.now();
+    String two(int n) => n.toString().padLeft(2, '0');
+    final hm = '${two(dt.hour)}:${two(dt.minute)}';
+    if (dt.year == now.year && dt.month == now.month && dt.day == now.day) {
+      return '${tr('Oggi')} $hm';
+    }
+    return '${two(dt.day)}/${two(dt.month)} $hm';
+  }
+
+  static String _dur(int s) =>
+      s >= 60 ? '${s ~/ 60}m ${s % 60}s' : '${s}s';
+
+  @override
+  Widget build(BuildContext context) {
+    final ctx = phone.callerContext(call.remoteNumber);
+    final hasCrm = phone.screenPopUriFor(call.remoteNumber, name: name) != null;
+    if (!ctx.hasInfo && !(compact && hasCrm)) return const SizedBox.shrink();
+    final c = context.drin;
+    final last = ctx.lastCall;
+    final lastLabel = last == null
+        ? ''
+        : last.answered
+        ? '${tr('Ultima chiamata')}: ${_when(last.start)} (${_dur(last.seconds)})'
+        : last.missed
+        ? '${tr('Ultima chiamata')}: ${_when(last.start)} · ${tr('Persa')}'
+        : '${tr('Ultima chiamata')}: ${_when(last.start)} · ${tr('Non risposta')}';
+
+    final pills = <Widget>[
+      if (ctx.todayCalls > 0)
+        _Tag(
+          text: ctx.todayCalls == 1
+              ? tr('Già 1 chiamata oggi')
+              : tr('{n} chiamate oggi', {'n': ctx.todayCalls}),
+          color: c.primary,
+        ),
+      if (lastLabel.isNotEmpty)
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.history_rounded, size: 14, color: c.muted),
+            const SizedBox(width: 4),
+            Flexible(
+              child: Text(
+                lastLabel,
+                overflow: TextOverflow.ellipsis,
+                style: DrinText.detail.copyWith(color: c.muted),
+              ),
+            ),
+          ],
+        ),
+      if (ctx.lastNote.isNotEmpty)
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.sticky_note_2_outlined, size: 14, color: c.primary),
+            const SizedBox(width: 4),
+            Flexible(
+              child: Text(
+                ctx.lastNote,
+                overflow: TextOverflow.ellipsis,
+                maxLines: compact ? 2 : 1,
+                style: DrinText.detail.copyWith(color: c.text),
+              ),
+            ),
+          ],
+        ),
+      if (ctx.activeReminder != null)
+        _Tag(text: tr('Promemoria attivo'), color: c.away),
+      if (compact && hasCrm)
+        OutlinedButton.icon(
+          onPressed: () => phone.openScreenPop(call.remoteNumber, name: name),
+          icon: const Icon(Icons.open_in_new_rounded, size: 15),
+          label: Text(tr('Apri CRM')),
+        ),
+    ];
+
+    if (compact) {
+      return Container(
+        margin: const EdgeInsets.only(top: DrinSpace.s3),
+        width: double.infinity,
+        padding: const EdgeInsets.all(DrinSpace.s3),
+        decoration: BoxDecoration(
+          color: c.raised,
+          borderRadius: BorderRadius.circular(DrinRadius.row),
+          border: Border.all(color: c.line),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (var i = 0; i < pills.length; i++) ...[
+              if (i > 0) const SizedBox(height: DrinSpace.s1),
+              pills[i],
+            ],
+          ],
+        ),
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: DrinSpace.s4,
+        vertical: DrinSpace.s2,
+      ),
+      decoration: BoxDecoration(
+        color: c.raised,
+        border: Border(bottom: BorderSide(color: c.border)),
+      ),
+      child: Wrap(
+        spacing: DrinSpace.s3,
+        runSpacing: DrinSpace.s1,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: pills,
+      ),
+    );
+  }
 }

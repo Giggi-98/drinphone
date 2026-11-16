@@ -437,6 +437,11 @@ class _SearchBoxState extends State<SearchBox> {
                   ),
                   IconButton(
                     tooltip: tr('Tastierino'),
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints.tightFor(
+                      width: 36,
+                      height: 36,
+                    ),
                     style: IconButton.styleFrom(
                       backgroundColor: c.keyBtn,
                       foregroundColor: c.accent,
@@ -447,6 +452,11 @@ class _SearchBoxState extends State<SearchBox> {
                   const SizedBox(width: 4),
                   IconButton(
                     tooltip: tr('Chiama'),
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints.tightFor(
+                      width: 36,
+                      height: 36,
+                    ),
                     style: IconButton.styleFrom(
                       backgroundColor: context.drin.free,
                       foregroundColor: context.drin.onFree,

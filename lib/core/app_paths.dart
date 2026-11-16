@@ -22,6 +22,9 @@ class AppPaths {
   /// Versione di cui si sono già mostrate le novità.
   String get notesSeenFile => '$root${_s}notes-seen';
 
+  /// Promemoria di richiamata locali.
+  String get remindersFile => '$root${_s}recall-reminders.json';
+
   /// Registro chiamate del profilo; `default` = file della versione senza profili.
   String historyFileFor(String profileId) => profileId == 'default'
       ? '$root${_s}history.json'

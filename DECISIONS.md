@@ -6,6 +6,33 @@ aggiungi una voce nuova in cima che cita la vecchia. Il campo chiave è
 
 ---
 
+## 2026-11-16 · Esportazione & Importazione profilo cifrato `.drinprof` (`IMPLEMENTATO`, `DA VALIDARE` su Windows interattivo)
+1. **Formato portabile cifrato (`lib/core/security/profile_bundle.dart`):** busta JSON `drinprof-v1` cifrata con `PBKDF2-HMAC-SHA256` (120.000 iterazioni di default, sale 16 byte casuali) + `AES-256-GCM` (`package:cryptography`), con passphrase utente obbligatoria di almeno 8 caratteri e controllo anti-DoS sul numero di iterazioni in apertura.
+2. **Controllo granulare ed isolamento:** all'esportazione l'utente sceglie se includere password SIP, credenziali PBX API/CDR e contatti personali; le credenziali API/CDR restano gestite esclusivamente dentro `PhoneController` / `ProfileBundleCodec` (mai esposte o stampate nei log). All'importazione tutti gli ID interni di profilo, account e connessioni PBX vengono rigenerati (rimappando `pbxId` e `favorites`) e sostituiti al profilo segnaposto vuoto se si tratta del primo avvio.
+   - **Scartato:** esportazione in JSON in chiaro o basata su DPAPI (legato al singolo PC Windows e quindi non portabile tra colleghi/postazioni).
+
+## 2026-11-16 · Auto-DND intelligente & Mini-HUD compatto Always-on-top (`IMPLEMENTATO`, `DA VALIDARE` su Windows/PBX reale)
+1. **Auto-DND su microfono esterno e fascia oraria (`lib/core/platform/mic_busy_monitor.dart`, `PhoneController.evaluateAutoDnd`):** su Windows interroga in sola lettura `HKCU\...\CapabilityAccessManager\ConsentStore\microphone` tramite `win32_registry` (`LastUsedTimeStop == 0` escludendo `drinphone`) solo quando nessuna chiamata DrinPhone è attiva, oltre a valutare la fascia oraria configurata (`isWithinDndSchedule`). Quando scatta, imposta `do_not_disturb` sul PBX (`extension/update`) salvando lo stato precedente per ripristinarlo al termine e blocca `autoAnswer` finché è attivo.
+   - **Scartato:** hooking audio globale a basso livello (COM WASAPI `IAudioSessionManager2`) finché il Registro Privacy di Windows garantisce il rilevamento per app senza dipendenze C++.
+   - **Da rivedere se:** Teams/Zoom su future versioni Windows mantengono il dispositivo microfono aperto anche a microfono mutato in call.
+2. **Mini-HUD compatto Always-on-top (`WindowAttention.setMiniHud`, `HomeScreen._miniHudView`):** ridimensiona e fissa la finestra esistente via `SetWindowPos(HWND_TOPMOST)` (`420×230` px in alto a destra, salvando le dimensioni originali) senza creare una seconda finestra/engine Flutter; mostra chiamata attiva/entrante o composizione rapida + fino a 6 preferiti con pallino BLF live.
+
+## 2026-11-16 · Audio Intelligence: QoS live in chiamata, Echo Test microfono Win32 e archivio registrazioni locali (`IMPLEMENTATO`, `DA VALIDARE` su PC Windows/PBX)
+1. **QoS RTP & codec negoziato live (`SipEngine.callAudioMetrics`, `CallAudioMetrics`):** in `LinphoneFfiEngine` riusiamo gli header reali di `linphone-sdk 5.5.39` (`linphone_call_get_audio_stats`, `download_bandwidth`, `upload_bandwidth`, `local_loss_rate`, `receiver_interarrival_jitter`, `round_trip_delay`, `linphone_call_params_get_used_audio_payload_type`), letti nello stesso tick da 1 s già usato dal watchdog audio (`_watchAudio`) senza thread o timer nativi extra.
+2. **Echo Test microfono (`MicEchoTester`, `WindowsMciEchoRecorder` in `lib/core/platform/audio_player.dart`):** registrazione fino a 5 s su file WAV temporaneo via `winmm.dll` MCI (`waveaudio`) e riascolto immediato su `InAppAudioPlayer` (`cacheFile: false`) dietro interfaccia testabile `EchoRecorderBackend`, senza aggiungere dipendenze native.
+   - **Da rivedere se:** un driver audio Windows rifiuta MCI `waveaudio` o serve porting Linux/macOS (estendere `EchoRecorderBackend`).
+3. **Archivio registrazioni locali (`recordingsDir` in `Preferenze > Audio`):** `InAppAudioPlayer.togglePlay(..., cacheFile: false)` evita che i file permanenti dell'utente vengano eliminati in `dispose()`; i `.wav`/`.mp3` si riproducono inline, mentre i `.mkv` vengono aperti/evidenziati in Esplora file (`explorer.exe /select,`).
+
+## 2026-11-16 · Contesto chiamante, perse da richiamare, note post-chiamata, promemoria e Screen Pop CRM (`IMPLEMENTATO`, `DA VALIDARE` su Windows)
+Richiesto da Luigi di procedere con la prima vertical slice delle nuove funzionalità desktop:
+1. **Contesto chiamante + perse da richiamare + modifica note post-chiamata:** calcolati localmente in `PhoneController` sullo storico (`history`) del profilo attivo, così funzionano anche offline o con account SIP generici senza dipendere dal CDR remoto. Una chiamata persa resta "da richiamare" finché non segue sullo stesso numero una chiamata risposta o una richiamata uscente.
+   - **Da rivedere se:** in team multi-postazione si vorrà considerare "richiamata" anche la risposta avvenuta da un altro interno sul CDR del PBX (`cdr_basic`).
+2. **Promemoria di richiamata locali (`lib/core/recall_reminders.dart`):** persistenza JSON locale per profilo (`recall-reminders.json` in `AppPaths`), banner in-app + notifica toast Windows (`DesktopShell`) con conferma `Chiama ora` (`pendingCallLink`) o rinvio di 15 min.
+   - **Scartato:** dipendere da Task Scheduler di Windows o notifiche schedulate esterne non controllabili dallo stato in-app.
+   - **Da rivedere se:** l'utente vuole i promemoria sincronizzati tra più PC.
+3. **Screen Pop CRM HTTP/HTTPS (`lib/core/platform/screen_pop.dart`):** validazione stretta (`scheme` solo `http`/`https`, host non vuoto, `{number}` e `{name}` codificati con `Uri.encodeQueryComponent`), apertura su Windows tramite `ShellExecuteW` (`shell32.dll`) senza passare da `cmd.exe`, con apertura automatica all'arrivo chiamata **spenta di default**.
+   - **Scartato:** esecuzione di schemi/comandi arbitrari da stringa utente (`javascript:`, `file:`, eseguibili locali) per prevenire command/URI injection da configurazioni errate o condivise.
+
 ## 2026-11-13 · Ergonomia desktop & operatore (v0.1.13-dev): player audio Windows MCI, controlli Live avanzati, audio hot-swap/codec, risposta automatica e scorciatoie globali Win32
 Richiesto da Luigi di completare le funzionalità tecniche e desktop rimandando alla fine la sola parte commerciale/vendita.
 1. **Player audio in-app (`lib/core/platform/audio_player.dart`):** riproduzione dei messaggi vocali (`vm/download`) e delle registrazioni CDR (`recording/list` + `recording/download`) tramite API Win32 native `mciSendStringW` (`winmm.dll`) dietro interfaccia testabile `AudioBackend`, con file temporanei nella cache app e pulizia allo scarico/chiusura.

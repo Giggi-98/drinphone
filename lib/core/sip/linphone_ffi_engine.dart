@@ -709,6 +709,29 @@ class LinphoneFfiEngine implements SipEngine {
         Float Function(Pointer<Void>),
         double Function(Pointer<Void>)
       >('linphone_call_stats_get_download_bandwidth');
+  late final _statsUpload = _lib
+      .lookupFunction<
+        Float Function(Pointer<Void>),
+        double Function(Pointer<Void>)
+      >('linphone_call_stats_get_upload_bandwidth');
+  late final _statsLoss = _lib
+      .lookupFunction<
+        Float Function(Pointer<Void>),
+        double Function(Pointer<Void>)
+      >('linphone_call_stats_get_local_loss_rate');
+  late final _statsJitter = _lib
+      .lookupFunction<
+        Float Function(Pointer<Void>),
+        double Function(Pointer<Void>)
+      >('linphone_call_stats_get_receiver_interarrival_jitter');
+  late final _statsRtt = _lib
+      .lookupFunction<
+        Float Function(Pointer<Void>),
+        double Function(Pointer<Void>)
+      >('linphone_call_stats_get_round_trip_delay');
+  late final _paramsUsedAudioPt = _lib.lookupFunction<_PP, _PP>(
+    'linphone_call_params_get_used_audio_payload_type',
+  );
   late final _statsUnref = _lib.lookupFunction<_VoidP, _VoidPDart>(
     'linphone_call_stats_unref',
   );
@@ -1417,6 +1440,46 @@ class LinphoneFfiEngine implements SipEngine {
     if (stats == nullptr) return null;
     try {
       return _statsDownload(stats);
+    } finally {
+      _statsUnref(stats);
+    }
+  }
+
+  static double? _nonNeg(double v) => v.isFinite && v >= 0 ? v : null;
+
+  @override
+  Future<CallAudioMetrics?> callAudioMetrics(int id) async {
+    final call = _ptr(id);
+    if (call == nullptr) return null;
+    var codec = '';
+    final params = _callCurrentParams(call);
+    if (params != nullptr) {
+      final pt = _paramsUsedAudioPt(params);
+      if (pt != nullptr) {
+        final mime = _str(_ptMime(pt));
+        final rate = _ptClockRate(pt);
+        if (mime.isNotEmpty) codec = rate > 0 ? '$mime/${rate ~/ 1000}kHz' : mime;
+      }
+    }
+    final quality = _currentQuality(call);
+    final stats = _audioStats(call);
+    if (stats == nullptr) {
+      return codec.isEmpty && quality < 0
+          ? null
+          : CallAudioMetrics(quality: quality, codec: codec);
+    }
+    try {
+      final jit = _nonNeg(_statsJitter(stats));
+      final rtt = _nonNeg(_statsRtt(stats));
+      return CallAudioMetrics(
+        quality: quality,
+        downloadKbps: _nonNeg(_statsDownload(stats)),
+        uploadKbps: _nonNeg(_statsUpload(stats)),
+        lossPct: _nonNeg(_statsLoss(stats)),
+        jitterMs: jit == null ? null : jit * 1000.0,
+        rttMs: rtt == null ? null : rtt * 1000.0,
+        codec: codec,
+      );
     } finally {
       _statsUnref(stats);
     }

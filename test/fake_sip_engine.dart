@@ -213,6 +213,10 @@ class FakeSipEngine implements SipEngine {
 
   @override
   Future<double?> inboundAudioKbps(int id) async => inboundKbps;
+
+  CallAudioMetrics? nextAudioMetrics;
+  @override
+  Future<CallAudioMetrics?> callAudioMetrics(int id) async => nextAudioMetrics;
   @override
   Future<void> setMicMuted(bool muted) async => log.add('mute $muted');
   @override

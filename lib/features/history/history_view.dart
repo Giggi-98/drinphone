@@ -7,6 +7,7 @@ import '../../app/phone_controller.dart';
 import '../../app/theme.dart';
 import '../../core/call_history.dart';
 import '../../core/contacts/personal_contacts.dart';
+import '../../core/recall_reminders.dart';
 import '../../core/pbx/pbx_cdr.dart';
 import '../../core/pbx/pbx_connection.dart';
 import '../../core/sip/sip_engine.dart';
@@ -15,7 +16,7 @@ import 'range_picker.dart';
 import 'call_table.dart';
 import 'cdr_view.dart';
 
-enum _Kind { all, incoming, missed, outgoing }
+enum _Kind { all, incoming, missed, unreturned, outgoing }
 
 enum _Period { today, week, month, all, custom }
 
@@ -140,6 +141,8 @@ class _HistoryViewState extends State<HistoryView> {
       _Kind.all => true,
       _Kind.incoming => r.direction == CallDirection.incoming && !r.missed,
       _Kind.missed => r.missed,
+      _Kind.unreturned =>
+        PhoneController.isUnreturnedMissed(r, widget.phone.history),
       _Kind.outgoing => r.direction == CallDirection.outgoing,
     };
     final from = _from, to = _to;
@@ -350,36 +353,52 @@ class _HistoryViewState extends State<HistoryView> {
     );
   }
 
-  /// Tre contatori del giorno: chiamate, perse, tempo al telefono.
-  Widget _summaryBar(DrinColors c, (int, int, int) d) {
+  /// Tre contatori del giorno: chiamate, perse, tempo al telefono (più eventuali
+  /// interlocutori da richiamare nel registro locale).
+  Widget _summaryBar(DrinColors c, (int, int, int) d, {int? unreturned}) {
     final (calls, missed, secs) = d;
     String two(int n) => n.toString().padLeft(2, '0');
     final time = secs >= 3600
         ? '${secs ~/ 3600}:${two(secs % 3600 ~/ 60)}:${two(secs % 60)}'
         : '${secs ~/ 60}:${two(secs % 60)}';
-    Widget stat(IconData icon, Color color, String value, String label) =>
-        Container(
-          margin: const EdgeInsets.only(right: DrinSpace.s3),
-          padding: const EdgeInsets.symmetric(
-            horizontal: DrinSpace.s3,
-            vertical: DrinSpace.s1,
-          ),
-          decoration: BoxDecoration(
-            color: c.raised,
-            border: Border.all(color: c.line),
-            borderRadius: BorderRadius.circular(DrinRadius.pill),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon, size: 16, color: color),
-              const SizedBox(width: DrinSpace.s2),
-              Text(value, style: DrinText.number.copyWith(color: c.ink)),
-              const SizedBox(width: DrinSpace.s1),
-              Text(label, style: DrinText.detail.copyWith(color: c.muted)),
-            ],
-          ),
-        );
+    Widget stat(
+      IconData icon,
+      Color color,
+      String value,
+      String label, {
+      VoidCallback? onTap,
+      bool selected = false,
+    }) {
+      final pill = Container(
+        margin: const EdgeInsets.only(right: DrinSpace.s3),
+        padding: const EdgeInsets.symmetric(
+          horizontal: DrinSpace.s3,
+          vertical: DrinSpace.s1,
+        ),
+        decoration: BoxDecoration(
+          color: selected ? color.withValues(alpha: 0.14) : c.raised,
+          border: Border.all(color: selected ? color : c.line),
+          borderRadius: BorderRadius.circular(DrinRadius.pill),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 16, color: color),
+            const SizedBox(width: DrinSpace.s2),
+            Text(value, style: DrinText.number.copyWith(color: c.ink)),
+            const SizedBox(width: DrinSpace.s1),
+            Text(label, style: DrinText.detail.copyWith(color: c.muted)),
+          ],
+        ),
+      );
+      return onTap == null
+          ? pill
+          : InkWell(
+              onTap: onTap,
+              borderRadius: BorderRadius.circular(DrinRadius.pill),
+              child: pill,
+            );
+    }
     // Wrap: a finestra stretta i contatori vanno a capo invece di uscire.
     return Wrap(
       crossAxisAlignment: WrapCrossAlignment.center,
@@ -394,6 +413,20 @@ class _HistoryViewState extends State<HistoryView> {
           '$missed',
           tr('perse'),
         ),
+        if (unreturned != null)
+          stat(
+            Icons.phone_callback_rounded,
+            unreturned > 0 ? c.busyText : c.muted,
+            '$unreturned',
+            tr('da richiamare'),
+            selected: _kind == _Kind.unreturned,
+            onTap: () => setState(() {
+              _kind = _kind == _Kind.unreturned
+                  ? _Kind.all
+                  : _Kind.unreturned;
+              _page = 0;
+            }),
+          ),
         stat(Icons.timer_outlined, c.freeText, time, tr('al telefono')),
       ],
     );
@@ -463,6 +496,27 @@ class _HistoryViewState extends State<HistoryView> {
         : r.missed
         ? (tr('Persa'), c.busyText)
         : (tr('Non risposta'), c.away);
+    final activeReminder = r.number.isEmpty
+        ? null
+        : widget.phone.callerContext(r.number).activeReminder;
+    final sub = count > 1
+        ? SubLine(
+            open ? Icons.expand_less_rounded : Icons.expand_more_rounded,
+            open
+                ? tr('{n} chiamate · chiudi', {'n': count})
+                : tr('×{n} · mostra tutte', {'n': count}),
+          )
+        : r.note.isNotEmpty
+        ? SubLine(Icons.sticky_note_2_outlined, r.note)
+        : activeReminder != null
+        ? SubLine(
+            Icons.notifications_active_outlined,
+            tr('Promemoria alle {t}', {
+              't':
+                  '${activeReminder.dueAt.hour.toString().padLeft(2, '0')}:${activeReminder.dueAt.minute.toString().padLeft(2, '0')}',
+            }),
+          )
+        : null;
     return CallRow(
       cells: [
         WhenCell(r.start),
@@ -472,17 +526,8 @@ class _HistoryViewState extends State<HistoryView> {
           r.number,
           // L'esito "Persa" lo dice già la pillola: il nome resta neutro.
           // Gruppo di chiamate ripetute: "×n" con freccia; nota scritta
-          // durante la chiamata.
-          extra: count > 1
-              ? SubLine(
-                  open ? Icons.expand_less_rounded : Icons.expand_more_rounded,
-                  open
-                      ? tr('{n} chiamate · chiudi', {'n': count})
-                      : tr('×{n} · mostra tutte', {'n': count}),
-                )
-              : r.note.isEmpty
-              ? null
-              : SubLine(Icons.sticky_note_2_outlined, r.note),
+          // durante o dopo la chiamata.
+          extra: sub,
         ),
         OutcomePill(outcome, outcomeColor),
         DurationCell(r.seconds, strong: true),
@@ -493,6 +538,39 @@ class _HistoryViewState extends State<HistoryView> {
       call: canDial && r.number.isNotEmpty
           ? () => widget.onCall(r.number)
           : null,
+      extraActions: [
+        (
+          Icons.sticky_note_2_outlined,
+          r.note.isEmpty ? tr('Aggiungi nota') : tr('Modifica nota'),
+          () => _editNoteDialog(r),
+        ),
+        if (r.number.isNotEmpty) ...[
+          (
+            Icons.notifications_none_rounded,
+            tr('Richiama tra 15 min'),
+            () => _scheduleRecall(r, delay: const Duration(minutes: 15)),
+          ),
+          (
+            Icons.schedule_rounded,
+            tr('Richiama tra 1 ora'),
+            () => _scheduleRecall(r, delay: const Duration(hours: 1)),
+          ),
+          (
+            Icons.wb_sunny_outlined,
+            tr('Richiama domani alle 09:00'),
+            () => _scheduleRecall(
+              r,
+              dueAt: RecallReminder.nextMorning(DateTime.now()),
+            ),
+          ),
+          if (activeReminder != null)
+            (
+              Icons.notifications_off_outlined,
+              tr('Annulla promemoria'),
+              () => widget.phone.dismissReminder(activeReminder.id),
+            ),
+        ],
+      ],
     );
   }
 
@@ -572,6 +650,7 @@ class _HistoryViewState extends State<HistoryView> {
                       _Kind.all: tr('Tutte'),
                       _Kind.incoming: tr('In arrivo'),
                       _Kind.missed: tr('Perse'),
+                      _Kind.unreturned: tr('Da richiamare'),
                       _Kind.outgoing: tr('In uscita'),
                     },
                     (v) => setState(() {
@@ -705,7 +784,11 @@ class _HistoryViewState extends State<HistoryView> {
           if (_summary) ...[
             const SizedBox(height: DrinSpace.s3),
             local
-                ? _summaryBar(c, _todayLocal(p.history))
+                ? _summaryBar(
+                    c,
+                    _todayLocal(p.history),
+                    unreturned: p.unreturnedMissedCount,
+                  )
                 : _pbxSummary(c, conn!),
           ],
           const SizedBox(height: DrinSpace.s3),
@@ -746,6 +829,8 @@ class _HistoryViewState extends State<HistoryView> {
                       child: Text(
                         _kind == _Kind.missed
                             ? tr('Nessuna chiamata persa.')
+                            : _kind == _Kind.unreturned
+                            ? tr('Nessuna chiamata da richiamare.')
                             : tr('Nessuna chiamata.'),
                         style: DrinText.body.copyWith(color: c.muted),
                       ),
@@ -835,5 +920,64 @@ class _HistoryViewState extends State<HistoryView> {
         SnackBar(content: Text(tr('Salvato in rubrica: {n}', {'n': finalName}))),
       );
     }
+  }
+
+  Future<void> _editNoteDialog(CallRecord r) async {
+    final ctl = TextEditingController(text: r.note);
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(tr('Nota chiamata')),
+        content: TextField(
+          controller: ctl,
+          autofocus: true,
+          maxLines: 3,
+          decoration: InputDecoration(
+            hintText: tr('Scrivi una nota su questa chiamata…'),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text(tr('Annulla')),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(tr('Salva')),
+          ),
+        ],
+      ),
+    );
+    final text = ctl.text;
+    ctl.dispose();
+    if (ok == true) {
+      await widget.phone.updateHistoryNote(r, text);
+    }
+  }
+
+  Future<void> _scheduleRecall(
+    CallRecord r, {
+    Duration? delay,
+    DateTime? dueAt,
+  }) async {
+    await widget.phone.scheduleReminder(
+      number: r.number,
+      name: r.name,
+      note: r.note,
+      delay: delay,
+      dueAt: dueAt,
+    );
+    if (!mounted) return;
+    ScaffoldMessenger.maybeOf(context)
+      ?..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(
+            tr('Promemoria impostato per {n}', {
+              'n': r.name.isNotEmpty ? r.name : r.number,
+            }),
+          ),
+        ),
+      );
   }
 }

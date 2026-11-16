@@ -50,6 +50,13 @@ class _HomeScreenState extends State<HomeScreen> {
   int _prefsTab = 0;
   late final AppLifecycleListener _lifecycle;
   final _searchFocus = FocusNode();
+  bool _miniHud = false;
+  final _hudDial = TextEditingController();
+
+  void _setMiniHud(bool on) {
+    WindowAttention.instance.setMiniHud(on);
+    setState(() => _miniHud = on);
+  }
 
   /// Interno da evidenziare entrando in Chiamate in corso (clic sul segnalino).
   String? _liveFocus;
@@ -165,11 +172,231 @@ class _HomeScreenState extends State<HomeScreen> {
     _lifecycle.dispose();
     HardwareKeyboard.instance.removeHandler(_onKey);
     _searchFocus.dispose();
+    _hudDial.dispose();
+    if (_miniHud) WindowAttention.instance.setMiniHud(false);
     GlobalHotkeys.instance.unlisten();
     pendingCallLink.removeListener(_onCallLink);
     p.removeListener(_onPhone);
     p.updater?.removeListener(_onUpdater);
     super.dispose();
+  }
+
+  Widget _miniHudView(DrinColors c) {
+    final call = p.call;
+    final favs = p.favoriteExtensions.take(6).toList();
+    final dot = p.registration.status == RegistrationStatus.ok
+        ? c.ok
+        : p.registration.status == RegistrationStatus.failed
+        ? c.busy
+        : c.muted;
+    return Scaffold(
+      backgroundColor: c.ground,
+      body: Padding(
+        padding: const EdgeInsets.all(DrinSpace.s3),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 8,
+                  height: 8,
+                  decoration: BoxDecoration(color: dot, shape: BoxShape.circle),
+                ),
+                const SizedBox(width: DrinSpace.s2),
+                Text(
+                  'DrinPhone HUD',
+                  style: DrinText.label.copyWith(color: c.ink),
+                ),
+                if (p.autoDndActive) ...[
+                  const SizedBox(width: DrinSpace.s2),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 2,
+                    ),
+                    decoration: BoxDecoration(
+                      color: c.busy.withValues(alpha: 0.14),
+                      borderRadius: BorderRadius.circular(DrinRadius.pill),
+                    ),
+                    child: Text(
+                      'DND',
+                      style: DrinText.detail.copyWith(color: c.busyText),
+                    ),
+                  ),
+                ],
+                const Spacer(),
+                TextButton.icon(
+                  onPressed: () => _setMiniHud(false),
+                  icon: const Icon(Icons.open_in_full_rounded, size: 16),
+                  label: Text(tr('Espandi')),
+                ),
+              ],
+            ),
+            const SizedBox(height: DrinSpace.s2),
+            Expanded(
+              child: call != null
+                  ? Container(
+                      padding: const EdgeInsets.all(DrinSpace.s3),
+                      decoration: BoxDecoration(
+                        color: c.surface,
+                        border: Border.all(
+                          color: call.phase == CallPhase.incoming
+                              ? c.squilloLine
+                              : c.line,
+                        ),
+                        borderRadius: BorderRadius.circular(DrinRadius.panel),
+                      ),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            call.remoteName.isNotEmpty
+                                ? '${call.remoteName} · ${call.remoteNumber}'
+                                : call.remoteNumber,
+                            overflow: TextOverflow.ellipsis,
+                            style: DrinText.title.copyWith(color: c.ink),
+                          ),
+                          const SizedBox(height: DrinSpace.s2),
+                          Row(
+                            children: [
+                              if (call.phase == CallPhase.incoming) ...[
+                                FilledButton.icon(
+                                  onPressed: () => p.answer(call.id),
+                                  icon: const Icon(Icons.call_rounded, size: 16),
+                                  label: Text(tr('Rispondi')),
+                                ),
+                                const SizedBox(width: DrinSpace.s2),
+                                OutlinedButton.icon(
+                                  onPressed: () => p.hangup(call.id),
+                                  icon: Icon(
+                                    Icons.call_end_rounded,
+                                    size: 16,
+                                    color: c.busyText,
+                                  ),
+                                  label: Text(tr('Rifiuta')),
+                                ),
+                              ] else ...[
+                                OutlinedButton(
+                                  onPressed: p.toggleMute,
+                                  child: Text(
+                                    p.muted ? tr('Riattiva') : tr('Muto'),
+                                  ),
+                                ),
+                                const SizedBox(width: DrinSpace.s2),
+                                if (call.phase == CallPhase.active ||
+                                    call.phase == CallPhase.paused) ...[
+                                  OutlinedButton(
+                                    onPressed: p.toggleHold,
+                                    child: Text(
+                                      p.onHold ? tr('Riprendi') : tr('Attesa'),
+                                    ),
+                                  ),
+                                  const SizedBox(width: DrinSpace.s2),
+                                ],
+                                FilledButton.icon(
+                                  style: FilledButton.styleFrom(
+                                    backgroundColor: c.busy,
+                                    foregroundColor: c.onBusy,
+                                  ),
+                                  onPressed: () => p.hangup(call.id),
+                                  icon: const Icon(
+                                    Icons.call_end_rounded,
+                                    size: 16,
+                                  ),
+                                  label: Text(tr('Termina')),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ],
+                      ),
+                    )
+                  : Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: SizedBox(
+                                height: 36,
+                                child: TextField(
+                                  controller: _hudDial,
+                                  decoration: InputDecoration(
+                                    isDense: true,
+                                    hintText: tr('Chiama numero…'),
+                                  ),
+                                  onSubmitted: (v) {
+                                    final n = v.trim();
+                                    if (n.isNotEmpty && p.canDial) {
+                                      _hudDial.clear();
+                                      _call(n);
+                                    }
+                                  },
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: DrinSpace.s2),
+                            IconButton.filled(
+                              tooltip: tr('Chiama'),
+                              onPressed: p.canDial
+                                  ? () {
+                                      final n = _hudDial.text.trim();
+                                      if (n.isNotEmpty) {
+                                        _hudDial.clear();
+                                        _call(n);
+                                      }
+                                    }
+                                  : null,
+                              icon: const Icon(Icons.call_rounded, size: 18),
+                            ),
+                          ],
+                        ),
+                        if (favs.isNotEmpty) ...[
+                          const SizedBox(height: DrinSpace.s2),
+                          Expanded(
+                            child: SingleChildScrollView(
+                              child: Wrap(
+                                spacing: DrinSpace.s2,
+                                runSpacing: DrinSpace.s1,
+                                children: [
+                                  for (final ext in favs)
+                                    ActionChip(
+                                      avatar: Container(
+                                        width: 8,
+                                        height: 8,
+                                        decoration: BoxDecoration(
+                                          color: switch (p.blfOf(ext)) {
+                                            BlfStatus.idle => c.free,
+                                            BlfStatus.ringing => c.squillo,
+                                            BlfStatus.busy => c.busy,
+                                            _ => c.muted,
+                                          },
+                                          shape: BoxShape.circle,
+                                        ),
+                                      ),
+                                      label: Text(
+                                        ext.name.isNotEmpty
+                                            ? '${ext.name} (${ext.number})'
+                                            : ext.number,
+                                      ),
+                                      onPressed: p.canDial
+                                          ? () => _call(ext.number)
+                                          : null,
+                                    ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Future<void> _showNewNotes() async {
@@ -301,6 +528,7 @@ class _HomeScreenState extends State<HomeScreen> {
       );
     }
     if (!p.loggedIn) return AccountPicker(phone: p);
+    if (_miniHud) return _miniHudView(c);
     return Scaffold(
       body: Row(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -339,6 +567,8 @@ class _HomeScreenState extends State<HomeScreen> {
                         tr('Nessun account SIP configurato.'),
                         action: (tr('Configura'), _openPreferences),
                       ),
+                    for (final rem in p.dueReminders)
+                      _reminderBanner(c, p, rem),
                     Expanded(
                       // Live Calls sparisce senza eventi o nei profili SIP generici.
                       child: AnimatedSectionSwitch(
@@ -419,6 +649,50 @@ class _HomeScreenState extends State<HomeScreen> {
           ],
         ),
       );
+
+  Widget _reminderBanner(DrinColors c, PhoneController p, dynamic rem) {
+    final who = (rem.name as String).isNotEmpty
+        ? '${rem.name} · ${rem.number}'
+        : rem.number as String;
+    final msg = (rem.note as String).isNotEmpty
+        ? tr('Promemoria richiamata: {w} — {n}', {'w': who, 'n': rem.note})
+        : tr('Promemoria richiamata: {w}', {'w': who});
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      decoration: BoxDecoration(
+        color: c.surface,
+        border: Border.all(color: c.primary),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.notifications_active_rounded, size: 18, color: c.primary),
+          const SizedBox(width: 10),
+          Expanded(child: Text(msg, style: TextStyle(color: c.text))),
+          TextButton(
+            onPressed: () {
+              p.dismissReminder(rem.id as String);
+              _call(rem.number as String);
+            },
+            child: Text(tr('Chiama ora')),
+          ),
+          TextButton(
+            onPressed: () => p.postponeReminder(
+              rem.id as String,
+              const Duration(minutes: 15),
+            ),
+            child: Text(tr('Rimanda 15 min')),
+          ),
+          IconButton(
+            tooltip: tr('Chiudi'),
+            onPressed: () => p.dismissReminder(rem.id as String),
+            icon: Icon(Icons.close_rounded, size: 18, color: c.muted),
+          ),
+        ],
+      ),
+    );
+  }
 
   Widget _topBar(DrinColors c) {
     final reg = p.registration;
@@ -552,6 +826,35 @@ class _HomeScreenState extends State<HomeScreen> {
               ]),
             ),
           ],
+          if (p.autoDndActive) ...[
+            const SizedBox(width: 8),
+            Tooltip(
+              message: tr('Non disturbare automatico attivo'),
+              child: Container(
+                height: 28,
+                padding: const EdgeInsets.symmetric(horizontal: 10),
+                decoration: BoxDecoration(
+                  color: c.busy.withValues(alpha: 0.14),
+                  border: Border.all(color: c.busy),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.do_not_disturb_on_rounded, size: 14, color: c.busyText),
+                    const SizedBox(width: 4),
+                    Text(
+                      'Auto-DND',
+                      style: DrinText.detail.copyWith(
+                        color: c.busyText,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
           // Ricerca e account sempre contro il bordo destro: prima Spacer e
           // Flexible si dividevano lo spazio e, con la ricerca al massimo di
           // 420, l'avanzo finiva dopo l'account (vuoto a destra).
@@ -565,7 +868,19 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: 6),
+          IconButton(
+            tooltip: tr('Mini-HUD compatto'),
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints.tightFor(width: 34, height: 34),
+            onPressed: () => _setMiniHud(true),
+            icon: Icon(
+              Icons.picture_in_picture_alt_rounded,
+              size: 18,
+              color: c.muted,
+            ),
+          ),
+          const SizedBox(width: 4),
           // Account in uso (DECISIONS "Un account vivo alla volta").
           PopupMenuButton<String>(
             tooltip: tr('Account'),

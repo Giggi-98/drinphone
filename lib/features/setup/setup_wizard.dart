@@ -8,6 +8,7 @@ import '../../core/security/settings_store.dart';
 import '../../core/sip/sip_engine.dart';
 import '../account/api_dialog.dart';
 import '../preferences/preferences_view.dart';
+import 'profile_bundle_dialog.dart';
 
 /// Procedura guidata: al primo avvio configura l'account vuoto; dalla scelta
 /// account ("Aggiungi account") ne crea uno e ci entra. Passi: lingua (solo
@@ -281,6 +282,19 @@ class _SetupWizardState extends State<SetupWizard> {
                 : 'English interface',
             onTap: () => p.setLanguage(l),
           ),
+        const SizedBox(height: DrinSpace.s2),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: OutlinedButton.icon(
+            onPressed: () => showImportProfileDialog(
+              context,
+              p,
+              onImported: widget.onDone,
+            ),
+            icon: const Icon(Icons.file_open_outlined, size: 18),
+            label: Text(tr('Importa profilo (.drinprof)')),
+          ),
+        ),
       ],
     ),
     _Step.kind => Column(

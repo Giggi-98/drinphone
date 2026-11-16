@@ -7,11 +7,14 @@ import '../../app/l10n.dart';
 import '../../app/phone_controller.dart';
 import '../../app/theme.dart';
 import '../../core/pbx/yeastar_api.dart';
+import '../../core/platform/audio_player.dart';
 import '../../core/platform/autostart.dart';
+import '../../core/platform/screen_pop.dart';
 import '../../core/video/openh264.dart';
 import '../../core/sip/sip_engine.dart';
 import '../account/api_dialog.dart';
 import '../call/native_video_view.dart';
+import '../setup/profile_bundle_dialog.dart';
 import '../shell/widgets.dart';
 import '../update/update_panel.dart';
 
@@ -82,6 +85,8 @@ class _PreferencesViewState extends State<PreferencesView> {
           children: [
             AudioSettings(phone: phone),
             _AudioCodecsCard(phone: phone),
+            if (phone.recordingsDir.isNotEmpty)
+              _LocalRecordingsCard(phone: phone),
             _AdvancedTab(phone: phone),
             _FeaturesTab(phone: phone),
           ],
@@ -492,6 +497,25 @@ class _UserTab extends StatelessWidget {
               : _AccountTile(phone: phone, account: a),
         ),
         if (phone.isYeastar) PbxConnectionsPanel(phone: phone),
+        _Card(
+          title: tr('Trasferimento e backup profilo'),
+          child: Wrap(
+            spacing: DrinSpace.s3,
+            runSpacing: DrinSpace.s2,
+            children: [
+              OutlinedButton.icon(
+                onPressed: () => showExportProfileDialog(context, phone),
+                icon: const Icon(Icons.upload_file_outlined, size: 18),
+                label: Text(tr('Esporta profilo (.drinprof)')),
+              ),
+              OutlinedButton.icon(
+                onPressed: () => showImportProfileDialog(context, phone),
+                icon: const Icon(Icons.file_open_outlined, size: 18),
+                label: Text(tr('Importa profilo (.drinprof)')),
+              ),
+            ],
+          ),
+        ),
       ],
     );
   }
@@ -1150,7 +1174,229 @@ class _AudioSettingsState extends State<AudioSettings> {
             ),
             style: TextStyle(fontSize: 12, color: c.muted),
           ),
+          const SizedBox(height: DrinSpace.s4),
+          ListenableBuilder(
+            listenable: p.echoTester,
+            builder: (_, _) {
+              final echo = p.echoTester;
+              final busy = echo.phase != EchoTestPhase.idle;
+              final status = switch (echo.phase) {
+                EchoTestPhase.idle => tr(
+                  'Registra fino a 5 secondi dal microfono e riascolta subito in cuffia.',
+                ),
+                EchoTestPhase.recording => tr(
+                  'Parla ora nel microfono… ({s} s)',
+                  {'s': echo.secondsLeft},
+                ),
+                EchoTestPhase.playing => tr('Riproduzione test microfono in corso…'),
+              };
+              return Container(
+                padding: const EdgeInsets.all(DrinSpace.s3),
+                decoration: BoxDecoration(
+                  color: c.raised,
+                  border: Border.all(color: c.line),
+                  borderRadius: BorderRadius.circular(DrinRadius.row),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(
+                          echo.phase == EchoTestPhase.recording
+                              ? Icons.mic_rounded
+                              : echo.phase == EchoTestPhase.playing
+                              ? Icons.volume_up_rounded
+                              : Icons.graphic_eq_rounded,
+                          size: 18,
+                          color: busy ? c.primary : c.muted,
+                        ),
+                        const SizedBox(width: DrinSpace.s2),
+                        Expanded(
+                          child: Text(
+                            status,
+                            style: DrinText.body.copyWith(color: c.ink),
+                          ),
+                        ),
+                        if (!busy)
+                          OutlinedButton.icon(
+                            onPressed: echo.start,
+                            icon: const Icon(Icons.mic_none_rounded, size: 17),
+                            label: Text(tr('Prova audio (Echo Test)')),
+                          )
+                        else ...[
+                          if (echo.phase == EchoTestPhase.recording) ...[
+                            FilledButton(
+                              onPressed: echo.finishRecordingAndPlay,
+                              child: Text(tr('Riascolta ora')),
+                            ),
+                            const SizedBox(width: DrinSpace.s2),
+                          ],
+                          OutlinedButton(
+                            onPressed: echo.stop,
+                            child: Text(tr('Ferma')),
+                          ),
+                        ],
+                      ],
+                    ),
+                    if (echo.error != null) ...[
+                      const SizedBox(height: DrinSpace.s1),
+                      Text(
+                        echo.error!,
+                        style: DrinText.detail.copyWith(color: c.busyText),
+                      ),
+                    ],
+                  ],
+                ),
+              );
+            },
+          ),
         ],
+      ),
+    );
+  }
+}
+
+class _LocalRecordingsCard extends StatefulWidget {
+  const _LocalRecordingsCard({required this.phone});
+  final PhoneController phone;
+
+  @override
+  State<_LocalRecordingsCard> createState() => _LocalRecordingsCardState();
+}
+
+class _LocalRecordingsCardState extends State<_LocalRecordingsCard> {
+  late Future<List<File>> _files = widget.phone.listLocalRecordings();
+
+  void _refresh() =>
+      setState(() => _files = widget.phone.listLocalRecordings());
+
+  static String _size(int bytes) => bytes >= 1024 * 1024
+      ? '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB'
+      : '${(bytes / 1024).ceil()} KB';
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.drin;
+    final p = widget.phone;
+    return _Card(
+      title: tr('Registrazioni locali'),
+      action: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (Platform.isWindows)
+            TextButton.icon(
+              onPressed: () {
+                Directory(p.recordingsDir).createSync(recursive: true);
+                Process.start('explorer.exe', [p.recordingsDir]);
+              },
+              icon: const Icon(Icons.folder_open_outlined, size: 17),
+              label: Text(tr('Apri cartella')),
+            ),
+          IconButton(
+            tooltip: tr('Aggiorna elenco'),
+            onPressed: _refresh,
+            icon: Icon(Icons.refresh_rounded, color: c.muted),
+          ),
+        ],
+      ),
+      child: FutureBuilder<List<File>>(
+        future: _files,
+        builder: (_, snap) {
+          final items = (snap.data ?? const <File>[]).take(10).toList();
+          if (snap.connectionState == ConnectionState.waiting && !snap.hasData) {
+            return const SizedBox(height: 24);
+          }
+          if (items.isEmpty) {
+            return Text(
+              tr('Nessuna registrazione locale salvata in {d}.', {
+                'd': p.recordingsDir,
+              }),
+              style: DrinText.body.copyWith(color: c.muted),
+            );
+          }
+          return ListenableBuilder(
+            listenable: p.mediaPlayer,
+            builder: (_, _) => Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                for (final f in items)
+                  Builder(
+                    builder: (_) {
+                      final name = f.path.split(Platform.pathSeparator).last;
+                      final lower = name.toLowerCase();
+                      final playable =
+                          lower.endsWith('.wav') || lower.endsWith('.mp3');
+                      final key = 'localrec:${f.path}';
+                      final playing =
+                          p.mediaPlayer.isActive(key) && p.mediaPlayer.isPlaying;
+                      final stat = f.statSync();
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: DrinSpace.s2),
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.audio_file_outlined,
+                              size: 18,
+                              color: c.muted,
+                            ),
+                            const SizedBox(width: DrinSpace.s2),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    name,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: DrinText.body.copyWith(color: c.ink),
+                                  ),
+                                  Text(
+                                    _size(stat.size),
+                                    style: DrinText.detail.copyWith(
+                                      color: c.muted,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            if (playable)
+                              OutlinedButton.icon(
+                                onPressed: () => p.mediaPlayer.togglePlay(
+                                  key,
+                                  () async => f,
+                                  cacheFile: false,
+                                ),
+                                icon: Icon(
+                                  playing
+                                      ? Icons.pause_rounded
+                                      : Icons.play_arrow_rounded,
+                                  size: 17,
+                                ),
+                                label: Text(
+                                  playing ? tr('Pausa') : tr('Riproduci'),
+                                ),
+                              )
+                            else if (Platform.isWindows)
+                              OutlinedButton.icon(
+                                onPressed: () => Process.start(
+                                  'explorer.exe',
+                                  ['/select,', f.path],
+                                ),
+                                icon: const Icon(
+                                  Icons.folder_open_outlined,
+                                  size: 16,
+                                ),
+                                label: Text(tr('Mostra file')),
+                              ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+              ],
+            ),
+          );
+        },
       ),
     );
   }
@@ -1280,6 +1526,61 @@ class _FeaturesTab extends StatefulWidget {
 class _FeaturesTabState extends State<_FeaturesTab> {
   // Letto dal registro di Windows (HKCU...Run), la fonte vera.
   bool _autostart = Autostart.enabled;
+  late final _crmUrl = TextEditingController(
+    text: widget.phone.settings.crmUrlTemplate,
+  );
+  bool _crmDirty = false;
+  bool _crmInvalid = false;
+
+  @override
+  void didUpdateWidget(covariant _FeaturesTab oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!_crmDirty && _crmUrl.text != widget.phone.settings.crmUrlTemplate) {
+      _crmUrl.text = widget.phone.settings.crmUrlTemplate;
+    }
+  }
+
+  @override
+  void dispose() {
+    _crmUrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _saveCrm({bool? autoOpen}) async {
+    final tpl = _crmUrl.text.trim();
+    if (tpl.isNotEmpty &&
+        buildScreenPopUri(tpl, number: '100', name: 'Test') == null) {
+      setState(() => _crmInvalid = true);
+      return;
+    }
+    setState(() {
+      _crmInvalid = false;
+      _crmDirty = false;
+    });
+    await widget.phone.setCrmPreferences(
+      urlTemplate: tpl,
+      autoOpen: autoOpen ?? widget.phone.settings.crmAutoOpen,
+    );
+  }
+
+  static String _fmtMin(int m) =>
+      '${(m ~/ 60).toString().padLeft(2, '0')}:${(m % 60).toString().padLeft(2, '0')}';
+
+  Future<void> _pickMinute({required bool isFrom}) async {
+    final cur = isFrom
+        ? widget.phone.settings.autoDndFromMinute
+        : widget.phone.settings.autoDndToMinute;
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay(hour: cur ~/ 60, minute: cur % 60),
+    );
+    if (picked == null || !mounted) return;
+    final mins = picked.hour * 60 + picked.minute;
+    await widget.phone.setAutoDndPreferences(
+      fromMinute: isFrom ? mins : null,
+      toMinute: isFrom ? null : mins,
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1288,6 +1589,7 @@ class _FeaturesTabState extends State<_FeaturesTab> {
     return _Card(
       title: tr('Funzionalità'),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           if (Platform.isWindows) ...[
             SwitchListTile(
@@ -1355,7 +1657,102 @@ class _FeaturesTabState extends State<_FeaturesTab> {
                 child: Text(tr('App predefinite')),
               ),
             ),
+            const Divider(height: DrinSpace.s5),
           ],
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: Icon(Icons.open_in_browser_rounded, color: c.muted),
+            title: Text(tr('Screen Pop CRM / Gestionale')),
+            subtitle: Text(
+              tr(
+                'Apri un URL HTTP/HTTPS con {number} e {name} alla risposta o all’arrivo chiamata.',
+              ),
+            ),
+          ),
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _crmUrl,
+                  onChanged: (_) => setState(() {
+                    _crmDirty = true;
+                    _crmInvalid = false;
+                  }),
+                  decoration: InputDecoration(
+                    hintText: 'https://crm.esempio.it/cerca?tel={number}',
+                    errorText: _crmInvalid
+                        ? tr('Inserisci un URL http:// o https:// valido')
+                        : null,
+                  ),
+                ),
+              ),
+              const SizedBox(width: DrinSpace.s3),
+              FilledButton(
+                onPressed: _crmDirty || _crmUrl.text.trim() != p.settings.crmUrlTemplate
+                    ? () => _saveCrm()
+                    : null,
+                child: Text(tr('Salva')),
+              ),
+            ],
+          ),
+          const SizedBox(height: DrinSpace.s2),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            title: Text(tr('Apri CRM automaticamente all’arrivo chiamata')),
+            subtitle: Text(
+              tr(
+                'Se disattivo, compare comunque il pulsante «Apri CRM» nella finestra di chiamata.',
+              ),
+            ),
+            value: p.settings.crmAutoOpen,
+            onChanged: (v) => _saveCrm(autoOpen: v),
+          ),
+          const Divider(height: DrinSpace.s5),
+          if (Platform.isWindows)
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              secondary: Icon(Icons.mic_off_outlined, color: c.muted),
+              title: Text(tr('Auto-DND durante altre call (Teams, Meet, Zoom…)')),
+              subtitle: Text(
+                tr(
+                  'Passa automaticamente in «Non disturbare» sul PBX quando un’altra app usa il microfono e ripristina lo stato alla fine.',
+                ),
+              ),
+              value: p.settings.autoDndOnExternalMic,
+              onChanged: (v) => p.setAutoDndPreferences(onExternalMic: v),
+            ),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            secondary: Icon(Icons.bedtime_outlined, color: c.muted),
+            title: Text(tr('Auto-DND per fascia oraria')),
+            subtitle: Text(
+              tr(
+                'Attiva automaticamente «Non disturbare» fuori orario o in pausa e ripristina allo scadere.',
+              ),
+            ),
+            value: p.settings.autoDndScheduleEnabled,
+            onChanged: (v) => p.setAutoDndPreferences(scheduleEnabled: v),
+          ),
+          if (p.settings.autoDndScheduleEnabled)
+            Padding(
+              padding: const EdgeInsets.only(bottom: DrinSpace.s2),
+              child: Wrap(
+                spacing: DrinSpace.s3,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  Text(tr('Dalle'), style: DrinText.body.copyWith(color: c.muted)),
+                  OutlinedButton(
+                    onPressed: () => _pickMinute(isFrom: true),
+                    child: Text(_fmtMin(p.settings.autoDndFromMinute)),
+                  ),
+                  Text(tr('alle'), style: DrinText.body.copyWith(color: c.muted)),
+                  OutlinedButton(
+                    onPressed: () => _pickMinute(isFrom: false),
+                    child: Text(_fmtMin(p.settings.autoDndToMinute)),
+                  ),
+                ],
+              ),
+            ),
         ],
       ),
     );
