@@ -992,6 +992,9 @@ const en = <String, String>{
   'BLF': 'BLF',
   'Tasti funzione': 'Function keys',
   'BLF (Interno)': 'BLF (Extension)',
+  'BLF (Interno / *8XX / *9XX / Trunk)':
+      'BLF (Extension / *8XX / *9XX / Trunk)',
+  'BLF Linea / Trunk (VoIP, FXO, ISDN)': 'BLF Line / Trunk (VoIP, FXO, ISDN)',
   'Chiamata rapida': 'Speed dial',
   'DTMF rapido': 'Quick DTMF',
   'Pickup / Codice': 'Pickup / Feature code',
@@ -1000,9 +1003,12 @@ const en = <String, String>{
   'Nessun tasto funzione': 'No function keys',
   'Aggiungi tasti BLF, chiamate rapide, DTMF o parcheggio accanto alla barra del numero.':
       'Add BLF, speed dial, DTMF or parking keys next to the dial bar.',
+  'Aggiungi tasti BLF (interni, trunk VoIP/FXO/ISDN o codici *8XX/*9XX), chiamate rapide, DTMF o parcheggio.':
+      'Add BLF keys (extensions, VoIP/FXO/ISDN trunks or *8XX/*9XX codes), speed dial, DTMF or parking.',
   'Importa dai preferiti': 'Import from favourites',
   'In chiamata: clic su BLF = trasferisci': 'On a call: click BLF = transfer',
   'Clic = chiama o rispondi': 'Click = dial or pick up',
+  'Clic = chiama, impegna o rispondi': 'Click = dial, seize or pick up',
   'Dai preferiti': 'From favourites',
   'Attivo': 'Active',
   'Disattivo': 'Off',
@@ -1012,6 +1018,24 @@ const en = <String, String>{
   'Tipo di tasto': 'Key type',
   'Etichetta (opzionale)': 'Label (optional)',
   'Numero interno': 'Extension number',
+  'Valore BLF (interno, *8XX/*9XX o nome trunk)':
+      'BLF value (extension, *8XX/*9XX or trunk name)',
+  'Nome logico del trunk (VoIP, FXO, ISDN…)':
+      'Trunk logical name (VoIP, FXO, ISDN…)',
+  'Es. 301, *801, *90 oppure nome logico del trunk':
+      'E.g. 301, *801, *90 or the trunk logical name',
+  'Nome esatto sul PBX (es. FXO1, ISDN_1, Telecom_SIP)':
+      'Exact PBX trunk name (e.g. FXO1, ISDN_1, Telecom_SIP)',
+  'Prefisso o codice impegno linea (opzionale)':
+      'Line seize prefix or code (optional)',
+  'Es. 9 o *91 per impegnare direttamente questa linea al clic':
+      'E.g. 9 or *91 to seize this line directly on click',
+  'Impegna linea {n}': 'Seize line {n}',
+  'Numero da chiamare (opzionale)': 'Number to call (optional)',
+  'Prefisso linea: {p}': 'Line prefix: {p}',
+  'Chiama tramite questa linea…': 'Call via this line…',
+  'Imposta un prefisso o codice di impegno linea per {n}':
+      'Set a prefix or line seize code for {n}',
   'Numero da chiamare': 'Number to dial',
   'Sequenza DTMF (es. # o 1234#)': 'DTMF sequence (e.g. # or 1234#)',
   'Slot o codice parcheggio': 'Parking slot or code',

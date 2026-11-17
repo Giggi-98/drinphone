@@ -2181,7 +2181,25 @@ class PhoneController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Interni in BLF: quelli della griglia più eventuali tasti BLF dedicati.
+  String? _blfKeyForTarget(String target) {
+    final t = target.trim();
+    if (t.isEmpty) return null;
+    if (t.contains('@')) return t;
+    final acc = settings.account;
+    return acc == null ? null : '$t@${acc.host}';
+  }
+
+  /// Vero se [target] si comporta come interno chiamabile/trasferibile (non
+  /// codice `*8XX`/`*9XX` né nome logico di trunk).
+  bool _isExtensionBlfTarget(String target) {
+    final t = target.trim();
+    if (t.isEmpty || t.startsWith('*') || t.contains('@')) return false;
+    return allExtensions.any((e) => e.number == t) ||
+        RegExp(r'^[0-9+]+$').hasMatch(t);
+  }
+
+  /// Interni e risorse in BLF: griglia + tasti funzione `blf` (anche `*8XX`/
+  /// `*9XX` o nomi logici trunk) e `trunk`.
   Set<String> get _watched {
     final out = <String>{
       for (final e
@@ -2194,29 +2212,67 @@ class PhoneController extends ChangeNotifier {
     if (_isRegistered(mainAcc)) {
       for (final k in settings.functionKeys) {
         if (out.length >= maxBlf) break;
-        final n = k.target.trim();
-        if (k.kind == FunctionKeyKind.blf &&
-            n.isNotEmpty &&
-            n != mainAcc!.username) {
-          out.add('$n@${mainAcc.host}');
+        if (k.kind != FunctionKeyKind.blf && k.kind != FunctionKeyKind.trunk) {
+          continue;
         }
+        final t = k.target.trim();
+        if (t.isEmpty || t == mainAcc!.username) continue;
+        final key = _blfKeyForTarget(t);
+        if (key != null) out.add(key);
       }
     }
     return out;
   }
 
-  /// Stato BLF di un numero interno (anche da solo tasto funzione BLF).
+  /// Chiamate live su un trunk Yeastar riconosciute dal nome logico (`m.trunk`).
+  List<LiveCall> trunkLiveCalls(String trunkName) {
+    final t = trunkName.trim().toLowerCase();
+    if (t.isEmpty) return const [];
+    return [
+      for (final c in connections)
+        for (final call in c.liveCalls.values)
+          if (call.members.any((m) => m.trunk.trim().toLowerCase() == t)) call,
+    ];
+  }
+
+  /// Nomi logici dei trunk osservati nelle chiamate live dei PBX collegati.
+  List<String> get knownTrunkNames {
+    final names = <String>{};
+    for (final c in connections) {
+      for (final call in c.liveCalls.values) {
+        for (final m in call.members) {
+          final t = m.trunk.trim();
+          if (t.isNotEmpty) names.add(t);
+        }
+      }
+    }
+    return names.toList()..sort();
+  }
+
+  /// Stato BLF di un interno, codice `*8XX`/`*9XX` o nome logico trunk.
   BlfStatus? blfOfNumber(String number) {
     final n = number.trim();
     if (n.isEmpty) return null;
     final ext = allExtensions.where((e) => e.number == n).firstOrNull;
     if (ext != null) return blfOf(ext);
-    final acc = settings.account;
-    if (acc != null) {
-      final sip = blf['$n@${acc.host}']?.status;
-      if (sip != null && sip != BlfStatus.unknown) return sip;
+    final key = _blfKeyForTarget(n);
+    final sip = key == null ? null : blf[key]?.status;
+    if (sip != null && sip != BlfStatus.unknown) return sip;
+    final api = primaryConnection?.callStatus[n];
+    if (api != null) return api;
+    final live = trunkLiveCalls(n);
+    if (live.isNotEmpty) {
+      if (live.any((c) => c.talking || c.onHold)) return BlfStatus.busy;
+      if (live.any((c) => c.ringing)) return BlfStatus.ringing;
+      return BlfStatus.busy;
     }
-    return primaryConnection?.callStatus[n];
+    return sip;
+  }
+
+  /// Eventuale motivo dell'ultima subscription BLF terminata/rifiutata.
+  String blfReasonOfNumber(String number) {
+    final key = _blfKeyForTarget(number);
+    return key == null ? '' : (blf[key]?.reason ?? '');
   }
 
   /// Chiamata live corrente su [number] (eventi 30011).
@@ -2237,6 +2293,7 @@ class PhoneController extends ChangeNotifier {
       kind: key.kind,
       label: key.label.trim(),
       target: key.target.trim(),
+      dialCode: key.dialCode.trim(),
     );
     final list = [...settings.functionKeys];
     final i = list.indexWhere((x) => x.id == nextId);
@@ -2297,15 +2354,65 @@ class PhoneController extends ChangeNotifier {
     return added.length;
   }
 
+  /// Impegna un trunk (VoIP, FXO, ISDN…) usando `dialCode` (prefisso o codice
+  /// diretto di accesso linea) eventualmente seguito da [number].
+  Future<void> seizeTrunk(FunctionKey key, {String number = ''}) async {
+    if (!canDial) return;
+    final prefix = key.dialCode.trim();
+    final n = number.trim();
+    final toDial = '$prefix$n';
+    if (toDial.isEmpty) {
+      notice = tr(
+        'Imposta un prefisso o codice di impegno linea per {n}',
+        {'n': key.label.isNotEmpty ? key.label : key.target},
+      );
+      notifyListeners();
+      return;
+    }
+    await dial(toDial);
+  }
+
+  /// Vero se il tasto richiede l'impegno tramite trunk/prefisso invece di
+  /// chiamare direttamente [FunctionKey.target].
+  bool isTrunkLikeKey(FunctionKey key) =>
+      key.kind == FunctionKeyKind.trunk ||
+      (key.kind == FunctionKeyKind.blf &&
+          !key.target.trim().startsWith('*') &&
+          !_isExtensionBlfTarget(key.target));
+
   /// Esegue l'azione di un tasto funzione / BLF.
   Future<void> triggerFunctionKey(
     FunctionKey key, {
     bool consultFirst = false,
+    String trunkDialNumber = '',
   }) async {
     final target = key.target.trim();
     switch (key.kind) {
+      case FunctionKeyKind.trunk:
+        if (key.dialCode.trim().isNotEmpty || trunkDialNumber.trim().isNotEmpty) {
+          await seizeTrunk(key, number: trunkDialNumber);
+          return;
+        }
+        final live = trunkLiveCalls(target);
+        notice = live.isNotEmpty
+            ? '${key.label.isNotEmpty ? key.label : target} · ${live.first.caller} → ${live.first.callee}'
+            : tr(
+                'Imposta un prefisso o codice di impegno linea per {n}',
+                {'n': key.label.isNotEmpty ? key.label : target},
+              );
+        notifyListeners();
       case FunctionKeyKind.blf:
         if (target.isEmpty) return;
+        // Codici funzione BLF Yeastar (*8XX, *9XX…): invia sempre il codice.
+        if (target.startsWith('*')) {
+          if (canDial) await dial(target);
+          return;
+        }
+        // Nome logico di un trunk inserito nel valore BLF: monitoraggio/impegno.
+        if (!_isExtensionBlfTarget(target)) {
+          await seizeTrunk(key, number: trunkDialNumber);
+          return;
+        }
         final ext =
             allExtensions.where((e) => e.number == target).firstOrNull ??
             Extension(key.label.isNotEmpty ? key.label : target, target);

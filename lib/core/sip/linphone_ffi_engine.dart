@@ -1642,11 +1642,40 @@ class LinphoneFfiEngine implements SipEngine {
     }
   }
 
+  /// Codifica eventuali caratteri non sicuri nella parte utente SIP (es. spazi
+  /// nei nomi logici dei trunk) lasciando intatti `*`, `+`, `-`, `_`, `.`.
+  static String _encodeSipUser(String user) {
+    final safe = RegExp(r"^[A-Za-z0-9\-_.!~*'()&=+$,;?/]$");
+    final buf = StringBuffer();
+    for (final rune in user.runes) {
+      final ch = String.fromCharCode(rune);
+      if (safe.hasMatch(ch)) {
+        buf.write(ch);
+      } else {
+        for (final b in utf8.encode(ch)) {
+          buf.write('%${b.toRadixString(16).toUpperCase().padLeft(2, '0')}');
+        }
+      }
+    }
+    return buf.toString();
+  }
+
+  static String _sipAddressFor(String target) {
+    final hasScheme = target.startsWith('sip:') || target.startsWith('sips:');
+    final scheme = target.startsWith('sips:') ? 'sips' : 'sip';
+    final raw = hasScheme ? target.substring(target.indexOf(':') + 1) : target;
+    final at = raw.indexOf('@');
+    if (at <= 0) return '$scheme:${_encodeSipUser(raw)}';
+    final user = raw.substring(0, at);
+    final domain = raw.substring(at + 1);
+    return '$scheme:${_encodeSipUser(user)}@$domain';
+  }
+
   void _subscribe(String n) {
     final ev = using((a) {
       final addr = _createAddress(
         _factory,
-        'sip:$n'.toNativeUtf8(allocator: a),
+        _sipAddressFor(n).toNativeUtf8(allocator: a),
       );
       if (addr == nullptr) return nullptr;
       // 600 s richiesti; il PBX può accorciarli, il core rinnova da solo.

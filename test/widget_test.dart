@@ -1067,4 +1067,131 @@ void main() {
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());
   });
+
+  test('BLF Trunk e codici *8XX/*9XX: monitoraggio, dialCode e impegno linea', () async {
+    await phone.saveAccount(_account);
+    engine.registrationsCtl.add(const RegistrationEvent(RegistrationStatus.ok));
+
+    const trunkKey = FunctionKey(
+      id: 't1',
+      kind: FunctionKeyKind.trunk,
+      label: 'ISDN Telecom',
+      target: 'Linea ISDN 1',
+      dialCode: '9',
+    );
+    const blfTrunkKey = FunctionKey(
+      id: 't2',
+      kind: FunctionKeyKind.blf,
+      label: 'FXO Principale',
+      target: 'FXO_1',
+    );
+    const featureKey = FunctionKey(
+      id: 't3',
+      kind: FunctionKeyKind.blf,
+      label: 'Night Mode',
+      target: '*801',
+    );
+    await phone.saveFunctionKey(trunkKey);
+    await phone.saveFunctionKey(blfTrunkKey);
+    await phone.saveFunctionKey(featureKey);
+
+    final reloaded = await store.load();
+    expect(reloaded.functionKeys.length, 3);
+    expect(reloaded.functionKeys.first.kind, FunctionKeyKind.trunk);
+    expect(reloaded.functionKeys.first.dialCode, '9');
+    expect(
+      engine.watched,
+      containsAll(['Linea ISDN 1@pbx.test', 'FXO_1@pbx.test', '*801@pbx.test']),
+    );
+
+    // Aggiornamento stato via NOTIFY su nome logico trunk e codice funzione.
+    engine.dialogsCtl.add(
+      const BlfEvent('Linea ISDN 1@pbx.test', BlfStatus.busy),
+    );
+    engine.dialogsCtl.add(const BlfEvent('*801@pbx.test', BlfStatus.ringing));
+    expect(phone.blfOfNumber('Linea ISDN 1'), BlfStatus.busy);
+    expect(phone.blfOfNumber('*801'), BlfStatus.ringing);
+
+    // Clic su *801 compone direttamente il codice funzione (senza extPickupCode).
+    engine.log.clear();
+    await phone.triggerFunctionKey(featureKey);
+    expect(engine.log, contains('dial *801'));
+
+    // Clic su nome logico trunk senza dialCode NON compone un INVITE al nome trunk.
+    engine.log.clear();
+    await phone.triggerFunctionKey(blfTrunkKey);
+    expect(engine.log.where((l) => l.startsWith('dial ')), isEmpty);
+
+    // Impegno linea con prefisso e numero destinazione.
+    await phone.seizeTrunk(trunkKey, number: '02123456');
+    expect(engine.log, contains('dial 902123456'));
+
+    // Clic diretto su tasto trunk con dialCode impegna il prefisso.
+    engine.log.clear();
+    await phone.triggerFunctionKey(trunkKey);
+    expect(engine.log, contains('dial 9'));
+  });
+
+  testWidgets('Pannello BLF Trunk: stato linea e dialogo impegno linea', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1366, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    late PhoneController p;
+    await tester.runAsync(() async {
+      await store.save(
+        const Settings(
+          accounts: [_account],
+          functionKeys: [
+            FunctionKey(
+              id: 'tr1',
+              kind: FunctionKeyKind.trunk,
+              label: 'ISDN Telecom',
+              target: 'Linea ISDN 1',
+              dialCode: '9',
+            ),
+          ],
+        ),
+      );
+      p = PhoneController(
+        engine,
+        store,
+        engineDataDir: tmp.path,
+        logDir: tmp.path,
+      );
+      await p.init();
+    });
+    engine.registrationsCtl.add(const RegistrationEvent(RegistrationStatus.ok));
+    engine.dialogsCtl.add(
+      const BlfEvent('Linea ISDN 1@pbx.test', BlfStatus.busy),
+    );
+
+    await tester.pumpWidget(DrinPhoneApp(phone: p));
+    await tester.pump(const Duration(milliseconds: 300));
+
+    await tester.tap(find.byTooltip('Tasti funzione / BLF'));
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(find.text('ISDN Telecom'), findsOneWidget);
+    expect(find.text('Linea ISDN 1 · Occupato'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Azioni'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Chiama tramite questa linea…'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Impegna linea ISDN Telecom'), findsOneWidget);
+    await tester.enterText(
+      find.widgetWithText(TextField, 'Numero da chiamare (opzionale)'),
+      '02123456',
+    );
+    await tester.pump();
+    await tester.tap(find.text('Chiama'));
+    await tester.pumpAndSettle();
+
+    expect(engine.log, contains('dial 902123456'));
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+  });
 }

@@ -629,16 +629,17 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _functionKeysButton(DrinColors c) {
     final open = p.viewFlag('fnKeys.open');
     final keys = p.settings.functionKeys;
+    bool isWatched(FunctionKey k) =>
+        k.kind == FunctionKeyKind.blf || k.kind == FunctionKeyKind.trunk;
     final ringing = keys.any(
       (k) =>
-          k.kind == FunctionKeyKind.blf &&
+          isWatched(k) &&
           (p.blfOfNumber(k.target) == BlfStatus.ringing ||
-              p.liveOfNumber(k.target)?.state == LiveState.ringing),
+              (k.kind == FunctionKeyKind.blf &&
+                  p.liveOfNumber(k.target)?.state == LiveState.ringing)),
     );
     final busy = keys.any(
-      (k) =>
-          k.kind == FunctionKeyKind.blf &&
-          p.blfOfNumber(k.target) == BlfStatus.busy,
+      (k) => isWatched(k) && p.blfOfNumber(k.target) == BlfStatus.busy,
     );
     return Tooltip(
       message: tr('Tasti funzione / BLF'),

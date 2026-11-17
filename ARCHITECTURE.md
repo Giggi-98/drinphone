@@ -36,7 +36,7 @@ lib/core/platform/mic_busy_monitor.dart rilevamento microfono in uso da altre ap
 lib/core/platform/screen_pop.dart   Screen Pop HTTP/HTTPS verso CRM via ShellExecuteW (shell32.dll)
 lib/core/security/settings_store.dart  impostazioni JSON + password in storage sicuro
 lib/features/shell/home_screen.dart barra sezioni, barra composizione, tasto BLF, griglia interni
-lib/features/shell/function_keys_panel.dart pannello laterale/modale Tasti funzione / BLF (BLF, chiamate rapide, DTMF, parcheggio, pickup, DND, code)
+lib/features/shell/function_keys_panel.dart pannello laterale/modale Tasti funzione / BLF (BLF interni/trunk/*8XX/*9XX, impegno linea, chiamate rapide, DTMF, parcheggio, pickup, DND, code)
 lib/features/call/                  pannello chiamata, tastierino (anche DTMF)
 lib/features/account/               editor account SIP, pannello connessioni PBX
 lib/features/preferences/           Preferenze a schede (utente, audio, PBX, lingua…)

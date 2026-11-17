@@ -6,6 +6,12 @@ aggiungi una voce nuova in cima che cita la vecchia. Il campo chiave è
 
 ---
 
+## 2026-11-17 · Estensione BLF: Trunk logici (VoIP/FXO/ISDN), impegno linea (`dialCode`) e codici Yeastar `*8XX`/`*9XX` (`IMPLEMENTATO`, `DA VALIDARE` su PBX reale)
+Estende la voce `2026-11-17 · Tasti funzione / BLF accanto alla barra di composizione`:
+1. **Monitoraggio Trunk e codici funzione (`FunctionKeyKind.trunk`, `FunctionKeyKind.blf`, `LinphoneFfiEngine._sipAddressFor`):** i tasti `trunk` (e i `blf` con nome logico non numerico o codice `*8XX`/`*9XX`) vengono inclusi in `PhoneController._watched` ed emettono `SUBSCRIBE Event: dialog` verso `<target>@<host>` con percent-encoding RFC 3261 della parte userinfo quando il nome logico contiene spazi o caratteri non sicuri, mantenendo la chiave originale per il matching dei `NOTIFY` (`DialogInfoTracker`). Su integrazione Yeastar, `blfOfNumber` e `trunkLiveCalls` integrano le chiamate attive da `liveCalls` (`LiveMember.trunk`) per mostrare anche lo stato e gli interlocutori del trunk.
+2. **Impegno della linea (`FunctionKey.dialCode`, `PhoneController.seizeTrunk`):** poiche' un nome logico trunk non e' un numero SIP componibile, il campo opzionale `dialCode` specifica il prefisso/codice PBX per impegnare la linea (al clic o tramite il dialogo *Chiama tramite questa linea…* -> `<dialCode><numero>`). I codici `*8XX`/`*9XX` compongono direttamente `target` senza anteporre `extPickupCode`.
+   - **Da rivedere se:** un PBX Yeastar reale espone gli stati di linee FXO/ISDN/SIP solo tramite `SUBSCRIBE` con formato userinfo diverso o richiede uno specifico header/URI di trunk dialing.
+
 ## 2026-11-17 · Tasti funzione / BLF accanto alla barra di composizione (`IMPLEMENTATO`, `DA VALIDARE` su PBX reale)
 1. **Accesso rapido in top bar (`HomeScreen._functionKeysButton`, `FunctionKeysPanel`):** pulsante pillola `BLF` subito accanto a `SearchBox` che evidenzia eventuali squilli (`c.squillo`) o linee occupate (`c.busy`) e apre un pannello laterale destro affiancato su finestre larghe (persistito in `viewFlag('fnKeys.open')`) o modale sotto `940 px`.
 2. **Tipologie supportate (`FunctionKeyKind` in `SettingsStore`):** `blf` (BLF interno con `SUBSCRIBE dialog` automatica in `_watched`, pickup 1-clic se squilla, trasferimento cieco se in chiamata attiva o chiamata diretta), `speedDial` (chiamata rapida / trasferimento), `dtmf` (invio sequenza DTMF in chiamata, es. apri-portone), `park` (parcheggio/ripresa slot), `pickup` (codice o pickup diretto), `dnd` e `queuePause` (su integrazione Yeastar).

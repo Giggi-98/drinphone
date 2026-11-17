@@ -45,6 +45,7 @@ enum ProfileKind { yeastar, sip }
 /// Tipologia di tasto funzione programmabile nel pannello Tasti BLF / Funzione.
 enum FunctionKeyKind {
   blf,
+  trunk,
   speedDial,
   dtmf,
   park,
@@ -60,6 +61,7 @@ class FunctionKey {
     required this.kind,
     this.label = '',
     this.target = '',
+    this.dialCode = '',
   });
 
   final String id;
@@ -67,11 +69,15 @@ class FunctionKey {
   final String label;
   final String target;
 
+  /// Prefisso o codice opzionale per impegnare la linea (es. trunk FXO/ISDN/VoIP).
+  final String dialCode;
+
   Map<String, Object> toJson() => {
     'id': id,
     'kind': kind.name,
     'label': label,
     'target': target,
+    if (dialCode.isNotEmpty) 'dialCode': dialCode,
   };
 
   static FunctionKey fromJson(Map<String, dynamic> j) => FunctionKey(
@@ -80,6 +86,7 @@ class FunctionKey {
         FunctionKeyKind.values.asNameMap()[j['kind']] ?? FunctionKeyKind.blf,
     label: j['label'] as String? ?? '',
     target: j['target'] as String? ?? '',
+    dialCode: j['dialCode'] as String? ?? '',
   );
 }
 
