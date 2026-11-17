@@ -629,14 +629,12 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _functionKeysButton(DrinColors c) {
     final open = p.viewFlag('fnKeys.open');
     final keys = p.settings.functionKeys;
-    bool isWatched(FunctionKey k) =>
-        k.kind == FunctionKeyKind.blf || k.kind == FunctionKeyKind.trunk;
+    bool isWatched(FunctionKey k) => k.kind == FunctionKeyKind.blf;
     final ringing = keys.any(
       (k) =>
           isWatched(k) &&
           (p.blfOfNumber(k.target) == BlfStatus.ringing ||
-              (k.kind == FunctionKeyKind.blf &&
-                  p.liveOfNumber(k.target)?.state == LiveState.ringing)),
+              p.liveOfNumber(k.target)?.state == LiveState.ringing),
     );
     final busy = keys.any(
       (k) => isWatched(k) && p.blfOfNumber(k.target) == BlfStatus.busy,

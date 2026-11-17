@@ -45,7 +45,6 @@ enum ProfileKind { yeastar, sip }
 /// Tipologia di tasto funzione programmabile nel pannello Tasti BLF / Funzione.
 enum FunctionKeyKind {
   blf,
-  trunk,
   speedDial,
   dtmf,
   park,

@@ -1068,22 +1068,36 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
-  test('BLF Trunk e codici *8XX/*9XX: monitoraggio, dialCode e impegno linea', () async {
+  test('BLF unico per interni, trunk/linee, *8XX/*9XX e impegno diretto', () async {
     await phone.saveAccount(_account);
     engine.registrationsCtl.add(const RegistrationEvent(RegistrationStatus.ok));
 
-    const trunkKey = FunctionKey(
+    // Compatibilità retroattiva: un tasto JSON salvato con kind 'trunk' migra a blf.
+    final migrated = FunctionKey.fromJson({
+      'id': 'old',
+      'kind': 'trunk',
+      'label': 'GSM',
+      'target': 'TG100-Acc',
+    });
+    expect(migrated.kind, FunctionKeyKind.blf);
+
+    // Oltre maxBlf interni in rubrica: i tasti BLF configurati restano prioritari.
+    for (var i = 0; i < PhoneController.maxBlf + 5; i++) {
+      await phone.addExtension(Extension('Int $i', '${1000 + i}'));
+    }
+
+    const trunkWithPrefix = FunctionKey(
       id: 't1',
-      kind: FunctionKeyKind.trunk,
+      kind: FunctionKeyKind.blf,
       label: 'ISDN Telecom',
       target: 'Linea ISDN 1',
       dialCode: '9',
     );
-    const blfTrunkKey = FunctionKey(
+    const trunkDirect = FunctionKey(
       id: 't2',
       kind: FunctionKeyKind.blf,
-      label: 'FXO Principale',
-      target: 'FXO_1',
+      label: 'GSM',
+      target: 'TG100-Acc',
     );
     const featureKey = FunctionKey(
       id: 't3',
@@ -1091,25 +1105,29 @@ void main() {
       label: 'Night Mode',
       target: '*801',
     );
-    await phone.saveFunctionKey(trunkKey);
-    await phone.saveFunctionKey(blfTrunkKey);
+    await phone.saveFunctionKey(trunkWithPrefix);
+    await phone.saveFunctionKey(trunkDirect);
     await phone.saveFunctionKey(featureKey);
 
     final reloaded = await store.load();
     expect(reloaded.functionKeys.length, 3);
-    expect(reloaded.functionKeys.first.kind, FunctionKeyKind.trunk);
+    expect(reloaded.functionKeys.first.kind, FunctionKeyKind.blf);
     expect(reloaded.functionKeys.first.dialCode, '9');
     expect(
       engine.watched,
-      containsAll(['Linea ISDN 1@pbx.test', 'FXO_1@pbx.test', '*801@pbx.test']),
+      containsAll(['Linea ISDN 1@pbx.test', 'TG100-Acc@pbx.test', '*801@pbx.test']),
     );
 
     // Aggiornamento stato via NOTIFY su nome logico trunk e codice funzione.
     engine.dialogsCtl.add(
       const BlfEvent('Linea ISDN 1@pbx.test', BlfStatus.busy),
     );
+    engine.dialogsCtl.add(
+      const BlfEvent('TG100-Acc@pbx.test', BlfStatus.idle),
+    );
     engine.dialogsCtl.add(const BlfEvent('*801@pbx.test', BlfStatus.ringing));
     expect(phone.blfOfNumber('Linea ISDN 1'), BlfStatus.busy);
+    expect(phone.blfOfNumber('TG100-Acc'), BlfStatus.idle);
     expect(phone.blfOfNumber('*801'), BlfStatus.ringing);
 
     // Clic su *801 compone direttamente il codice funzione (senza extPickupCode).
@@ -1117,22 +1135,23 @@ void main() {
     await phone.triggerFunctionKey(featureKey);
     expect(engine.log, contains('dial *801'));
 
-    // Clic su nome logico trunk senza dialCode NON compone un INVITE al nome trunk.
+    // Clic su trunk senza prefisso impegna direttamente la linea sul PBX.
     engine.log.clear();
-    await phone.triggerFunctionKey(blfTrunkKey);
-    expect(engine.log.where((l) => l.startsWith('dial ')), isEmpty);
+    await phone.triggerFunctionKey(trunkDirect);
+    expect(engine.log, contains('dial TG100-Acc'));
 
-    // Impegno linea con prefisso e numero destinazione.
-    await phone.seizeTrunk(trunkKey, number: '02123456');
+    // Impegno linea con prefisso accessorio e numero destinazione.
+    engine.log.clear();
+    await phone.seizeTrunk(trunkWithPrefix, number: '02123456');
     expect(engine.log, contains('dial 902123456'));
 
-    // Clic diretto su tasto trunk con dialCode impegna il prefisso.
+    // Clic diretto su tasto con dialCode impegna il prefisso accessorio.
     engine.log.clear();
-    await phone.triggerFunctionKey(trunkKey);
+    await phone.triggerFunctionKey(trunkWithPrefix);
     expect(engine.log, contains('dial 9'));
   });
 
-  testWidgets('Pannello BLF Trunk: stato linea e dialogo impegno linea', (
+  testWidgets('Pannello BLF Trunk: stato linea, motivo 404 e dialogo impegno linea', (
     tester,
   ) async {
     tester.view.physicalSize = const Size(1366, 800);
@@ -1146,10 +1165,16 @@ void main() {
           functionKeys: [
             FunctionKey(
               id: 'tr1',
-              kind: FunctionKeyKind.trunk,
+              kind: FunctionKeyKind.blf,
               label: 'ISDN Telecom',
               target: 'Linea ISDN 1',
               dialCode: '9',
+            ),
+            FunctionKey(
+              id: 'tr2',
+              kind: FunctionKeyKind.blf,
+              label: 'GSM',
+              target: 'TG100-Acc',
             ),
           ],
         ),
@@ -1166,6 +1191,9 @@ void main() {
     engine.dialogsCtl.add(
       const BlfEvent('Linea ISDN 1@pbx.test', BlfStatus.busy),
     );
+    engine.dialogsCtl.add(
+      const BlfEvent('TG100-Acc@pbx.test', BlfStatus.unknown, 'Not Found'),
+    );
 
     await tester.pumpWidget(DrinPhoneApp(phone: p));
     await tester.pump(const Duration(milliseconds: 300));
@@ -1175,8 +1203,9 @@ void main() {
 
     expect(find.text('ISDN Telecom'), findsOneWidget);
     expect(find.text('Linea ISDN 1 · Occupato'), findsOneWidget);
+    expect(find.text('TG100-Acc · Stato sconosciuto (Not Found)'), findsOneWidget);
 
-    await tester.tap(find.byTooltip('Azioni'));
+    await tester.tap(find.byTooltip('Azioni').first);
     await tester.pumpAndSettle();
     await tester.tap(find.text('Chiama tramite questa linea…'));
     await tester.pumpAndSettle();

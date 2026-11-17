@@ -992,9 +992,8 @@ const en = <String, String>{
   'BLF': 'BLF',
   'Tasti funzione': 'Function keys',
   'BLF (Interno)': 'BLF (Extension)',
-  'BLF (Interno / *8XX / *9XX / Trunk)':
-      'BLF (Extension / *8XX / *9XX / Trunk)',
-  'BLF Linea / Trunk (VoIP, FXO, ISDN)': 'BLF Line / Trunk (VoIP, FXO, ISDN)',
+  'BLF (interno, linea/trunk o codice *8XX/*9XX)':
+      'BLF (extension, line/trunk or *8XX/*9XX code)',
   'Chiamata rapida': 'Speed dial',
   'DTMF rapido': 'Quick DTMF',
   'Pickup / Codice': 'Pickup / Feature code',
@@ -1018,18 +1017,14 @@ const en = <String, String>{
   'Tipo di tasto': 'Key type',
   'Etichetta (opzionale)': 'Label (optional)',
   'Numero interno': 'Extension number',
-  'Valore BLF (interno, *8XX/*9XX o nome trunk)':
-      'BLF value (extension, *8XX/*9XX or trunk name)',
-  'Nome logico del trunk (VoIP, FXO, ISDN…)':
-      'Trunk logical name (VoIP, FXO, ISDN…)',
-  'Es. 301, *801, *90 oppure nome logico del trunk':
-      'E.g. 301, *801, *90 or the trunk logical name',
-  'Nome esatto sul PBX (es. FXO1, ISDN_1, Telecom_SIP)':
-      'Exact PBX trunk name (e.g. FXO1, ISDN_1, Telecom_SIP)',
-  'Prefisso o codice impegno linea (opzionale)':
-      'Line seize prefix or code (optional)',
-  'Es. 9 o *91 per impegnare direttamente questa linea al clic':
-      'E.g. 9 or *91 to seize this line directly on click',
+  'Valore BLF (interno, *8XX/*9XX o nome linea/trunk)':
+      'BLF value (extension, *8XX/*9XX or line/trunk name)',
+  'Es. 301, *801, TG100-Acc oppure 306_TG100-Acc (SLA)':
+      'E.g. 301, *801, TG100-Acc or 306_TG100-Acc (SLA)',
+  'Prefisso automatico impegno linea (opzionale)':
+      'Automatic line-seize prefix (optional)',
+  'Vuoto = al clic impegna direttamente il valore BLF (es. 9 o *91 opzionale)':
+      'Empty = click seizes the BLF value directly (e.g. optional 9 or *91)',
   'Impegna linea {n}': 'Seize line {n}',
   'Numero da chiamare (opzionale)': 'Number to call (optional)',
   'Prefisso linea: {p}': 'Line prefix: {p}',

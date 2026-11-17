@@ -1196,7 +1196,10 @@ class LinphoneFfiEngine implements SipEngine {
     final call = acc == null
         ? using((a) {
             // Account predefinito: il core completa il numero con il suo dominio.
-            final to = _interpretUrl(_core, number.toNativeUtf8(allocator: a));
+            final target = number.contains('@')
+                ? _sipAddressFor(number)
+                : _encodeSipUser(number.trim());
+            final to = _interpretUrl(_core, target.toNativeUtf8(allocator: a));
             if (to == nullptr) return nullptr;
             final params = _createCallParams(_core, nullptr);
             _paramsEnableVideo(params, video ? 1 : 0);
@@ -1209,9 +1212,9 @@ class LinphoneFfiEngine implements SipEngine {
         : using((a) {
             // Account esplicito (multi-PBX): indirizzo sul suo host e parametri
             // di chiamata legati a quell'account.
-            final uri = number.contains('@')
-                ? 'sip:$number'
-                : 'sip:$number@${_accountHosts[accountId]}';
+            final uri = _sipAddressFor(
+              number.contains('@') ? number : '$number@${_accountHosts[accountId]}',
+            );
             final to = _createAddress(_factory, uri.toNativeUtf8(allocator: a));
             if (to == nullptr) return nullptr;
             final params = _createCallParams(_core, nullptr);

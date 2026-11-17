@@ -6,6 +6,12 @@ aggiungi una voce nuova in cima che cita la vecchia. Il campo chiave è
 
 ---
 
+## 2026-11-17 · Selezione BLF unica e impegno diretto al clic (`IMPLEMENTATO`, `DA VALIDARE` su PBX reale)
+Ribalta/semplifica la voce precedente `2026-11-17 · Estensione BLF: Trunk logici (VoIP/FXO/ISDN)`:
+1. **Selezione BLF unica (`FunctionKeyKind.blf`):** rimosso il tipo separato `trunk` dall'interfaccia (in `FunctionKey.fromJson` i vecchi `'trunk'` migrano automaticamente a `blf`). Un unico tasto BLF riconosce in automatico interni, codici funzione `*8XX`/`*9XX` e nomi di linea/trunk (compresi trunk numerici riconosciuti da `knownTrunkNames` o con `dialCode`), dando priorita' in `_watched` ai tasti BLF configurati prima della griglia interni fino a `maxBlf`.
+2. **Impegno diretto e motivo rifiuto PBX visibile:** se `dialCode` (accessorio e opzionale) e' vuoto, il clic su un BLF impegna direttamente `target` sul PBX (`dial(target)`). Se il PBX rifiuta la `SUBSCRIBE` (es. `404 Not Found` osservato in `linphone.log` su Yeastar S-Series verso `TG100-Acc`, dove i trunk SIP/account senza hint Seize-Line o SLA `<interno>_<trunk>` restituiscono `404`), il sottotitolo mostra `Stato sconosciuto (<motivo>)` senza falsare un verde fittizio.
+   - **Da rivedere se:** il PBX attiva un feed OpenAPI `trunk/list` (Yeastar P-Series) da affiancare al `SUBSCRIBE` SIP.
+
 ## 2026-11-17 · Estensione BLF: Trunk logici (VoIP/FXO/ISDN), impegno linea (`dialCode`) e codici Yeastar `*8XX`/`*9XX` (`IMPLEMENTATO`, `DA VALIDARE` su PBX reale)
 Estende la voce `2026-11-17 · Tasti funzione / BLF accanto alla barra di composizione`:
 1. **Monitoraggio Trunk e codici funzione (`FunctionKeyKind.trunk`, `FunctionKeyKind.blf`, `LinphoneFfiEngine._sipAddressFor`):** i tasti `trunk` (e i `blf` con nome logico non numerico o codice `*8XX`/`*9XX`) vengono inclusi in `PhoneController._watched` ed emettono `SUBSCRIBE Event: dialog` verso `<target>@<host>` con percent-encoding RFC 3261 della parte userinfo quando il nome logico contiene spazi o caratteri non sicuri, mantenendo la chiave originale per il matching dei `NOTIFY` (`DialogInfoTracker`). Su integrazione Yeastar, `blfOfNumber` e `trunkLiveCalls` integrano le chiamate attive da `liveCalls` (`LiveMember.trunk`) per mostrare anche lo stato e gli interlocutori del trunk.
