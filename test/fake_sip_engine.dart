@@ -205,6 +205,12 @@ class FakeSipEngine implements SipEngine {
   @override
   Future<void> answer(int id, {bool video = false}) async =>
       log.add('answer $id${video ? ' video' : ''}');
+  bool earlyMediaResult = true;
+  @override
+  Future<bool> acceptEarlyMedia(int id, {bool video = true}) async {
+    log.add('earlyMedia $id video=$video');
+    return earlyMediaResult;
+  }
   @override
   Future<void> hangup(int id) async => log.add('hangup $id');
 

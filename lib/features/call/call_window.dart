@@ -83,7 +83,11 @@ class _CallWindowState extends State<CallWindow> {
     final isVideo =
         call != null &&
         call.video &&
-        (call.phase == CallPhase.active || call.phase == CallPhase.paused);
+        (call.phase == CallPhase.active ||
+            call.phase == CallPhase.paused ||
+            (call.phase == CallPhase.incoming &&
+                call.earlyMedia &&
+                p.videoEnabled));
     if (isVideo && !_wasVideo) {
       // Le finestre native MSOGL coprono i popup Flutter: chiudi eventuali menu.
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -178,8 +182,10 @@ class _CallWindowState extends State<CallWindow> {
   Widget _incoming(CallEvent call) {
     final c = context.drin;
     final name = _nameOf(call);
+    final showPreview = call.earlyMedia && call.video && p.videoEnabled;
     // Il momento del marchio (DESIGN.md §6): avatar che oscilla come un
-    // campanello, onde e "!" del logo in squilloLine.
+    // campanello, onde e "!" del logo in squilloLine. Con Auto Preview
+    // (videocitofono in early media) compare subito il riquadro video live.
     return _Entrance(
       child: Material(
         color: c.surface,
@@ -187,7 +193,7 @@ class _CallWindowState extends State<CallWindow> {
         shadowColor: Colors.black54,
         borderRadius: BorderRadius.circular(DrinRadius.sheet),
         child: Container(
-          width: 380,
+          width: showPreview ? 420 : 380,
           padding: const EdgeInsets.fromLTRB(
             DrinSpace.s5,
             DrinSpace.s4,
@@ -211,18 +217,38 @@ class _CallWindowState extends State<CallWindow> {
                       style: DrinText.label.copyWith(color: c.muted),
                     ),
                   ),
+                  if (showPreview) ...[
+                    _Tag(text: tr('Auto Preview'), color: c.primary),
+                    const SizedBox(width: DrinSpace.s2),
+                  ],
                   _Bang(color: c.squilloLine),
                 ],
               ),
               const SizedBox(height: DrinSpace.s3),
-              // Niente anteprima durante lo squillo: liblinphone avvia la webcam
-              // solo con lo stream della chiamata, cioè dopo la risposta.
-              _RingingAvatar(name: name.isNotEmpty ? name : call.remoteNumber),
+              if (showPreview)
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(DrinRadius.panel),
+                  child: SizedBox(
+                    height: 210,
+                    width: double.infinity,
+                    child: VideoSlot(
+                      surface: p.remoteSurface,
+                      label: tr('Anteprima video in arrivo'),
+                    ),
+                  ),
+                )
+              else
+                // Niente anteprima webcam locale durante lo squillo:
+                // la webcam si avvia solo dopo la risposta.
+                _RingingAvatar(
+                  name: name.isNotEmpty ? name : call.remoteNumber,
+                ),
               const SizedBox(height: DrinSpace.s3),
               Text(
                 name.isNotEmpty ? name : call.remoteNumber,
                 overflow: TextOverflow.ellipsis,
-                style: DrinText.displayStyle.copyWith(color: c.ink),
+                style: (showPreview ? DrinText.title : DrinText.displayStyle)
+                    .copyWith(color: c.ink),
               ),
               if (name.isNotEmpty)
                 Text(

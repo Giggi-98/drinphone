@@ -131,6 +131,7 @@ class VideoOptions {
     this.enabled = true,
     this.camera = '',
     this.preview = false,
+    this.autoPreviewIncoming = false,
     this.quality = VideoQuality.medium,
   });
 
@@ -145,6 +146,10 @@ class VideoOptions {
 
   /// Anteprima della propria webcam durante le videochiamate.
   final bool preview;
+
+  /// Auto Preview su chiamate video in arrivo (early media prima di rispondere,
+  /// es. videocitofoni): riceve il flusso video senza attivare mic/webcam.
+  final bool autoPreviewIncoming;
 }
 
 /// Opzioni globali delle chiamate (Preferenze > Avanzate).
@@ -203,6 +208,7 @@ class CallEvent {
     this.message = '',
     this.video = false,
     this.remoteVideo = false,
+    this.earlyMedia = false,
     this.accountId = '',
     this.inConference = false,
   });
@@ -218,6 +224,9 @@ class CallEvent {
 
   /// L'altro capo offre il video (entrante: si può rispondere in video).
   final bool remoteVideo;
+
+  /// Chiamata entrante in early media (es. Auto Preview videocitofono).
+  final bool earlyMedia;
 
   /// Identifica la chiamata finché esiste (più chiamate contemporanee).
   final int id;
@@ -371,6 +380,11 @@ abstract class SipEngine {
   /// restituisce il suo id (null se non partita).
   Future<int?> dial(String number, {String? accountId, bool video = false});
   Future<void> answer(int id, {bool video = false});
+
+  /// Avvia sessione early media in sola ricezione per una chiamata in arrivo
+  /// (es. Auto Preview da videocitofono prima della risposta).
+  Future<bool> acceptEarlyMedia(int id, {bool video = true}) async => false;
+
   Future<void> hangup(int id);
   Future<void> setMicMuted(bool muted);
   Future<void> sendDtmf(int id, String digit);

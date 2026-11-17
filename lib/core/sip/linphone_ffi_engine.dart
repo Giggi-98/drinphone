@@ -692,6 +692,16 @@ class LinphoneFfiEngine implements SipEngine {
         Void Function(Pointer<Void>, Uint8),
         void Function(Pointer<Void>, int)
       >('linphone_call_params_enable_video');
+  late final _paramsEnableCamera = _lib
+      .lookupFunction<
+        Void Function(Pointer<Void>, Uint8),
+        void Function(Pointer<Void>, int)
+      >('linphone_call_params_enable_camera');
+  late final _paramsSetVideoDirection = _lib
+      .lookupFunction<
+        Void Function(Pointer<Void>, Int32),
+        void Function(Pointer<Void>, int)
+      >('linphone_call_params_set_video_direction');
   late final _paramsVideoEnabled = _lib
       .lookupFunction<
         Uint8 Function(Pointer<Void>),
@@ -741,6 +751,10 @@ class LinphoneFfiEngine implements SipEngine {
   late final _acceptWithParams = _lib.lookupFunction<_IntPP, _IntPPDart>(
     'linphone_call_accept_with_params',
   );
+  late final _acceptEarlyMediaWithParams = _lib
+      .lookupFunction<_IntPP, _IntPPDart>(
+        'linphone_call_accept_early_media_with_params',
+      );
   late final _callUpdate = _lib.lookupFunction<_IntPP, _IntPPDart>(
     'linphone_call_update',
   );
@@ -1237,6 +1251,9 @@ class LinphoneFfiEngine implements SipEngine {
       return;
     }
     _paramsEnableVideo(params, video ? 1 : 0);
+    _paramsEnableCamera(params, video ? 1 : 0);
+    // 3 = LinphoneMediaDirectionSendRecv, 0 = LinphoneMediaDirectionInactive.
+    _paramsSetVideoDirection(params, video ? 3 : 0);
     using((a) {
       final remote = _remoteAddress(call);
       _setRecordFile(
@@ -1247,6 +1264,23 @@ class LinphoneFfiEngine implements SipEngine {
     });
     _acceptWithParams(call, params);
     _callParamsUnref(params);
+  }
+
+  @override
+  Future<bool> acceptEarlyMedia(int id, {bool video = true}) async {
+    final call = _ptr(id);
+    if (call == nullptr) return false;
+    final params = _createCallParams(_core, call);
+    if (params == nullptr) return false;
+    try {
+      _paramsEnableVideo(params, video ? 1 : 0);
+      _paramsEnableCamera(params, 0);
+      // 2 = LinphoneMediaDirectionRecvOnly: riceve il flusso video senza inviare webcam.
+      _paramsSetVideoDirection(params, video ? 2 : 0);
+      return _acceptEarlyMediaWithParams(call, params) == 0;
+    } finally {
+      _callParamsUnref(params);
+    }
   }
 
   String _recordingDir = '';
@@ -1803,6 +1837,7 @@ class LinphoneFfiEngine implements SipEngine {
         message: _str(msg),
         video: _videoOf(_callCurrentParams(call)),
         remoteVideo: _videoOf(_callRemoteParams(call)),
+        earlyMedia: state == 17,
         accountId: _accountIdOf(call),
         inConference: _callConference(call) != nullptr,
       ),

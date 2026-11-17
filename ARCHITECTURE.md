@@ -305,9 +305,10 @@ spikes/f0a/                         spike F0-A (non prodotto)
   account), keep-alive, DTMF RFC 2833 / SIP INFO; applicate all'avvio.
 - **Videochiamate** (`IMPLEMENTATO`; codec H264/VP8 e webcam `VERIFICATI` al caricamento
   sul pilota, chiamata video reale `DA VALIDARE`) — DECISIONS "Videochiamate".
-  `SipEngine`: `dial/answer(video)`, `setCallVideo`, `setVideo` (webcam, cattura e
-  visualizzazione nel core), `videoDevices`, `videoCodecs`, `setVideoWindows`;
-  `CallEvent.video/remoteVideo`. Video remoto e anteprima disegnati da MSOGL
+  `SipEngine`: `dial/answer(video)`, `acceptEarlyMedia(id, video)` (early media
+  `RecvOnly` per Auto Preview videocitofoni in ingresso), `setCallVideo`,
+  `setVideo` (webcam, cattura e visualizzazione nel core), `videoDevices`,
+  `videoCodecs`, `setVideoWindows`; `CallEvent.video/remoteVideo/earlyMedia`. Video remoto e anteprima disegnati da MSOGL
   (contesto `MSOglContextInfo`, non l'HWND) in **due finestre permanenti**
   (`core/platform/video_surface.dart`): popup di proprietà della finestra
   dell'app, create all'avvio da un **thread dedicato** con il suo ciclo di

@@ -2492,12 +2492,27 @@ class PhoneController extends ChangeNotifier {
               message: e.message,
               video: e.video,
               remoteVideo: e.remoteVideo,
+              earlyMedia: e.earlyMedia,
               accountId: e.accountId,
               inConference: e.inConference,
             )
           : e;
     }
     notifyListeners();
+    if (isNew &&
+        e.phase == CallPhase.incoming &&
+        e.remoteVideo &&
+        videoEnabled &&
+        settings.video.autoPreviewIncoming) {
+      final hasBusyCall = calls.values.any(
+        (c) =>
+            c.id != e.id &&
+            (c.phase == CallPhase.active || c.phase == CallPhase.outgoing),
+      );
+      if (!hasBusyCall) {
+        unawaited(_engine.acceptEarlyMedia(e.id, video: true));
+      }
+    }
     if (isNew &&
         e.phase == CallPhase.incoming &&
         settings.callOptions.autoAnswer &&

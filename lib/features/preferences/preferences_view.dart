@@ -1960,6 +1960,7 @@ class _VideoTabState extends State<_VideoTab> {
     bool? enabled,
     String? camera,
     bool? preview,
+    bool? autoPreviewIncoming,
     VideoQuality? quality,
   }) {
     final o = p.settings.video;
@@ -1968,6 +1969,7 @@ class _VideoTabState extends State<_VideoTab> {
         enabled: enabled ?? o.enabled,
         camera: camera ?? o.camera,
         preview: preview ?? o.preview,
+        autoPreviewIncoming: autoPreviewIncoming ?? o.autoPreviewIncoming,
         quality: quality ?? o.quality,
       ),
     );
@@ -2103,6 +2105,19 @@ class _VideoTabState extends State<_VideoTab> {
                 ),
                 value: o.preview,
                 onChanged: o.enabled ? (v) => _set(preview: v) : null,
+              ),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: Text(tr('Auto Preview video in arrivo')),
+                subtitle: Text(
+                  tr(
+                    'Mostra subito il flusso video di chi chiama (es. videocitofoni) prima di rispondere, senza attivare microfono né webcam',
+                  ),
+                ),
+                value: o.autoPreviewIncoming,
+                onChanged: o.enabled
+                    ? (v) => _set(autoPreviewIncoming: v)
+                    : null,
               ),
               const SizedBox(height: 8),
               // Prova fuori dalle chiamate: webcam e visualizzazione.

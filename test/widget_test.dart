@@ -888,4 +888,86 @@ void main() {
     );
     await Future<void>.delayed(const Duration(milliseconds: 1200));
   });
+
+  test('Auto Preview video in arrivo: salvato e attivato solo senza chiamate attive', () async {
+    await phone.saveAccount(_account);
+    await phone.setVideoOptions(
+      const VideoOptions(enabled: true, autoPreviewIncoming: true),
+    );
+    final reloaded = await store.load();
+    expect(reloaded.video.autoPreviewIncoming, isTrue);
+
+    // Chiamata video in arrivo (es. videocitofono): avvia early media.
+    engine.callsCtl.add(
+      const CallEvent(
+        id: 41,
+        phase: CallPhase.incoming,
+        direction: CallDirection.incoming,
+        remoteNumber: '801',
+        remoteName: 'Videocitofono',
+        remoteVideo: true,
+      ),
+    );
+    await Future<void>.delayed(Duration.zero);
+    expect(engine.log, contains('earlyMedia 41 video=true'));
+
+    // Con chiamata attiva in corso, seconda chiamata video NON avvia early media.
+    engine.log.clear();
+    engine.callsCtl.add(
+      const CallEvent(
+        id: 41,
+        phase: CallPhase.active,
+        direction: CallDirection.incoming,
+        remoteNumber: '801',
+      ),
+    );
+    engine.callsCtl.add(
+      const CallEvent(
+        id: 42,
+        phase: CallPhase.incoming,
+        direction: CallDirection.incoming,
+        remoteNumber: '802',
+        remoteVideo: true,
+      ),
+    );
+    await Future<void>.delayed(Duration.zero);
+    expect(engine.log.where((l) => l.startsWith('earlyMedia')), isEmpty);
+  });
+
+  testWidgets('CallWindow: Auto Preview mostra riquadro video in chiamata entrante', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1366, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.runAsync(() async {
+      await phone.saveAccount(_account);
+      await phone.setVideoOptions(
+        const VideoOptions(enabled: true, autoPreviewIncoming: true),
+      );
+    });
+    await tester.pumpWidget(DrinPhoneApp(phone: phone));
+    await tester.pump(const Duration(milliseconds: 200));
+
+    engine.callsCtl.add(
+      const CallEvent(
+        id: 55,
+        phase: CallPhase.incoming,
+        direction: CallDirection.incoming,
+        remoteNumber: '801',
+        remoteName: 'Ingresso',
+        video: true,
+        remoteVideo: true,
+        earlyMedia: true,
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.text('Auto Preview'), findsOneWidget);
+    expect(find.text('Anteprima video in arrivo'), findsOneWidget);
+    expect(find.text('Rispondi'), findsOneWidget);
+    expect(find.text('Rispondi in video'), findsOneWidget);
+    expect(find.text('Rifiuta'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+  });
 }

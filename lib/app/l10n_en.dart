@@ -983,4 +983,9 @@ const en = <String, String>{
   'picco': 'peak hour',
   'Controllo ogni 15 min e al rientro': 'Checks every 15 min and on focus',
   'Disponibile DrinPhone {v}': 'DrinPhone {v} available',
+  'Auto Preview video in arrivo': 'Incoming video Auto Preview',
+  'Mostra subito il flusso video di chi chiama (es. videocitofoni) prima di rispondere, senza attivare microfono né webcam':
+      'Immediately show the caller’s video stream (e.g. video intercoms) before answering, without enabling mic or camera',
+  'Auto Preview': 'Auto Preview',
+  'Anteprima video in arrivo': 'Incoming video preview',
 };
