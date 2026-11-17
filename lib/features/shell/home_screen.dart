@@ -28,6 +28,7 @@ import '../voicemail/voicemail_view.dart';
 import '../update/release_notes_dialog.dart';
 import '../update/update_panel.dart';
 import 'desktop_shell.dart';
+import 'function_keys_panel.dart';
 import 'search_box.dart';
 import 'shortcuts.dart';
 import 'widgets.dart';
@@ -290,6 +291,32 @@ class _HomeScreenState extends State<HomeScreen> {
     _section = _Section.preferences;
   });
 
+  Future<void> _toggleFunctionKeys() async {
+    final narrow = MediaQuery.sizeOf(context).width < 940;
+    if (!narrow) {
+      await p.setViewFlag('fnKeys.open', !p.viewFlag('fnKeys.open'));
+      return;
+    }
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => Dialog(
+        clipBehavior: Clip.antiAlias,
+        child: SizedBox(
+          width: 420,
+          height: 540,
+          child: ListenableBuilder(
+            listenable: p,
+            builder: (_, _) => FunctionKeysPanel(
+              phone: p,
+              isDialog: true,
+              onClose: () => Navigator.pop(ctx),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   /// Primo avvio rimandato con "Configura più tardi" (fino al riavvio).
   bool _setupLater = false;
 
@@ -394,48 +421,68 @@ class _HomeScreenState extends State<HomeScreen> {
                       _busyCallbackBanner(c, p, w),
                     Expanded(
                       // Live Calls sparisce senza eventi o nei profili SIP generici.
-                      child: AnimatedSectionSwitch(
-                        child: switch (_section == _Section.live &&
-                                !p.hasLiveCalls
-                            ? _Section.extensions
-                            : _section) {
-                          _Section.extensions => _ExtensionsView(
-                            key: const ValueKey('sec_ext'),
-                            phone: p,
-                            onCall: _call,
-                            onShowLive: p.hasLiveCalls
-                                ? (ext) {
-                                    _liveFocus = ext;
-                                    _go(_Section.live);
-                                  }
-                                : null,
-                          ),
-                          _Section.contacts => ContactsView(
-                            key: const ValueKey('sec_contacts'),
-                            phone: p,
-                            onCall: _call,
-                          ),
-                          _Section.history => HistoryView(
-                            key: const ValueKey('sec_history'),
-                            phone: p,
-                            onCall: _call,
-                          ),
-                          _Section.voicemail => VoicemailView(
-                            key: const ValueKey('sec_vm'),
-                            phone: p,
-                            onCall: _call,
-                          ),
-                          _Section.live => LiveCallsView(
-                            key: const ValueKey('sec_live'),
-                            phone: p,
-                            focus: _liveFocus,
-                            onOpenPreferences: () => _openPreferences(5),
-                          ),
-                          _Section.preferences => PreferencesView(
-                            key: ValueKey(('sec_prefs', _prefsTab)),
-                            phone: p,
-                            initialTab: _prefsTab,
-                          ),
+                      child: LayoutBuilder(
+                        builder: (_, box) {
+                          final docked =
+                              p.viewFlag('fnKeys.open') && box.maxWidth >= 720;
+                          return Row(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              Expanded(
+                                child: AnimatedSectionSwitch(
+                                  child: switch (_section == _Section.live &&
+                                          !p.hasLiveCalls
+                                      ? _Section.extensions
+                                      : _section) {
+                                    _Section.extensions => _ExtensionsView(
+                                      key: const ValueKey('sec_ext'),
+                                      phone: p,
+                                      onCall: _call,
+                                      onShowLive: p.hasLiveCalls
+                                          ? (ext) {
+                                              _liveFocus = ext;
+                                              _go(_Section.live);
+                                            }
+                                          : null,
+                                    ),
+                                    _Section.contacts => ContactsView(
+                                      key: const ValueKey('sec_contacts'),
+                                      phone: p,
+                                      onCall: _call,
+                                    ),
+                                    _Section.history => HistoryView(
+                                      key: const ValueKey('sec_history'),
+                                      phone: p,
+                                      onCall: _call,
+                                    ),
+                                    _Section.voicemail => VoicemailView(
+                                      key: const ValueKey('sec_vm'),
+                                      phone: p,
+                                      onCall: _call,
+                                    ),
+                                    _Section.live => LiveCallsView(
+                                      key: const ValueKey('sec_live'),
+                                      phone: p,
+                                      focus: _liveFocus,
+                                      onOpenPreferences: () =>
+                                          _openPreferences(5),
+                                    ),
+                                    _Section.preferences => PreferencesView(
+                                      key: ValueKey(('sec_prefs', _prefsTab)),
+                                      phone: p,
+                                      initialTab: _prefsTab,
+                                    ),
+                                  },
+                                ),
+                              ),
+                              if (docked)
+                                FunctionKeysPanel(
+                                  phone: p,
+                                  onClose: () =>
+                                      p.setViewFlag('fnKeys.open', false),
+                                ),
+                            ],
+                          );
                         },
                       ),
                     ),
@@ -575,6 +622,87 @@ class _HomeScreenState extends State<HomeScreen> {
             icon: Icon(Icons.close_rounded, size: 18, color: c.muted),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _functionKeysButton(DrinColors c) {
+    final open = p.viewFlag('fnKeys.open');
+    final keys = p.settings.functionKeys;
+    final ringing = keys.any(
+      (k) =>
+          k.kind == FunctionKeyKind.blf &&
+          (p.blfOfNumber(k.target) == BlfStatus.ringing ||
+              p.liveOfNumber(k.target)?.state == LiveState.ringing),
+    );
+    final busy = keys.any(
+      (k) =>
+          k.kind == FunctionKeyKind.blf &&
+          p.blfOfNumber(k.target) == BlfStatus.busy,
+    );
+    return Tooltip(
+      message: tr('Tasti funzione / BLF'),
+      child: InkWell(
+        onTap: _toggleFunctionKeys,
+        borderRadius: BorderRadius.circular(DrinRadius.pill),
+        child: AnimatedContainer(
+          duration: DrinMotion.of(context, DrinMotion.fast),
+          height: 36,
+          padding: const EdgeInsets.symmetric(horizontal: DrinSpace.s3),
+          decoration: BoxDecoration(
+            color: ringing
+                ? c.squillo.withValues(alpha: 0.16)
+                : open
+                ? c.primary.withValues(alpha: 0.14)
+                : c.field,
+            border: Border.all(
+              color: ringing
+                  ? c.squilloLine
+                  : open
+                  ? c.primary
+                  : c.border,
+            ),
+            borderRadius: BorderRadius.circular(DrinRadius.pill),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.apps_rounded,
+                size: 16,
+                color: ringing
+                    ? c.squilloLine
+                    : open
+                    ? c.primary
+                    : c.muted,
+              ),
+              const SizedBox(width: 6),
+              Text(
+                tr('BLF'),
+                style: DrinText.label.copyWith(
+                  color: open ? c.primary : c.ink,
+                ),
+              ),
+              if (ringing || busy) ...[
+                const SizedBox(width: 6),
+                Container(
+                  width: 7,
+                  height: 7,
+                  decoration: BoxDecoration(
+                    color: ringing ? c.squillo : c.busy,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+              ] else if (keys.isNotEmpty) ...[
+                const SizedBox(width: 6),
+                Text(
+                  '${keys.length}',
+                  style: DrinText.number.copyWith(color: c.muted),
+                ),
+              ],
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -757,6 +885,8 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
           ),
+          const SizedBox(width: 8),
+          _functionKeysButton(c),
           const SizedBox(width: 6),
           IconButton(
             tooltip: tr('Mini-HUD compatto'),

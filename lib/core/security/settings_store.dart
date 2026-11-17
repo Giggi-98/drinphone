@@ -42,6 +42,47 @@ class PbxConnectionInfo {
 /// Tipo di profilo (DECISIONS "Profili"): decide quali sezioni si vedono.
 enum ProfileKind { yeastar, sip }
 
+/// Tipologia di tasto funzione programmabile nel pannello Tasti BLF / Funzione.
+enum FunctionKeyKind {
+  blf,
+  speedDial,
+  dtmf,
+  park,
+  pickup,
+  dnd,
+  queuePause,
+}
+
+/// Tasto funzione / BLF configurato dall'utente (per profilo).
+class FunctionKey {
+  const FunctionKey({
+    required this.id,
+    required this.kind,
+    this.label = '',
+    this.target = '',
+  });
+
+  final String id;
+  final FunctionKeyKind kind;
+  final String label;
+  final String target;
+
+  Map<String, Object> toJson() => {
+    'id': id,
+    'kind': kind.name,
+    'label': label,
+    'target': target,
+  };
+
+  static FunctionKey fromJson(Map<String, dynamic> j) => FunctionKey(
+    id: j['id'] as String? ?? '',
+    kind:
+        FunctionKeyKind.values.asNameMap()[j['kind']] ?? FunctionKeyKind.blf,
+    label: j['label'] as String? ?? '',
+    target: j['target'] as String? ?? '',
+  );
+}
+
 /// Account non attivo: stessi dati per-account di [Settings], fermi su disco.
 ///
 /// Nell'interfaccia è un **account**: una sola registrazione SIP ([accounts]
@@ -57,6 +98,7 @@ class Profile {
     this.pbx = const [],
     this.voicemailCode = '*2',
     this.favorites = const [],
+    this.functionKeys = const [],
     this.seenMissedAt = '',
     this.seenVoicemail = const [],
   });
@@ -68,6 +110,7 @@ class Profile {
   final List<PbxConnectionInfo> pbx;
   final String voicemailCode;
   final List<String> favorites;
+  final List<FunctionKey> functionKeys;
   final String seenMissedAt;
   final List<String> seenVoicemail;
 
@@ -80,6 +123,7 @@ class Profile {
     pbx: pbx,
     voicemailCode: voicemailCode,
     favorites: favorites,
+    functionKeys: functionKeys,
     seenMissedAt: seenMissedAt,
     seenVoicemail: seenVoicemail,
   );
@@ -106,6 +150,7 @@ class Settings {
     this.globalHotkeys = false,
     this.voicemailCode = '*2',
     this.favorites = const [],
+    this.functionKeys = const [],
     this.audio = const ('', '', ''),
     this.ringtone = '',
     this.micGainDb = 0.0,
@@ -169,6 +214,9 @@ class Settings {
   /// dell'account SIP e per gli interni inseriti a mano.
   final List<String> favorites;
 
+  /// Tasti funzione / BLF configurati sul profilo.
+  final List<FunctionKey> functionKeys;
+
   /// Dispositivi audio scelti (microfono, altoparlante, suoneria); '' = predefinito.
   final (String, String, String) audio;
 
@@ -219,6 +267,7 @@ class Settings {
     pbx: pbx,
     voicemailCode: voicemailCode,
     favorites: favorites,
+    functionKeys: functionKeys,
     seenMissedAt: seenMissedAt,
     seenVoicemail: seenVoicemail,
   );
@@ -258,6 +307,7 @@ class Settings {
       globalHotkeys: globalHotkeys,
       voicemailCode: t.voicemailCode,
       favorites: t.favorites,
+      functionKeys: t.functionKeys,
       audio: audio,
       ringtone: ringtone,
       micGainDb: micGainDb,
@@ -302,6 +352,7 @@ class Settings {
       globalHotkeys: globalHotkeys,
       voicemailCode: a.voicemailCode,
       favorites: a.favorites,
+      functionKeys: a.functionKeys,
       audio: audio,
       ringtone: ringtone,
       micGainDb: micGainDb,
@@ -338,6 +389,7 @@ class Settings {
     bool? globalHotkeys,
     String? voicemailCode,
     List<String>? favorites,
+    List<FunctionKey>? functionKeys,
     (String, String, String)? audio,
     String? ringtone,
     double? micGainDb,
@@ -372,6 +424,7 @@ class Settings {
     globalHotkeys: globalHotkeys ?? this.globalHotkeys,
     voicemailCode: voicemailCode ?? this.voicemailCode,
     favorites: favorites ?? this.favorites,
+    functionKeys: functionKeys ?? this.functionKeys,
     audio: audio ?? this.audio,
     ringtone: ringtone ?? this.ringtone,
     micGainDb: micGainDb ?? this.micGainDb,
@@ -485,6 +538,10 @@ class SettingsStore {
       pbx: pbx,
       voicemailCode: j['voicemailCode'] as String? ?? '*2',
       favorites: [for (final f in (j['favorites'] as List? ?? const [])) '$f'],
+      functionKeys: [
+        for (final k in (j['functionKeys'] as List? ?? const []))
+          if (k is Map<String, dynamic>) FunctionKey.fromJson(k),
+      ],
       seenMissedAt: j['seenMissedAt'] as String? ?? '',
       seenVoicemail: [
         for (final v in (j['seenVoicemail'] as List? ?? const [])) '$v',
@@ -530,6 +587,7 @@ class SettingsStore {
       globalHotkeys: j['globalHotkeys'] as bool? ?? false,
       voicemailCode: active?.voicemailCode ?? '*2',
       favorites: active?.favorites ?? const [],
+      functionKeys: active?.functionKeys ?? const [],
       seenMissedAt: active?.seenMissedAt ?? '',
       seenVoicemail: active?.seenVoicemail ?? const [],
       defaultProfile: j['defaultProfile'] as String? ?? '',
@@ -612,6 +670,8 @@ class SettingsStore {
     'extensions': [for (final e in p.extensions) e.toJson()],
     'voicemailCode': p.voicemailCode,
     'favorites': p.favorites,
+    if (p.functionKeys.isNotEmpty)
+      'functionKeys': [for (final k in p.functionKeys) k.toJson()],
     'seenMissedAt': p.seenMissedAt,
     'seenVoicemail': p.seenVoicemail,
     'pbx': [
@@ -756,6 +816,7 @@ List<Profile> splitProfile(
           pbx: [?c],
           voicemailCode: p.voicemailCode,
           favorites: p.favorites.where(fav).toList(),
+          functionKeys: i == 0 ? p.functionKeys : const [],
           seenMissedAt: p.seenMissedAt,
           seenVoicemail: p.seenVoicemail,
         );

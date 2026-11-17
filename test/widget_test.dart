@@ -970,4 +970,101 @@ void main() {
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());
   });
+
+  test('Tasti funzione / BLF: persistenza, watchDialogs e azioni', () async {
+    await phone.saveAccount(_account);
+    engine.registrationsCtl.add(const RegistrationEvent(RegistrationStatus.ok));
+
+    const blfKey = FunctionKey(
+      id: 'k1',
+      kind: FunctionKeyKind.blf,
+      label: 'Citofono',
+      target: '801',
+    );
+    const dtmfKey = FunctionKey(
+      id: 'k2',
+      kind: FunctionKeyKind.dtmf,
+      label: 'Apri portone',
+      target: '12#',
+    );
+    await phone.saveFunctionKey(blfKey);
+    await phone.saveFunctionKey(dtmfKey);
+
+    final reloaded = await store.load();
+    expect(reloaded.functionKeys.length, 2);
+    expect(reloaded.functionKeys.first.target, '801');
+    expect(engine.watched, contains('801@pbx.test'));
+
+    // Stato BLF aggiornato e chiamata diretta al clic a riposo.
+    engine.dialogsCtl.add(const BlfEvent('801@pbx.test', BlfStatus.idle));
+    expect(phone.blfOfNumber('801'), BlfStatus.idle);
+    await phone.triggerFunctionKey(blfKey);
+    expect(engine.log, contains('dial 801'));
+
+    // In chiamata attiva: tasto DTMF invia i toni, tasto BLF trasferisce.
+    engine.log.clear();
+    engine.callsCtl.add(
+      const CallEvent(
+        id: 77,
+        phase: CallPhase.active,
+        direction: CallDirection.incoming,
+        remoteNumber: '801',
+      ),
+    );
+    await phone.triggerFunctionKey(dtmfKey);
+    expect(engine.log, containsAllInOrder(['dtmf 77 1', 'dtmf 77 2', 'dtmf 77 #']));
+
+    await phone.triggerFunctionKey(blfKey);
+    expect(engine.log, contains('transfer 77 801'));
+  });
+
+  testWidgets('Barra superiore: pulsante Tasti BLF apre il pannello e gestisce tasti', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1366, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    late PhoneController p;
+    await tester.runAsync(() async {
+      await store.save(
+        const Settings(
+          accounts: [_account],
+          functionKeys: [
+            FunctionKey(
+              id: 'fk1',
+              kind: FunctionKeyKind.blf,
+              label: 'Reception',
+              target: '301',
+            ),
+          ],
+        ),
+      );
+      p = PhoneController(
+        engine,
+        store,
+        engineDataDir: tmp.path,
+        logDir: tmp.path,
+      );
+      await p.init();
+    });
+    engine.registrationsCtl.add(const RegistrationEvent(RegistrationStatus.ok));
+    engine.dialogsCtl.add(const BlfEvent('301@pbx.test', BlfStatus.ringing));
+
+    await tester.pumpWidget(DrinPhoneApp(phone: p));
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(find.byTooltip('Tasti funzione / BLF'), findsOneWidget);
+    await tester.tap(find.byTooltip('Tasti funzione / BLF'));
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(find.text('Tasti funzione'), findsOneWidget);
+    expect(find.text('Reception'), findsOneWidget);
+    expect(find.text('301 · Squilla'), findsOneWidget);
+
+    await tester.tap(find.text('Reception'));
+    await tester.pump();
+    expect(engine.log, contains('dial 301'));
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+  });
 }

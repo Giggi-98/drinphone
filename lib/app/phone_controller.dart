@@ -2181,14 +2181,218 @@ class PhoneController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Interni in BLF: solo quelli con l'account del loro PBX registrato.
-  Set<String> get _watched => {
-    for (final e
-        in allExtensions
-            .where((e) => _isRegistered(accountFor(e)))
-            .take(maxBlf))
-      _blfKey(e)!,
-  };
+  /// Interni in BLF: quelli della griglia più eventuali tasti BLF dedicati.
+  Set<String> get _watched {
+    final out = <String>{
+      for (final e
+          in allExtensions
+              .where((e) => _isRegistered(accountFor(e)))
+              .take(maxBlf))
+        _blfKey(e)!,
+    };
+    final mainAcc = settings.account;
+    if (_isRegistered(mainAcc)) {
+      for (final k in settings.functionKeys) {
+        if (out.length >= maxBlf) break;
+        final n = k.target.trim();
+        if (k.kind == FunctionKeyKind.blf &&
+            n.isNotEmpty &&
+            n != mainAcc!.username) {
+          out.add('$n@${mainAcc.host}');
+        }
+      }
+    }
+    return out;
+  }
+
+  /// Stato BLF di un numero interno (anche da solo tasto funzione BLF).
+  BlfStatus? blfOfNumber(String number) {
+    final n = number.trim();
+    if (n.isEmpty) return null;
+    final ext = allExtensions.where((e) => e.number == n).firstOrNull;
+    if (ext != null) return blfOf(ext);
+    final acc = settings.account;
+    if (acc != null) {
+      final sip = blf['$n@${acc.host}']?.status;
+      if (sip != null && sip != BlfStatus.unknown) return sip;
+    }
+    return primaryConnection?.callStatus[n];
+  }
+
+  /// Chiamata live corrente su [number] (eventi 30011).
+  ExtensionLive? liveOfNumber(String number) =>
+      primaryConnection?.extensionCalls[number.trim()];
+
+  /// Vero se lo slot di parcheggio [slot] ha una chiamata in attesa.
+  bool isParkSlotBusy(String slot) {
+    final s = slot.trim();
+    if (s.isEmpty) return false;
+    return primaryConnection?.parkedCalls.any((c) => c.slot == s) ?? false;
+  }
+
+  Future<void> saveFunctionKey(FunctionKey key) async {
+    final nextId = key.id.trim().isEmpty ? _newId() : key.id;
+    final clean = FunctionKey(
+      id: nextId,
+      kind: key.kind,
+      label: key.label.trim(),
+      target: key.target.trim(),
+    );
+    final list = [...settings.functionKeys];
+    final i = list.indexWhere((x) => x.id == nextId);
+    i >= 0 ? list[i] = clean : list.add(clean);
+    settings = settings.copyWith(functionKeys: list);
+    await _store.save(settings);
+    await _syncDialogs();
+    notifyListeners();
+  }
+
+  Future<void> deleteFunctionKey(String id) async {
+    settings = settings.copyWith(
+      functionKeys: [
+        for (final k in settings.functionKeys)
+          if (k.id != id) k,
+      ],
+    );
+    await _store.save(settings);
+    await _syncDialogs();
+    notifyListeners();
+  }
+
+  Future<void> moveFunctionKey(String id, int delta) async {
+    final list = [...settings.functionKeys];
+    final i = list.indexWhere((x) => x.id == id);
+    final target = i + delta;
+    if (i < 0 || target < 0 || target >= list.length) return;
+    final item = list.removeAt(i);
+    list.insert(target, item);
+    settings = settings.copyWith(functionKeys: list);
+    await _store.save(settings);
+    notifyListeners();
+  }
+
+  /// Crea tasti BLF per i preferiti che non ne hanno ancora uno.
+  Future<int> importFavoritesAsFunctionKeys() async {
+    final existing = {
+      for (final k in settings.functionKeys)
+        if (k.kind == FunctionKeyKind.blf) k.target.trim(),
+    };
+    final added = <FunctionKey>[
+      for (final ext in favorites)
+        if (!existing.contains(ext.number))
+          FunctionKey(
+            id: _newId(),
+            kind: FunctionKeyKind.blf,
+            label: ext.name,
+            target: ext.number,
+          ),
+    ];
+    if (added.isEmpty) return 0;
+    settings = settings.copyWith(
+      functionKeys: [...settings.functionKeys, ...added],
+    );
+    await _store.save(settings);
+    await _syncDialogs();
+    notifyListeners();
+    return added.length;
+  }
+
+  /// Esegue l'azione di un tasto funzione / BLF.
+  Future<void> triggerFunctionKey(
+    FunctionKey key, {
+    bool consultFirst = false,
+  }) async {
+    final target = key.target.trim();
+    switch (key.kind) {
+      case FunctionKeyKind.blf:
+        if (target.isEmpty) return;
+        final ext =
+            allExtensions.where((e) => e.number == target).firstOrNull ??
+            Extension(key.label.isNotEmpty ? key.label : target, target);
+        if (canPickupExtension(ext, live: liveOfNumber(target))) {
+          await pickupExtension(ext);
+          return;
+        }
+        if (call?.phase == CallPhase.active) {
+          await (consultFirst ? consult(target) : transfer(target));
+        } else if (canDial) {
+          await dial(target, via: ext.source.isNotEmpty ? ext : null);
+        }
+      case FunctionKeyKind.speedDial:
+        if (target.isEmpty) return;
+        if (call?.phase == CallPhase.active) {
+          await (consultFirst ? consult(target) : transfer(target));
+        } else if (canDial) {
+          await dial(target);
+        }
+      case FunctionKeyKind.dtmf:
+        if (target.isEmpty) return;
+        if (call != null &&
+            (call!.phase == CallPhase.active ||
+                call!.phase == CallPhase.paused)) {
+          for (final ch in target.split('')) {
+            await sendDtmf(ch);
+          }
+        } else {
+          notice = tr('Disponibile durante una chiamata attiva');
+          notifyListeners();
+        }
+      case FunctionKeyKind.park:
+        final code = target.isNotEmpty
+            ? target
+            : (primaryConnection?.parkCode ?? '');
+        if (code.isEmpty) return;
+        if (call?.phase == CallPhase.active) {
+          await transfer(code);
+        } else if (canDial) {
+          await dial(code);
+        }
+      case FunctionKeyKind.pickup:
+        final pickupCode = primaryConnection?.extPickupCode ?? '';
+        final groupCode = primaryConnection?.groupPickupCode ?? '';
+        if (target.isEmpty) {
+          if (groupCode.isNotEmpty && canDial) await dial(groupCode);
+          return;
+        }
+        final dialTarget = !target.startsWith('*') && pickupCode.isNotEmpty
+            ? '$pickupCode$target'
+            : target;
+        if (canDial) await dial(dialTarget);
+      case FunctionKeyKind.dnd:
+        final d = ownDetail;
+        if (d == null) {
+          notice = tr('Funzione disponibile con integrazione PBX attiva');
+          notifyListeners();
+          return;
+        }
+        final next = ownPresence == 'do_not_disturb'
+            ? 'available'
+            : 'do_not_disturb';
+        try {
+          await updateOwnExtension(d.withPresence(next));
+        } catch (e) {
+          notice = tr('Salvataggio non riuscito');
+          notifyListeners();
+        }
+      case FunctionKeyKind.queuePause:
+        final conn = primaryConnection;
+        if (conn == null || conn.ownAgentQueues.isEmpty) {
+          notice = tr('Nessuna coda agente associata');
+          notifyListeners();
+          return;
+        }
+        final allPaused = conn.ownAgentQueues.every(
+          (q) => conn.pausedQueueIds.contains(q.id),
+        );
+        try {
+          await conn.setOwnQueuePause(pause: !allPaused);
+          notifyListeners();
+        } catch (_) {
+          notice = tr('Operazione non riuscita');
+          notifyListeners();
+        }
+    }
+  }
 
   Future<void> _syncDialogs() async {
     final watched = _watched;
