@@ -37,7 +37,7 @@ InfoBeforeFile=ALPHA.txt
 Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern
-CloseApplications=yes
+CloseApplications=force
 
 [Languages]
 Name: "it"; MessagesFile: "compiler:Languages\Italian.isl"
@@ -78,6 +78,46 @@ Root: HKCU; Subkey: "Software\RegisteredApplications"; ValueType: string; ValueN
 
 [UninstallDelete]
 Type: files; Name: "{userprograms}\DrinPhone.lnk"
+Type: filesandordirs; Name: "{app}"
+
+[Code]
+var
+  DeleteProfileData: Boolean;
+
+function InitializeUninstall(): Boolean;
+var
+  ResultCode: Integer;
+  Prompt: String;
+begin
+  Result := True;
+  DeleteProfileData := False;
+  if not UninstallSilent then begin
+    if ActiveLanguage = 'it' then
+      Prompt := 'Vuoi eliminare anche i dati salvati dei profili (account SIP, contatti e cronologia chiamate)?' + #13#10 +
+                'Scegli "No" per conservarli in vista di una futura reinstallazione.'
+    else
+      Prompt := 'Do you also want to delete saved profile data (SIP accounts, contacts, and call history)?' + #13#10 +
+                'Choose "No" to keep them for a future reinstall.';
+    DeleteProfileData := (MsgBox(Prompt, mbConfirmation, MB_YESNO or MB_DEFBUTTON2) = IDYES);
+  end;
+  // Chiude eventuali istanze nascoste nella barra di sistema per sbloccare la cartella dell'app.
+  Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM drinphone.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+end;
+
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+var
+  AppDataDir: String;
+begin
+  if CurUninstallStep = usPostUninstall then begin
+    DelTree(ExpandConstant('{app}'), True, True, True);
+    if DeleteProfileData then begin
+      AppDataDir := ExpandConstant('{userappdata}\Econnet\DrinPhone');
+      if DirExists(AppDataDir) then
+        DelTree(AppDataDir, True, True, True);
+      RemoveDir(ExpandConstant('{userappdata}\Econnet'));
+    end;
+  end;
+end;
 
 [Run]
 Filename: "{app}\drinphone.exe"; Description: "{cm:LaunchProgram,{#AppName}}"; Flags: nowait postinstall skipifsilent

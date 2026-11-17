@@ -302,7 +302,7 @@ class _HistoryViewState extends State<HistoryView> {
   }
 
   /// Oggi su questo PC: chiamate, perse, secondi al telefono.
-  static (int, int, int) _todayLocal(List<CallRecord> all) {
+  static (int, int, int, int, int?) _todayLocal(List<CallRecord> all) {
     final now = DateTime.now();
     final today = [
       for (final r in all)
@@ -312,10 +312,21 @@ class _HistoryViewState extends State<HistoryView> {
       today.length,
       today.where((r) => r.missed).length,
       today.fold(0, (t, r) => t + r.seconds),
+      today.where((r) => r.answered).length,
+      _peakHour([for (final r in today) r.start.hour]),
     );
   }
 
-  Future<(int, int, int)>? _pbxFuture;
+  static int? _peakHour(List<int> hours) {
+    if (hours.isEmpty) return null;
+    final counts = <int, int>{};
+    for (final h in hours) {
+      counts[h] = (counts[h] ?? 0) + 1;
+    }
+    return counts.entries.reduce((a, b) => a.value >= b.value ? a : b).key;
+  }
+
+  Future<(int, int, int, int, int?)>? _pbxFuture;
   String _pbxKey = '';
 
   /// Oggi dal CDR del PBX (proprio interno o tutto il PBX, come la fonte).
@@ -342,10 +353,15 @@ class _HistoryViewState extends State<HistoryView> {
                   .where((r) => !r.answered && r.callType == 'Inbound')
                   .length,
               page.rows.fold(0, (t, r) => t + r.talk),
+              page.rows.where((r) => r.answered).length,
+              _peakHour([
+                for (final r in page.rows)
+                  if (r.time case final t?) t.hour,
+              ]),
             ),
           );
     }
-    return FutureBuilder<(int, int, int)>(
+    return FutureBuilder<(int, int, int, int, int?)>(
       future: _pbxFuture,
       builder: (_, snap) => snap.hasData
           ? _summaryBar(c, snap.data!)
@@ -353,14 +369,20 @@ class _HistoryViewState extends State<HistoryView> {
     );
   }
 
-  /// Tre contatori del giorno: chiamate, perse, tempo al telefono (più eventuali
-  /// interlocutori da richiamare nel registro locale).
-  Widget _summaryBar(DrinColors c, (int, int, int) d, {int? unreturned}) {
-    final (calls, missed, secs) = d;
+  /// Contatori della giornata: chiamate, perse, da richiamare, durata totale,
+  /// durata media e fascia oraria di picco.
+  Widget _summaryBar(
+    DrinColors c,
+    (int, int, int, int, int?) d, {
+    int? unreturned,
+  }) {
+    final (calls, missed, secs, answeredCount, peakHour) = d;
     String two(int n) => n.toString().padLeft(2, '0');
-    final time = secs >= 3600
-        ? '${secs ~/ 3600}:${two(secs % 3600 ~/ 60)}:${two(secs % 60)}'
-        : '${secs ~/ 60}:${two(secs % 60)}';
+    String fmtSec(int s) => s >= 3600
+        ? '${s ~/ 3600}:${two(s % 3600 ~/ 60)}:${two(s % 60)}'
+        : '${s ~/ 60}:${two(s % 60)}';
+    final time = fmtSec(secs);
+    final avgSec = answeredCount > 0 ? secs ~/ answeredCount : 0;
     Widget stat(
       IconData icon,
       Color color,
@@ -428,6 +450,21 @@ class _HistoryViewState extends State<HistoryView> {
             }),
           ),
         stat(Icons.timer_outlined, c.freeText, time, tr('al telefono')),
+        if (calls > 0) ...[
+          stat(
+            Icons.av_timer_rounded,
+            c.muted,
+            fmtSec(avgSec),
+            tr('durata media'),
+          ),
+          if (peakHour != null)
+            stat(
+              Icons.schedule_rounded,
+              c.muted,
+              '${two(peakHour)}:00',
+              tr('picco'),
+            ),
+        ],
       ],
     );
   }
@@ -822,6 +859,8 @@ class _HistoryViewState extends State<HistoryView> {
                       ),
                       onSaveContact: (name, number) =>
                           _savePartyAsContact(context, p, name, number),
+                      onScheduleRecall: (number, name, {delay, dueAt}) =>
+                          _scheduleRecallParty(number, name, delay: delay, dueAt: dueAt),
                     )
                   : list.isEmpty
                   ? Center(
@@ -959,11 +998,25 @@ class _HistoryViewState extends State<HistoryView> {
     CallRecord r, {
     Duration? delay,
     DateTime? dueAt,
+  }) => _scheduleRecallParty(
+    r.number,
+    r.name,
+    note: r.note,
+    delay: delay,
+    dueAt: dueAt,
+  );
+
+  Future<void> _scheduleRecallParty(
+    String number,
+    String name, {
+    String note = '',
+    Duration? delay,
+    DateTime? dueAt,
   }) async {
     await widget.phone.scheduleReminder(
-      number: r.number,
-      name: r.name,
-      note: r.note,
+      number: number,
+      name: name,
+      note: note,
       delay: delay,
       dueAt: dueAt,
     );
@@ -974,7 +1027,7 @@ class _HistoryViewState extends State<HistoryView> {
         SnackBar(
           content: Text(
             tr('Promemoria impostato per {n}', {
-              'n': r.name.isNotEmpty ? r.name : r.number,
+              'n': name.isNotEmpty ? name : number,
             }),
           ),
         ),

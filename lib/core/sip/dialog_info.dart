@@ -30,16 +30,19 @@ class DialogInfoTracker {
       // NOTIFY senza corpo: stato invariato se ne avevamo uno, altrimenti ignoto.
       return _hasDocument ? status : BlfStatus.unknown;
     }
-    if ((_attr(root.group(1)!, 'state') ?? 'full') == 'full') _dialogs.clear();
+    if ((_attr(root.group(1)!, 'state') ?? 'full').toLowerCase() == 'full') {
+      _dialogs.clear();
+    }
     _hasDocument = true;
     for (final m in _dialog.allMatches(xml)) {
       final attrs = m.group(1)!;
       final id = _attr(attrs, 'id') ?? '';
-      final state = _state.firstMatch(m.group(2) ?? '')?.group(1) ?? '';
+      final state =
+          (_state.firstMatch(m.group(2) ?? '')?.group(1) ?? '').toLowerCase();
       if (state == 'terminated' || state.isEmpty) {
         _dialogs.remove(id);
       } else {
-        _dialogs[id] = (state, _attr(attrs, 'direction') ?? '');
+        _dialogs[id] = (state, (_attr(attrs, 'direction') ?? '').toLowerCase());
       }
     }
     return status;

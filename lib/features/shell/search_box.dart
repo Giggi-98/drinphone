@@ -10,23 +10,39 @@ import '../../core/sip/sip_engine.dart' show CallDirection;
 import '../call/keypad.dart';
 import 'widgets.dart';
 
-/// Campo "numero, interno o nome" con popup di risultati mentre si digita e
-/// tastierino a comparsa, entrambi agganciati sotto il campo.
+/// Campo "numero, interno o nome" con popup di risultati mentre si digita,
+/// comandi rapidi (`>` / `/`) e tastierino a comparsa agganciati sotto il campo.
 class SearchBox extends StatefulWidget {
   const SearchBox({
     super.key,
     required this.phone,
     required this.onCall,
+    this.onVideoCall,
+    this.onOpenMiniHud,
+    this.onOpenPreferences,
+    this.onSetPresence,
     this.focusNode,
   });
   final PhoneController phone;
   final ValueChanged<String> onCall;
+  final ValueChanged<String>? onVideoCall;
+  final VoidCallback? onOpenMiniHud;
+  final VoidCallback? onOpenPreferences;
+  final ValueChanged<String>? onSetPresence;
 
   /// Fuoco dall'esterno (Ctrl+K); se assente il campo ne crea uno suo.
   final FocusNode? focusNode;
 
   @override
   State<SearchBox> createState() => _SearchBoxState();
+}
+
+class _PaletteCmd {
+  const _PaletteCmd(this.icon, this.title, this.subtitle, this.run);
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback run;
 }
 
 class _SearchBoxState extends State<SearchBox> {
@@ -43,10 +59,119 @@ class _SearchBoxState extends State<SearchBox> {
 
   PhoneController get p => widget.phone;
   String get _typed => _text.text.trim();
+  bool get _isCommand => _typed.startsWith('>') || _typed.startsWith('/');
   bool get _offerNumber =>
-      _dialable.hasMatch(_typed) && !_hits.any((h) => h.number == _typed);
-  int get _rows =>
-      _typed.isEmpty ? _quick.length : _hits.length + (_offerNumber ? 1 : 0);
+      !_isCommand &&
+      _dialable.hasMatch(_typed) &&
+      !_hits.any((h) => h.number == _typed);
+
+  List<_PaletteCmd> get _commands {
+    if (!_isCommand) return const [];
+    final raw = _typed.substring(1).trim().toLowerCase();
+    final all = <_PaletteCmd>[
+      if (p.isYeastar && p.ownDetail != null && widget.onSetPresence != null) ...[
+        _PaletteCmd(
+          Icons.check_circle_rounded,
+          tr('Disponibile'),
+          '> disponibile',
+          () => widget.onSetPresence!('available'),
+        ),
+        _PaletteCmd(
+          Icons.do_not_disturb_on_rounded,
+          tr('Non disturbare'),
+          '> dnd',
+          () => widget.onSetPresence!('do_not_disturb'),
+        ),
+        _PaletteCmd(
+          Icons.schedule_rounded,
+          tr('Assente'),
+          '> assente',
+          () => widget.onSetPresence!('away'),
+        ),
+      ],
+      if (p.isYeastar && (p.primaryConnection?.ownAgentQueues.isNotEmpty ?? false)) ...[
+        _PaletteCmd(
+          Icons.pause_circle_outline_rounded,
+          tr('Pausa su tutte le code'),
+          '> pausa code',
+          () => p.primaryConnection?.setOwnQueuePause(pause: true),
+        ),
+        _PaletteCmd(
+          Icons.play_circle_outline_rounded,
+          tr('Riprendi tutte le code'),
+          '> riprendi code',
+          () => p.primaryConnection?.setOwnQueuePause(pause: false),
+        ),
+      ],
+      if (widget.onOpenMiniHud != null)
+        _PaletteCmd(
+          Icons.picture_in_picture_alt_rounded,
+          tr('Mini-HUD compatto'),
+          '> mini',
+          widget.onOpenMiniHud!,
+        ),
+      _PaletteCmd(
+        Icons.dark_mode_rounded,
+        tr('Tema scuro'),
+        '> tema scuro',
+        () => p.setThemeMode(ThemeMode.dark),
+      ),
+      _PaletteCmd(
+        Icons.light_mode_rounded,
+        tr('Tema chiaro'),
+        '> tema chiaro',
+        () => p.setThemeMode(ThemeMode.light),
+      ),
+      if (widget.onOpenPreferences != null)
+        _PaletteCmd(
+          Icons.tune_rounded,
+          tr('Preferenze'),
+          '> preferenze',
+          widget.onOpenPreferences!,
+        ),
+    ];
+    if (raw.startsWith('pickup ')) {
+      final num = raw.substring(7).trim();
+      final ext = p.allExtensions.where((e) => e.number == num).firstOrNull;
+      if (ext != null && p.canPickupExtension(ext)) {
+        all.insert(
+          0,
+          _PaletteCmd(
+            Icons.phone_in_talk_rounded,
+            tr('Rispondi per {n}', {'n': num}),
+            '> pickup $num',
+            () => p.pickupExtension(ext),
+          ),
+        );
+      }
+    } else if (raw.startsWith('trasf ') && p.call != null) {
+      final num = raw.substring(6).trim();
+      if (num.isNotEmpty) {
+        all.insert(
+          0,
+          _PaletteCmd(
+            Icons.phone_forwarded_rounded,
+            tr('Trasferisci a {n}', {'n': num}),
+            '> trasf $num',
+            () => p.transfer(num),
+          ),
+        );
+      }
+    }
+    if (raw.isEmpty) return all;
+    return [
+      for (final cmd in all)
+        if (cmd.title.toLowerCase().contains(raw) ||
+            cmd.subtitle.toLowerCase().contains(raw))
+          cmd,
+    ];
+  }
+
+  int get _rows => _typed.isEmpty
+      ? _quick.length
+      : _isCommand
+      ? _commands.length
+      : _hits.length + (_offerNumber ? 1 : 0);
 
   /// A campo vuoto: ultimi 5 numeri del registro, poi i preferiti.
   List<(bool, String, String, Extension?, CallRecord?)> get _quick {
@@ -118,28 +243,65 @@ class _SearchBoxState extends State<SearchBox> {
     _keypad.hide();
   }
 
-  void _activate(int i) {
+  void _activate(int i, {bool video = false}) {
+    if (_isCommand) {
+      final cmds = _commands;
+      if (i < cmds.length) {
+        cmds[i].run();
+        _text.clear();
+        _changed('');
+        _results.hide();
+      }
+      return;
+    }
     if (_typed.isEmpty) {
       final q = _quick;
       if (i >= q.length) return;
       final (_, number, _, e, _) = q[i];
-      if (e == null) return _call(number);
+      if (e == null) {
+        if (video && widget.onVideoCall != null) {
+          widget.onVideoCall!(number);
+          _text.clear();
+          _changed('');
+          _keypad.hide();
+          return;
+        }
+        return _call(number);
+      }
       if (!p.isCallable(e)) return;
-      p.dial(number, via: e);
+      p.dial(number, via: e, video: video);
       _results.hide();
       return;
     }
     if (_offerNumber) {
-      if (i == 0) return _call(_typed);
+      if (i == 0) {
+        if (video && widget.onVideoCall != null) {
+          widget.onVideoCall!(_typed);
+          _text.clear();
+          _changed('');
+          _keypad.hide();
+          return;
+        }
+        return _call(_typed);
+      }
       i--;
     }
     if (i < _hits.length) {
       final h = _hits[i];
       final e = h.extension;
-      if (e == null) return _call(h.number);
+      if (e == null) {
+        if (video && widget.onVideoCall != null) {
+          widget.onVideoCall!(h.number);
+          _text.clear();
+          _changed('');
+          _keypad.hide();
+          return;
+        }
+        return _call(h.number);
+      }
       if (!p.isCallable(e)) return;
       // Interno: tramite l'account SIP del suo PBX.
-      p.dial(h.number, via: e);
+      p.dial(h.number, via: e, video: video);
       _text.clear();
       _changed('');
     }
@@ -155,6 +317,14 @@ class _SearchBoxState extends State<SearchBox> {
       return KeyEventResult.handled;
     }
     if (_rows == 0) return KeyEventResult.ignored;
+    if ((e.logicalKey == LogicalKeyboardKey.enter ||
+            e.logicalKey == LogicalKeyboardKey.numpadEnter) &&
+        HardwareKeyboard.instance.isShiftPressed &&
+        p.videoEnabled &&
+        !_isCommand) {
+      _activate(_selected, video: true);
+      return KeyEventResult.handled;
+    }
     if (e.logicalKey == LogicalKeyboardKey.arrowDown) {
       setState(() => _selected = (_selected + 1) % _rows);
       return KeyEventResult.handled;
@@ -199,6 +369,9 @@ class _SearchBoxState extends State<SearchBox> {
     String sub, {
     bool enabled = true,
     Widget? trailing,
+    String? copyNumber,
+    VoidCallback? onVideo,
+    IconData actionIcon = Icons.call_rounded,
   }) {
     final on = index == _selected;
     return Material(
@@ -241,8 +414,40 @@ class _SearchBoxState extends State<SearchBox> {
                 trailing,
                 const SizedBox(width: DrinSpace.s2),
               ],
+              if (on && copyNumber != null && copyNumber.isNotEmpty)
+                IconButton(
+                  tooltip: tr('Copia numero'),
+                  visualDensity: VisualDensity.compact,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints.tightFor(
+                    width: 28,
+                    height: 28,
+                  ),
+                  onPressed: () => copyWithToast(context, copyNumber),
+                  icon: Icon(
+                    Icons.content_copy_rounded,
+                    size: 15,
+                    color: c.muted,
+                  ),
+                ),
+              if (on && onVideo != null && enabled)
+                IconButton(
+                  tooltip: tr('Videochiamata'),
+                  visualDensity: VisualDensity.compact,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints.tightFor(
+                    width: 28,
+                    height: 28,
+                  ),
+                  onPressed: onVideo,
+                  icon: Icon(
+                    Icons.videocam_rounded,
+                    size: 16,
+                    color: c.primary,
+                  ),
+                ),
               Icon(
-                Icons.call_rounded,
+                actionIcon,
                 size: 18,
                 color: enabled ? c.accent : c.border,
               ),
@@ -313,6 +518,41 @@ class _SearchBoxState extends State<SearchBox> {
 
   Widget _resultsList(DrinColors c) {
     if (_typed.isEmpty) return _quickList(c);
+    if (_isCommand) {
+      final cmds = _commands;
+      if (cmds.isEmpty) {
+        return Padding(
+          padding: const EdgeInsets.all(14),
+          child: Text(tr('Nessun comando'), style: TextStyle(color: c.muted)),
+        );
+      }
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(10, 6, 10, 4),
+            child: Text(
+              tr('Comandi rapidi'),
+              style: DrinText.label.copyWith(color: c.muted),
+            ),
+          ),
+          for (var i = 0; i < cmds.length; i++)
+            _row(
+              c,
+              i,
+              CircleAvatar(
+                radius: 18,
+                backgroundColor: c.panel,
+                child: Icon(cmds[i].icon, size: 17, color: c.primary),
+              ),
+              cmds[i].title,
+              cmds[i].subtitle,
+              actionIcon: Icons.keyboard_return_rounded,
+            ),
+        ],
+      );
+    }
     final rows = <Widget>[];
     var i = 0;
     if (_offerNumber) {
@@ -327,6 +567,7 @@ class _SearchBoxState extends State<SearchBox> {
           ),
           tr('Chiama {n}', {'n': _typed}),
           tr('Numero digitato'),
+          copyNumber: _typed,
         ),
       );
     }
@@ -345,6 +586,14 @@ class _SearchBoxState extends State<SearchBox> {
                 e.name,
                 '${tr('Interno')} ${e.number}',
                 enabled: p.isCallable(e),
+                copyNumber: e.number,
+                onVideo: p.videoEnabled
+                    ? () {
+                        p.dial(e.number, via: e, video: true);
+                        _text.clear();
+                        _changed('');
+                      }
+                    : null,
               )
             : _row(
                 c,
@@ -352,6 +601,14 @@ class _SearchBoxState extends State<SearchBox> {
                 StatusAvatar(name: h.name),
                 h.name,
                 '${h.label} · ${h.number}',
+                copyNumber: h.number,
+                onVideo: p.videoEnabled && widget.onVideoCall != null
+                    ? () {
+                        widget.onVideoCall!(h.number);
+                        _text.clear();
+                        _changed('');
+                      }
+                    : null,
               ),
       );
     }

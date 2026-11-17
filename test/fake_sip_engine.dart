@@ -224,4 +224,36 @@ class FakeSipEngine implements SipEngine {
       log.add('dtmf $id $digit');
   @override
   Future<void> stop() async => log.add('stop');
+
+  String ringtone = '';
+  double micGainDb = 0;
+  double playbackGainDb = 0;
+
+  @override
+  Future<void> setAudioGains({double micDb = 0, double playbackDb = 0}) async {
+    micGainDb = micDb;
+    playbackGainDb = playbackDb;
+    log.add('gains $micDb/$playbackDb');
+  }
+
+  @override
+  Future<void> setRingtone(String path) async {
+    ringtone = path;
+    log.add('ringtone $path');
+  }
+
+  @override
+  Future<void> playLocalSound(String path) async => log.add('play $path');
+
+  @override
+  Future<void> stopRinging() async => log.add('stopRinging');
+
+  @override
+  List<(String, String)> builtInRingtones() => const [
+    ('oldphone-mono.wav', 'Telefono classico'),
+    ('toy-mono.wav', 'Suoneria morbida'),
+  ];
+
+  @override
+  String? callWaitingTonePath() => 'incoming_chat.wav';
 }

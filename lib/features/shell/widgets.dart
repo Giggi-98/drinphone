@@ -150,20 +150,20 @@ class StatusAvatar extends StatelessWidget {
             clipBehavior: Clip.none,
             children: [
               AnimatedContainer(
-                duration: const Duration(milliseconds: 220),
-                curve: Curves.easeOutCubic,
+                duration: DrinMotion.of(context, DrinMotion.base),
+                curve: DrinMotion.curve,
                 width: size + 6,
                 height: size + 6,
                 padding: const EdgeInsets.all(2),
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   border: Border.all(
-                    color: ring ?? (offline ? c.border : Colors.transparent),
+                    color: ring ?? (offline ? c.line : Colors.transparent),
                     width: 2,
                   ),
                 ),
                 child: AnimatedOpacity(
-                  duration: const Duration(milliseconds: 220),
+                  duration: DrinMotion.of(context, DrinMotion.base),
                   opacity: offline ? 0.45 : 1,
                   child: CircleAvatar(
                     backgroundColor: c.avatar,
@@ -172,7 +172,7 @@ class StatusAvatar extends StatelessWidget {
                       style: TextStyle(
                         fontSize: size * 0.32,
                         fontWeight: FontWeight.w600,
-                        color: c.text,
+                        color: c.ink,
                       ),
                     ),
                   ),
@@ -182,7 +182,7 @@ class StatusAvatar extends StatelessWidget {
                 right: -2,
                 bottom: -2,
                 child: AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 180),
+                  duration: DrinMotion.of(context, DrinMotion.fast),
                   transitionBuilder: (child, anim) =>
                       ScaleTransition(scale: anim, child: child),
                   child: p == null
@@ -190,7 +190,7 @@ class StatusAvatar extends StatelessWidget {
                       : Container(
                           key: ValueKey(presence),
                           decoration: BoxDecoration(
-                            color: c.card,
+                            color: c.surface,
                             shape: BoxShape.circle,
                           ),
                           padding: const EdgeInsets.all(1.5),
@@ -214,8 +214,8 @@ class AnimatedSectionSwitch extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return AnimatedSwitcher(
-      duration: const Duration(milliseconds: 220),
-      switchInCurve: Curves.easeOutCubic,
+      duration: DrinMotion.of(context, DrinMotion.base),
+      switchInCurve: DrinMotion.curve,
       switchOutCurve: Curves.easeInCubic,
       layoutBuilder: (currentChild, previousChildren) => Stack(
         alignment: Alignment.topLeft,
@@ -246,8 +246,8 @@ class AnimatedPopup extends StatelessWidget {
   Widget build(BuildContext context) {
     return TweenAnimationBuilder<double>(
       tween: Tween(begin: 0, end: 1),
-      duration: const Duration(milliseconds: 180),
-      curve: Curves.easeOutCubic,
+      duration: DrinMotion.of(context, DrinMotion.fast),
+      curve: DrinMotion.curve,
       builder: (_, t, child) => Opacity(
         opacity: t,
         child: Transform.translate(

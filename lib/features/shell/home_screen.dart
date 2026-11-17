@@ -11,6 +11,7 @@ import '../../app/theme.dart';
 import '../../core/pbx/yeastar_api.dart' show YeastarApiException;
 import '../../core/pbx/pbx_connection.dart'
     show ExtensionLive, LiveCall, LiveState;
+import '../../core/recall_reminders.dart';
 import '../../core/platform/call_links.dart';
 import '../../core/platform/global_hotkeys.dart';
 import '../../core/platform/window_attention.dart';
@@ -181,223 +182,17 @@ class _HomeScreenState extends State<HomeScreen> {
     super.dispose();
   }
 
-  Widget _miniHudView(DrinColors c) {
-    final call = p.call;
-    final favs = p.favoriteExtensions.take(6).toList();
-    final dot = p.registration.status == RegistrationStatus.ok
-        ? c.ok
-        : p.registration.status == RegistrationStatus.failed
-        ? c.busy
-        : c.muted;
-    return Scaffold(
-      backgroundColor: c.ground,
-      body: Padding(
-        padding: const EdgeInsets.all(DrinSpace.s3),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              children: [
-                Container(
-                  width: 8,
-                  height: 8,
-                  decoration: BoxDecoration(color: dot, shape: BoxShape.circle),
-                ),
-                const SizedBox(width: DrinSpace.s2),
-                Text(
-                  'DrinPhone HUD',
-                  style: DrinText.label.copyWith(color: c.ink),
-                ),
-                if (p.autoDndActive) ...[
-                  const SizedBox(width: DrinSpace.s2),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 6,
-                      vertical: 2,
-                    ),
-                    decoration: BoxDecoration(
-                      color: c.busy.withValues(alpha: 0.14),
-                      borderRadius: BorderRadius.circular(DrinRadius.pill),
-                    ),
-                    child: Text(
-                      'DND',
-                      style: DrinText.detail.copyWith(color: c.busyText),
-                    ),
-                  ),
-                ],
-                const Spacer(),
-                TextButton.icon(
-                  onPressed: () => _setMiniHud(false),
-                  icon: const Icon(Icons.open_in_full_rounded, size: 16),
-                  label: Text(tr('Espandi')),
-                ),
-              ],
-            ),
-            const SizedBox(height: DrinSpace.s2),
-            Expanded(
-              child: call != null
-                  ? Container(
-                      padding: const EdgeInsets.all(DrinSpace.s3),
-                      decoration: BoxDecoration(
-                        color: c.surface,
-                        border: Border.all(
-                          color: call.phase == CallPhase.incoming
-                              ? c.squilloLine
-                              : c.line,
-                        ),
-                        borderRadius: BorderRadius.circular(DrinRadius.panel),
-                      ),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            call.remoteName.isNotEmpty
-                                ? '${call.remoteName} · ${call.remoteNumber}'
-                                : call.remoteNumber,
-                            overflow: TextOverflow.ellipsis,
-                            style: DrinText.title.copyWith(color: c.ink),
-                          ),
-                          const SizedBox(height: DrinSpace.s2),
-                          Row(
-                            children: [
-                              if (call.phase == CallPhase.incoming) ...[
-                                FilledButton.icon(
-                                  onPressed: () => p.answer(call.id),
-                                  icon: const Icon(Icons.call_rounded, size: 16),
-                                  label: Text(tr('Rispondi')),
-                                ),
-                                const SizedBox(width: DrinSpace.s2),
-                                OutlinedButton.icon(
-                                  onPressed: () => p.hangup(call.id),
-                                  icon: Icon(
-                                    Icons.call_end_rounded,
-                                    size: 16,
-                                    color: c.busyText,
-                                  ),
-                                  label: Text(tr('Rifiuta')),
-                                ),
-                              ] else ...[
-                                OutlinedButton(
-                                  onPressed: p.toggleMute,
-                                  child: Text(
-                                    p.muted ? tr('Riattiva') : tr('Muto'),
-                                  ),
-                                ),
-                                const SizedBox(width: DrinSpace.s2),
-                                if (call.phase == CallPhase.active ||
-                                    call.phase == CallPhase.paused) ...[
-                                  OutlinedButton(
-                                    onPressed: p.toggleHold,
-                                    child: Text(
-                                      p.onHold ? tr('Riprendi') : tr('Attesa'),
-                                    ),
-                                  ),
-                                  const SizedBox(width: DrinSpace.s2),
-                                ],
-                                FilledButton.icon(
-                                  style: FilledButton.styleFrom(
-                                    backgroundColor: c.busy,
-                                    foregroundColor: c.onBusy,
-                                  ),
-                                  onPressed: () => p.hangup(call.id),
-                                  icon: const Icon(
-                                    Icons.call_end_rounded,
-                                    size: 16,
-                                  ),
-                                  label: Text(tr('Termina')),
-                                ),
-                              ],
-                            ],
-                          ),
-                        ],
-                      ),
-                    )
-                  : Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        Row(
-                          children: [
-                            Expanded(
-                              child: SizedBox(
-                                height: 36,
-                                child: TextField(
-                                  controller: _hudDial,
-                                  decoration: InputDecoration(
-                                    isDense: true,
-                                    hintText: tr('Chiama numero…'),
-                                  ),
-                                  onSubmitted: (v) {
-                                    final n = v.trim();
-                                    if (n.isNotEmpty && p.canDial) {
-                                      _hudDial.clear();
-                                      _call(n);
-                                    }
-                                  },
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: DrinSpace.s2),
-                            IconButton.filled(
-                              tooltip: tr('Chiama'),
-                              onPressed: p.canDial
-                                  ? () {
-                                      final n = _hudDial.text.trim();
-                                      if (n.isNotEmpty) {
-                                        _hudDial.clear();
-                                        _call(n);
-                                      }
-                                    }
-                                  : null,
-                              icon: const Icon(Icons.call_rounded, size: 18),
-                            ),
-                          ],
-                        ),
-                        if (favs.isNotEmpty) ...[
-                          const SizedBox(height: DrinSpace.s2),
-                          Expanded(
-                            child: SingleChildScrollView(
-                              child: Wrap(
-                                spacing: DrinSpace.s2,
-                                runSpacing: DrinSpace.s1,
-                                children: [
-                                  for (final ext in favs)
-                                    ActionChip(
-                                      avatar: Container(
-                                        width: 8,
-                                        height: 8,
-                                        decoration: BoxDecoration(
-                                          color: switch (p.blfOf(ext)) {
-                                            BlfStatus.idle => c.free,
-                                            BlfStatus.ringing => c.squillo,
-                                            BlfStatus.busy => c.busy,
-                                            _ => c.muted,
-                                          },
-                                          shape: BoxShape.circle,
-                                        ),
-                                      ),
-                                      label: Text(
-                                        ext.name.isNotEmpty
-                                            ? '${ext.name} (${ext.number})'
-                                            : ext.number,
-                                      ),
-                                      onPressed: p.canDial
-                                          ? () => _call(ext.number)
-                                          : null,
-                                    ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
+  Widget _miniHudView(DrinColors c) => _MiniHudView(
+    phone: p,
+    dialCtl: _hudDial,
+    onExpand: () => _setMiniHud(false),
+    onCall: _call,
+    onSetPresence: _setPresence,
+    onOpenPresencePrefs: () {
+      _setMiniHud(false);
+      _openPreferences(1);
+    },
+  );
 
   Future<void> _showNewNotes() async {
     final u = p.updater;
@@ -622,6 +417,12 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
                 // Finestra di chiamata: in arrivo, in conversazione, ridotta.
                 CallWindow(phone: p),
+                if (p.call == null && p.lastEndedWrapUp != null)
+                  Positioned(
+                    right: DrinSpace.s4,
+                    bottom: DrinSpace.s4,
+                    child: _WrapUpCard(phone: p),
+                  ),
               ],
             ),
           ),
@@ -802,13 +603,13 @@ class _HomeScreenState extends State<HomeScreen> {
               borderRadius: BorderRadius.circular(999),
               child: pill([
                 AnimatedContainer(
-                  duration: const Duration(milliseconds: 220),
+                  duration: DrinMotion.of(context, DrinMotion.base),
                   width: 9,
                   height: 9,
                   decoration: BoxDecoration(color: dot, shape: BoxShape.circle),
                 ),
                 const SizedBox(width: 8),
-                Text(label, style: TextStyle(fontSize: 13, color: c.text)),
+                Text(label, style: DrinText.detail.copyWith(color: c.ink)),
               ]),
             ),
           ),
@@ -860,7 +661,7 @@ class _HomeScreenState extends State<HomeScreen> {
               ],
               child: pill([
                 AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 200),
+                  duration: DrinMotion.of(context, DrinMotion.base),
                   transitionBuilder: (child, anim) =>
                       ScaleTransition(scale: anim, child: child),
                   child: Icon(
@@ -877,7 +678,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     child: Text(
                       customNote,
                       overflow: TextOverflow.ellipsis,
-                      style: TextStyle(fontSize: 12, color: c.text),
+                      style: DrinText.detail.copyWith(color: c.ink),
                     ),
                   ),
                 ],
@@ -922,6 +723,10 @@ class _HomeScreenState extends State<HomeScreen> {
               child: SearchBox(
                 phone: p,
                 onCall: _call,
+                onVideoCall: (n) => p.dial(n, video: true),
+                onOpenMiniHud: () => _setMiniHud(true),
+                onOpenPreferences: _openPreferences,
+                onSetPresence: _setPresence,
                 focusNode: _searchFocus,
               ),
             ),
@@ -1119,40 +924,40 @@ class _Sidebar extends StatelessWidget {
     ) => Padding(
       padding: const EdgeInsets.only(bottom: 4),
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        curve: Curves.easeOutCubic,
+        duration: DrinMotion.of(context, DrinMotion.fast),
+        curve: DrinMotion.curve,
         decoration: BoxDecoration(
-          color: selected ? c.keyBtn : Colors.transparent,
-          borderRadius: BorderRadius.circular(10),
+          color: selected ? c.panel : Colors.transparent,
+          borderRadius: BorderRadius.circular(DrinRadius.row),
         ),
         child: Material(
           color: Colors.transparent,
           child: InkWell(
-            borderRadius: BorderRadius.circular(10),
+            borderRadius: BorderRadius.circular(DrinRadius.row),
             onTap: onTap,
             child: SizedBox(
               height: 44,
               child: Row(
                 children: [
                   AnimatedContainer(
-                    duration: const Duration(milliseconds: 180),
-                    curve: Curves.easeOutCubic,
+                    duration: DrinMotion.of(context, DrinMotion.fast),
+                    curve: DrinMotion.curve,
                     width: 3,
                     height: selected ? 20 : 0,
                     decoration: BoxDecoration(
-                      color: selected ? c.accent : Colors.transparent,
+                      color: selected ? c.primary : Colors.transparent,
                       borderRadius: BorderRadius.circular(2),
                     ),
                   ),
                   const SizedBox(width: 10),
-                  Icon(icon, size: 20, color: selected ? c.accent : c.muted),
+                  Icon(icon, size: 20, color: selected ? c.primary : c.muted),
                   const SizedBox(width: 12),
                   Expanded(
                     child: Text(
                       label,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                        color: selected ? c.accent : c.text,
+                        color: selected ? c.primary : c.ink,
                         fontWeight: selected
                             ? FontWeight.w600
                             : FontWeight.w400,
@@ -1457,14 +1262,14 @@ class _ExtensionsViewState extends State<_ExtensionsView> {
             _page = 0;
           }),
           child: AnimatedContainer(
-            duration: const Duration(milliseconds: 180),
-            curve: Curves.easeOutCubic,
+            duration: DrinMotion.of(context, DrinMotion.fast),
+            curve: DrinMotion.curve,
             height: 32,
             padding: const EdgeInsets.symmetric(horizontal: 10),
             decoration: BoxDecoration(
-              color: selected ? c.keyBtn : c.field,
-              border: Border.all(color: selected ? c.accent : c.border),
-              borderRadius: BorderRadius.circular(999),
+              color: selected ? c.panel : c.raised,
+              border: Border.all(color: selected ? c.primary : c.line),
+              borderRadius: BorderRadius.circular(DrinRadius.pill),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
@@ -1473,10 +1278,8 @@ class _ExtensionsViewState extends State<_ExtensionsView> {
                 const SizedBox(width: 6),
                 Text(
                   '$count',
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-                    color: selected ? c.accent : c.text,
+                  style: DrinText.label.copyWith(
+                    color: selected ? c.primary : c.ink,
                   ),
                 ),
               ],
@@ -2310,28 +2113,28 @@ class _GroupsPanelState extends State<_GroupsPanel> {
       key: ValueKey('tree_${r.key}'),
       padding: const EdgeInsets.only(bottom: 2),
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 160),
-        curve: Curves.easeOutCubic,
+        duration: DrinMotion.of(context, DrinMotion.fast),
+        curve: DrinMotion.curve,
         decoration: BoxDecoration(
-          color: selected ? c.keyBtn : Colors.transparent,
-          borderRadius: BorderRadius.circular(8),
+          color: selected ? c.panel : Colors.transparent,
+          borderRadius: BorderRadius.circular(DrinRadius.control),
         ),
         child: Material(
           color: Colors.transparent,
           child: InkWell(
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: BorderRadius.circular(DrinRadius.control),
             onTap: () => phone.selectGroup(r.key),
             child: SizedBox(
               height: 36,
               child: Row(
                 children: [
                   AnimatedContainer(
-                    duration: const Duration(milliseconds: 160),
-                    curve: Curves.easeOutCubic,
+                    duration: DrinMotion.of(context, DrinMotion.fast),
+                    curve: DrinMotion.curve,
                     width: 3,
                     height: selected ? 20 : 0,
                     decoration: BoxDecoration(
-                      color: selected ? c.accent : Colors.transparent,
+                      color: selected ? c.primary : Colors.transparent,
                       borderRadius: BorderRadius.circular(2),
                     ),
                   ),
@@ -2339,7 +2142,7 @@ class _GroupsPanelState extends State<_GroupsPanel> {
                     SizedBox(
                       width: 16,
                       child: Center(
-                        child: Container(width: 1, height: 36, color: c.border),
+                        child: Container(width: 1, height: 36, color: c.line),
                       ),
                     ),
                   SizedBox(
@@ -2356,21 +2159,21 @@ class _GroupsPanelState extends State<_GroupsPanel> {
                             ),
                             icon: AnimatedRotation(
                               turns: open ? 0.25 : 0,
-                              duration: const Duration(milliseconds: 180),
-                              curve: Curves.easeOutCubic,
+                              duration: DrinMotion.of(context, DrinMotion.fast),
+                              curve: DrinMotion.curve,
                               child: Icon(Icons.chevron_right, color: c.muted),
                             ),
                           )
                         : null,
                   ),
-                  Icon(r.icon, size: 18, color: selected ? c.accent : c.muted),
+                  Icon(r.icon, size: 18, color: selected ? c.primary : c.muted),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
                       r.label,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                        color: selected ? c.accent : c.text,
+                        color: selected ? c.primary : c.ink,
                         fontWeight: selected
                             ? FontWeight.w600
                             : FontWeight.w400,
@@ -2591,6 +2394,706 @@ class _CallLinkDialogState extends State<_CallLinkDialog> {
           label: Text(tr('Chiama')),
         ),
       ],
+    );
+  }
+}
+
+enum _HudPanel { none, dtmf, transfer }
+
+class _MiniHudView extends StatefulWidget {
+  const _MiniHudView({
+    required this.phone,
+    required this.dialCtl,
+    required this.onExpand,
+    required this.onCall,
+    required this.onSetPresence,
+    required this.onOpenPresencePrefs,
+  });
+
+  final PhoneController phone;
+  final TextEditingController dialCtl;
+  final VoidCallback onExpand;
+  final ValueChanged<String> onCall;
+  final ValueChanged<String> onSetPresence;
+  final VoidCallback onOpenPresencePrefs;
+
+  @override
+  State<_MiniHudView> createState() => _MiniHudViewState();
+}
+
+class _MiniHudViewState extends State<_MiniHudView> {
+  Timer? _tick;
+  _HudPanel _panel = _HudPanel.none;
+  int? _callId;
+
+  PhoneController get p => widget.phone;
+
+  @override
+  void initState() {
+    super.initState();
+    _tick = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted && p.call != null) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _tick?.cancel();
+    super.dispose();
+  }
+
+  String _duration() {
+    final since = p.callConnectedAt;
+    if (since == null) return '00:00';
+    final d = DateTime.now().difference(since);
+    String two(int n) => n.toString().padLeft(2, '0');
+    return d.inHours > 0
+        ? '${d.inHours}:${two(d.inMinutes % 60)}:${two(d.inSeconds % 60)}'
+        : '${two(d.inMinutes)}:${two(d.inSeconds % 60)}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.drin;
+    final call = p.call;
+    if (call == null || _callId != call.id) {
+      _callId = call?.id;
+      if (call == null) _panel = _HudPanel.none;
+    }
+    final favs = p.favoriteExtensions.take(6).toList();
+    final dot = p.registration.status == RegistrationStatus.ok
+        ? c.free
+        : p.registration.status == RegistrationStatus.failed
+        ? c.busy
+        : c.muted;
+    final presence = presenceOf(c, p.ownPresence);
+    final who = call == null
+        ? ''
+        : (call.remoteName.isNotEmpty
+              ? call.remoteName
+              : p.nameFor(call.remoteNumber));
+    return Scaffold(
+      backgroundColor: c.ground,
+      body: Padding(
+        padding: const EdgeInsets.all(DrinSpace.s3),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 8,
+                  height: 8,
+                  decoration: BoxDecoration(color: dot, shape: BoxShape.circle),
+                ),
+                const SizedBox(width: DrinSpace.s2),
+                Text(
+                  'DrinPhone HUD',
+                  style: DrinText.label.copyWith(color: c.ink),
+                ),
+                if (presence != null) ...[
+                  const SizedBox(width: DrinSpace.s2),
+                  PopupMenuButton<String>(
+                    tooltip: '${tr('Stato di presenza')} · ${presence.$3}',
+                    position: PopupMenuPosition.under,
+                    onSelected: (v) => v == 'more'
+                        ? widget.onOpenPresencePrefs()
+                        : widget.onSetPresence(v),
+                    itemBuilder: (_) => [
+                      for (final st in presenceStatuses)
+                        if (presenceOf(c, st) case final pr?)
+                          PopupMenuItem(
+                            value: st,
+                            height: 36,
+                            enabled: p.ownDetail != null,
+                            child: Row(
+                              children: [
+                                Icon(pr.$1, size: 16, color: pr.$2),
+                                const SizedBox(width: DrinSpace.s2),
+                                Expanded(child: Text(pr.$3)),
+                                if (st == p.ownPresence)
+                                  Icon(
+                                    Icons.check_rounded,
+                                    size: 16,
+                                    color: c.primary,
+                                  ),
+                              ],
+                            ),
+                          ),
+                      const PopupMenuDivider(),
+                      PopupMenuItem(
+                        value: 'more',
+                        height: 36,
+                        child: Text(tr('Impostazioni di presenza…')),
+                      ),
+                    ],
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 7,
+                        vertical: 3,
+                      ),
+                      decoration: BoxDecoration(
+                        color: c.surface,
+                        border: Border.all(color: c.line),
+                        borderRadius: BorderRadius.circular(DrinRadius.pill),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(presence.$1, size: 14, color: presence.$2),
+                          const SizedBox(width: 4),
+                          Icon(
+                            Icons.expand_more_rounded,
+                            size: 13,
+                            color: c.muted,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+                if (p.autoDndActive) ...[
+                  const SizedBox(width: DrinSpace.s1),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 2,
+                    ),
+                    decoration: BoxDecoration(
+                      color: c.busy.withValues(alpha: 0.14),
+                      borderRadius: BorderRadius.circular(DrinRadius.pill),
+                    ),
+                    child: Text(
+                      'DND',
+                      style: DrinText.detail.copyWith(color: c.busyText),
+                    ),
+                  ),
+                ],
+                const Spacer(),
+                TextButton.icon(
+                  onPressed: widget.onExpand,
+                  icon: const Icon(Icons.open_in_full_rounded, size: 16),
+                  label: Text(tr('Espandi')),
+                ),
+              ],
+            ),
+            const SizedBox(height: DrinSpace.s2),
+            Expanded(
+              child: call != null
+                  ? Container(
+                      padding: const EdgeInsets.all(DrinSpace.s3),
+                      decoration: BoxDecoration(
+                        color: c.surface,
+                        border: Border.all(
+                          color: call.phase == CallPhase.incoming
+                              ? c.squilloLine
+                              : c.line,
+                        ),
+                        borderRadius: BorderRadius.circular(DrinRadius.panel),
+                      ),
+                      child: Center(
+                        child: SingleChildScrollView(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  who.isNotEmpty
+                                      ? '$who · ${call.remoteNumber}'
+                                      : call.remoteNumber,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: DrinText.heading.copyWith(
+                                    color: c.ink,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: DrinSpace.s2),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 2,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: c.panel,
+                                  borderRadius: BorderRadius.circular(
+                                    DrinRadius.pill,
+                                  ),
+                                ),
+                                child: Text(
+                                  call.phase == CallPhase.incoming
+                                      ? tr('In arrivo')
+                                      : call.phase == CallPhase.outgoing
+                                      ? tr('Chiamata…')
+                                      : call.phase == CallPhase.paused
+                                      ? tr('In attesa')
+                                      : _duration(),
+                                  style: DrinText.number.copyWith(color: c.ink),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: DrinSpace.s2),
+                          if (_panel == _HudPanel.dtmf &&
+                              call.phase == CallPhase.active) ...[
+                            Wrap(
+                              spacing: 4,
+                              runSpacing: 4,
+                              children: [
+                                for (final d in const [
+                                  '1',
+                                  '2',
+                                  '3',
+                                  '4',
+                                  '5',
+                                  '6',
+                                  '7',
+                                  '8',
+                                  '9',
+                                  '*',
+                                  '0',
+                                  '#',
+                                ])
+                                  SizedBox(
+                                    width: 28,
+                                    height: 26,
+                                    child: OutlinedButton(
+                                      style: OutlinedButton.styleFrom(
+                                        padding: EdgeInsets.zero,
+                                        backgroundColor: c.panel,
+                                      ),
+                                      onPressed: () => p.sendDtmf(d),
+                                      child: Text(
+                                        d,
+                                        style: DrinText.number.copyWith(
+                                          color: c.ink,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                            const SizedBox(height: DrinSpace.s2),
+                          ] else if (_panel == _HudPanel.transfer &&
+                              call.phase == CallPhase.active &&
+                              favs.isNotEmpty) ...[
+                            SingleChildScrollView(
+                              scrollDirection: Axis.horizontal,
+                              child: Row(
+                                children: [
+                                  for (final ext in favs)
+                                    Padding(
+                                      padding: const EdgeInsets.only(right: 6),
+                                      child: ActionChip(
+                                        label: Text(
+                                          ext.name.isNotEmpty
+                                              ? '${ext.name} (${ext.number})'
+                                              : ext.number,
+                                          style: DrinText.label.copyWith(
+                                            color: c.ink,
+                                          ),
+                                        ),
+                                        onPressed: () {
+                                          p.transfer(ext.number);
+                                          setState(
+                                            () => _panel = _HudPanel.none,
+                                          );
+                                        },
+                                      ),
+                                    ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(height: DrinSpace.s2),
+                          ],
+                          Wrap(
+                            spacing: DrinSpace.s2,
+                            runSpacing: DrinSpace.s1,
+                            crossAxisAlignment: WrapCrossAlignment.center,
+                            children: [
+                              if (call.phase == CallPhase.incoming) ...[
+                                FilledButton.icon(
+                                  style: FilledButton.styleFrom(
+                                    backgroundColor: c.free,
+                                    foregroundColor: c.onFree,
+                                  ),
+                                  onPressed: () => p.answer(call.id),
+                                  icon: const Icon(
+                                    Icons.call_rounded,
+                                    size: 16,
+                                  ),
+                                  label: Text(tr('Rispondi')),
+                                ),
+                                OutlinedButton.icon(
+                                  onPressed: () => p.hangup(call.id),
+                                  icon: Icon(
+                                    Icons.call_end_rounded,
+                                    size: 16,
+                                    color: c.busyText,
+                                  ),
+                                  label: Text(tr('Rifiuta')),
+                                ),
+                              ] else ...[
+                                OutlinedButton(
+                                  onPressed: p.toggleMute,
+                                  child: Text(
+                                    p.muted ? tr('Riattiva') : tr('Muto'),
+                                  ),
+                                ),
+                                if (call.phase == CallPhase.active ||
+                                    call.phase == CallPhase.paused)
+                                  OutlinedButton(
+                                    onPressed: p.toggleHold,
+                                    child: Text(
+                                      p.onHold ? tr('Riprendi') : tr('Attesa'),
+                                    ),
+                                  ),
+                                if (call.phase == CallPhase.active) ...[
+                                  IconButton.outlined(
+                                    tooltip: tr('Tastiera'),
+                                    onPressed: () => setState(
+                                      () => _panel = _panel == _HudPanel.dtmf
+                                          ? _HudPanel.none
+                                          : _HudPanel.dtmf,
+                                    ),
+                                    icon: Icon(
+                                      Icons.dialpad_rounded,
+                                      size: 16,
+                                      color: _panel == _HudPanel.dtmf
+                                          ? c.primary
+                                          : c.ink,
+                                    ),
+                                  ),
+                                  if (favs.isNotEmpty)
+                                    IconButton.outlined(
+                                      tooltip: tr('Trasferisci'),
+                                      onPressed: () => setState(
+                                        () => _panel =
+                                            _panel == _HudPanel.transfer
+                                            ? _HudPanel.none
+                                            : _HudPanel.transfer,
+                                      ),
+                                      icon: Icon(
+                                        Icons.phone_forwarded_rounded,
+                                        size: 16,
+                                        color: _panel == _HudPanel.transfer
+                                            ? c.primary
+                                            : c.ink,
+                                      ),
+                                    ),
+                                ],
+                                FilledButton.icon(
+                                  style: FilledButton.styleFrom(
+                                    backgroundColor: c.busy,
+                                    foregroundColor: c.onBusy,
+                                  ),
+                                  onPressed: () => p.hangup(call.id),
+                                  icon: const Icon(
+                                    Icons.call_end_rounded,
+                                    size: 16,
+                                  ),
+                                  label: Text(tr('Termina')),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                )
+                  : Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: SizedBox(
+                                height: 36,
+                                child: TextField(
+                                  controller: widget.dialCtl,
+                                  decoration: InputDecoration(
+                                    isDense: true,
+                                    hintText: tr('Chiama numero…'),
+                                  ),
+                                  onSubmitted: (v) {
+                                    final n = v.trim();
+                                    if (n.isNotEmpty && p.canDial) {
+                                      widget.dialCtl.clear();
+                                      widget.onCall(n);
+                                    }
+                                  },
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: DrinSpace.s2),
+                            IconButton.filled(
+                              tooltip: tr('Chiama'),
+                              onPressed: p.canDial
+                                  ? () {
+                                      final n = widget.dialCtl.text.trim();
+                                      if (n.isNotEmpty) {
+                                        widget.dialCtl.clear();
+                                        widget.onCall(n);
+                                      }
+                                    }
+                                  : null,
+                              icon: const Icon(Icons.call_rounded, size: 18),
+                            ),
+                          ],
+                        ),
+                        if (favs.isNotEmpty) ...[
+                          const SizedBox(height: DrinSpace.s2),
+                          Expanded(
+                            child: SingleChildScrollView(
+                              child: Wrap(
+                                spacing: DrinSpace.s2,
+                                runSpacing: DrinSpace.s1,
+                                children: [
+                                  for (final ext in favs)
+                                    Builder(
+                                      builder: (_) {
+                                        final blf = p.blfOf(ext);
+                                        final canPickup =
+                                            p.canPickupExtension(ext);
+                                        return ActionChip(
+                                          avatar: Container(
+                                            width: 8,
+                                            height: 8,
+                                            decoration: BoxDecoration(
+                                              color: switch (blf) {
+                                                BlfStatus.idle => c.free,
+                                                BlfStatus.ringing => c.squillo,
+                                                BlfStatus.busy => c.busy,
+                                                _ => c.muted,
+                                              },
+                                              shape: BoxShape.circle,
+                                            ),
+                                          ),
+                                          label: Text(
+                                            ext.name.isNotEmpty
+                                                ? '${ext.name} (${ext.number})'
+                                                : ext.number,
+                                          ),
+                                          tooltip: canPickup
+                                              ? tr('Rispondi per {n}', {
+                                                  'n': ext.number,
+                                                })
+                                              : null,
+                                          onPressed: p.canDial
+                                              ? () => canPickup
+                                                    ? p.pickupExtension(ext)
+                                                    : widget.onCall(ext.number)
+                                              : null,
+                                        );
+                                      },
+                                    ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Mini-scheda wrap-up dopo la chiusura della chiamata: tag esito rapidi,
+/// nota e promemoria di richiamata 1-clic.
+class _WrapUpCard extends StatefulWidget {
+  const _WrapUpCard({required this.phone});
+  final PhoneController phone;
+
+  @override
+  State<_WrapUpCard> createState() => _WrapUpCardState();
+}
+
+class _WrapUpCardState extends State<_WrapUpCard> {
+  final _note = TextEditingController();
+  DateTime? _forStart;
+  String _forNumber = '';
+
+  static const _tags = ['Richiamare', 'Supporto', 'Preventivo', 'Risolto'];
+
+  @override
+  void initState() {
+    super.initState();
+    _sync();
+  }
+
+  @override
+  void didUpdateWidget(covariant _WrapUpCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _sync();
+  }
+
+  void _sync() {
+    final w = widget.phone.lastEndedWrapUp;
+    if (w != null && (_forStart != w.start || _forNumber != w.number)) {
+      _forStart = w.start;
+      _forNumber = w.number;
+      _note.text = w.note;
+    }
+  }
+
+  @override
+  void dispose() {
+    _note.dispose();
+    super.dispose();
+  }
+
+  void _toggleTag(String tag) {
+    widget.phone.pinWrapUp();
+    final token = '[${tr(tag)}]';
+    final cur = _note.text.trim();
+    if (cur.contains(token)) return;
+    _note.text = cur.isEmpty ? '$token ' : '$token $cur';
+    _note.selection = TextSelection.collapsed(offset: _note.text.length);
+  }
+
+  Future<void> _remind(String number, String name, {Duration? delay, DateTime? dueAt}) async {
+    widget.phone.pinWrapUp();
+    await widget.phone.scheduleReminder(
+      number: number,
+      name: name,
+      note: _note.text.trim(),
+      delay: delay,
+      dueAt: dueAt,
+    );
+    await widget.phone.saveWrapUpNote(_note.text);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final p = widget.phone;
+    final w = p.lastEndedWrapUp;
+    if (w == null) return const SizedBox.shrink();
+    final c = context.drin;
+    final who = w.name.isNotEmpty && w.name != w.number
+        ? '${w.name} · ${w.number}'
+        : w.number;
+    return Material(
+      color: c.surface,
+      elevation: 10,
+      shadowColor: Colors.black38,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(DrinRadius.panel),
+        side: BorderSide(color: c.line),
+      ),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 380),
+        child: Padding(
+          padding: const EdgeInsets.all(DrinSpace.s3),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  Icon(Icons.fact_check_outlined, size: 18, color: c.primary),
+                  const SizedBox(width: DrinSpace.s2),
+                  Expanded(
+                    child: Text(
+                      who,
+                      overflow: TextOverflow.ellipsis,
+                      style: DrinText.heading.copyWith(color: c.ink),
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: p.wrapUpPinned
+                        ? tr('Scheda fissata')
+                        : tr('Tieni aperto'),
+                    onPressed: p.pinWrapUp,
+                    visualDensity: VisualDensity.compact,
+                    icon: Icon(
+                      p.wrapUpPinned
+                          ? Icons.push_pin_rounded
+                          : Icons.push_pin_outlined,
+                      size: 16,
+                      color: p.wrapUpPinned ? c.primary : c.muted,
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: tr('Chiudi'),
+                    onPressed: p.dismissWrapUp,
+                    visualDensity: VisualDensity.compact,
+                    icon: Icon(Icons.close_rounded, size: 16, color: c.muted),
+                  ),
+                ],
+              ),
+              const SizedBox(height: DrinSpace.s2),
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: [
+                  for (final tag in _tags)
+                    ActionChip(
+                      label: Text(
+                        tr(tag),
+                        style: DrinText.label.copyWith(color: c.ink),
+                      ),
+                      onPressed: () => _toggleTag(tag),
+                    ),
+                ],
+              ),
+              const SizedBox(height: DrinSpace.s2),
+              TextField(
+                controller: _note,
+                onChanged: (_) => p.pinWrapUp(),
+                maxLines: 2,
+                decoration: InputDecoration(
+                  isDense: true,
+                  hintText: tr('Nota rapida post-chiamata…'),
+                ),
+                onSubmitted: (_) => p.saveWrapUpNote(_note.text),
+              ),
+              const SizedBox(height: DrinSpace.s2),
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  OutlinedButton(
+                    onPressed: () => _remind(
+                      w.number,
+                      w.name,
+                      delay: const Duration(minutes: 15),
+                    ),
+                    child: Text(tr('15 min')),
+                  ),
+                  OutlinedButton(
+                    onPressed: () => _remind(
+                      w.number,
+                      w.name,
+                      delay: const Duration(hours: 1),
+                    ),
+                    child: Text(tr('1 ora')),
+                  ),
+                  OutlinedButton(
+                    onPressed: () => _remind(
+                      w.number,
+                      w.name,
+                      dueAt: RecallReminder.nextMorning(DateTime.now()),
+                    ),
+                    child: Text(tr('Domani 09:00')),
+                  ),
+                  FilledButton(
+                    onPressed: () => p.saveWrapUpNote(_note.text),
+                    child: Text(tr('Salva')),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

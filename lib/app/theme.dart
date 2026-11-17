@@ -368,10 +368,13 @@ ThemeData buildTheme(Brightness b) {
     snackBarTheme: SnackBarThemeData(
       width: 440,
       behavior: SnackBarBehavior.floating,
-      backgroundColor: c.ink,
-      contentTextStyle: t(DrinText.body, c.surface),
+      backgroundColor: c.surface,
+      contentTextStyle: t(DrinText.body, c.ink),
+      actionTextColor: c.primary,
+      elevation: 8,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(DrinRadius.row),
+        borderRadius: BorderRadius.circular(DrinRadius.panel),
+        side: BorderSide(color: c.line),
       ),
     ),
     // Cambio pagina in dissolvenza ([DrinMotion.base]), non scorrimento.

@@ -398,6 +398,24 @@ abstract class SipEngine {
     String? ringer,
   });
 
+  /// Regola il guadagno in dB di microfono e riproduzione (-10..+15 dB).
+  Future<void> setAudioGains({double micDb = 0, double playbackDb = 0}) async {}
+
+  /// Percorso del file `.wav` PCM 16-bit per la suoneria ('' = predefinita).
+  Future<void> setRingtone(String path) async {}
+
+  /// Riproduce localmente un `.wav` PCM 16-bit (anteprima suoneria / avviso in cuffia).
+  Future<void> playLocalSound(String path) async {}
+
+  /// Interrompe un eventuale squillo/anteprima in corso.
+  Future<void> stopRinging() async {}
+
+  /// Suonerie `.wav` incluse nell'installazione (`(path, label)`).
+  List<(String, String)> builtInRingtones() => const [];
+
+  /// Percorso del tono discreto in cuffia per seconda chiamata in arrivo ('' = assente).
+  String? callWaitingTonePath() => null;
+
   /// Codec audio utilizzabili dal core, in ordine di priorità.
   List<AudioCodecInfo> audioCodecs();
 

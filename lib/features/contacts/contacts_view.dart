@@ -42,6 +42,23 @@ class _ContactsViewState extends State<ContactsView> {
     if (_scroll.hasClients) _scroll.jumpTo(0);
   }
 
+  Widget _bookPill(DrinColors c, String? value, String label) {
+    final active = _book == value;
+    return Padding(
+      padding: const EdgeInsets.only(right: DrinSpace.s1),
+      child: ChoiceChip(
+        label: Text(label, style: DrinText.label.copyWith(color: active ? c.primary : c.ink)),
+        selected: active,
+        showCheckmark: false,
+        shape: const StadiumBorder(),
+        onSelected: (_) => setState(() {
+          _book = value;
+          _top();
+        }),
+      ),
+    );
+  }
+
   /// Lettera dell'indice per un nome: A–Z, altrimenti "#".
   static String _letter(String name) {
     final t = name.trim().toUpperCase();
@@ -212,8 +229,8 @@ class _ContactsViewState extends State<ContactsView> {
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: c.surface,
-        border: Border.all(color: c.border),
-        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: c.line),
+        borderRadius: BorderRadius.circular(DrinRadius.panel),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -222,47 +239,33 @@ class _ContactsViewState extends State<ContactsView> {
             children: [
               Text(
                 tr('Rubrica'),
-                style: TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: -0.2,
-                  color: c.text,
-                ),
+                style: DrinText.title.copyWith(color: c.ink),
               ),
               const SizedBox(width: 12),
               CountBadge(list.length),
-              // Personali e rubriche del PBX come menu a tendina (stile Linkus).
+              // Personali e rubriche del PBX a pillola (DESIGN.md §6).
               if (books.length + (hasPersonal ? 1 : 0) > 1) ...[
-                const SizedBox(width: 16),
-                Icon(Icons.menu_book_outlined, size: 18, color: c.muted),
-                const SizedBox(width: 6),
-                DropdownButton<String?>(
-                  value:
-                      books.contains(_book) ||
-                          _book == PhoneController.personalBook
-                      ? _book
-                      : null,
-                  underline: const SizedBox.shrink(),
-                  items: [
-                    DropdownMenuItem(
-                      value: null,
-                      child: Text(tr('Tutte le rubriche')),
+                const SizedBox(width: DrinSpace.s3),
+                Expanded(
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: [
+                        _bookPill(c, null, tr('Tutte le rubriche')),
+                        if (hasPersonal)
+                          _bookPill(
+                            c,
+                            PhoneController.personalBook,
+                            tr('Contatti personali'),
+                          ),
+                        for (final b in books) _bookPill(c, b, b),
+                      ],
                     ),
-                    if (hasPersonal)
-                      DropdownMenuItem(
-                        value: PhoneController.personalBook,
-                        child: Text(tr('Contatti personali')),
-                      ),
-                    for (final b in books)
-                      DropdownMenuItem(value: b, child: Text(b)),
-                  ],
-                  onChanged: (v) => setState(() {
-                    _book = v;
-                    _top();
-                  }),
+                  ),
                 ),
-              ],
-              const Spacer(),
+              ] else
+                const Spacer(),
+              const SizedBox(width: DrinSpace.s2),
               SizedBox(
                 width: 280,
                 child: TextField(
@@ -271,7 +274,7 @@ class _ContactsViewState extends State<ContactsView> {
                   decoration: InputDecoration(
                     prefixIcon: const Icon(Icons.filter_list_rounded, size: 18),
                     hintText: tr('Filtra per nome, azienda o numero'),
-                    hintStyle: TextStyle(fontSize: 13, color: c.muted),
+                    hintStyle: DrinText.detail.copyWith(color: c.muted),
                   ),
                 ),
               ),

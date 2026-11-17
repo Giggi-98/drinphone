@@ -166,17 +166,6 @@ void main() {
 
       expect(find.text('Codec audio'), findsOneWidget);
       expect(find.textContaining('opus · 48000 Hz'), findsOneWidget);
-      expect(find.text('Risposta automatica'), findsOneWidget);
-
-      // Attiva risposta automatica dalla UI
-      await tester.ensureVisible(
-        find.text('Rispondi automaticamente alle chiamate'),
-      );
-      await tester.tap(find.text('Rispondi automaticamente alle chiamate'));
-      await tester.pump();
-      await Future<void>.delayed(const Duration(milliseconds: 20));
-      await tester.pump();
-      expect(phone.settings.callOptions.autoAnswer, isTrue);
 
       // Sposta su PCMA (secondo codec -> primo)
       final upButtons = find.byIcon(Icons.arrow_upward_rounded);
@@ -186,6 +175,19 @@ void main() {
       await tester.pump();
       await Future<void>.delayed(const Duration(milliseconds: 20));
       expect(engine.audioCodecs().first.id, 'PCMA/8000/1');
+
+      // Passa a Chiamate & Automazioni e attiva risposta automatica dalla UI.
+      await tester.tap(find.text('Chiamate & Automazioni'));
+      await tester.pump();
+      expect(find.text('Risposta automatica'), findsOneWidget);
+      await tester.ensureVisible(
+        find.text('Rispondi automaticamente alle chiamate'),
+      );
+      await tester.tap(find.text('Rispondi automaticamente alle chiamate'));
+      await tester.pump();
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      await tester.pump();
+      expect(phone.settings.callOptions.autoAnswer, isTrue);
 
       await phone.shutdown();
       phone.dispose();

@@ -6,6 +6,20 @@ aggiungi una voce nuova in cima che cita la vecchia. Il campo chiave è
 
 ---
 
+## 2026-11-17 · Pulizia disinstallazione, riconciliazione BLF, restyling CallWindow e Piano Migliorie A–H (`IMPLEMENTATO`, `DA VALIDARE` su Windows/PBX reale)
+1. **Disinstallazione completa Windows (`installer/drinphone.iss`):** aggiunto `CloseApplications=force`, `taskkill /F /IM drinphone.exe` prima della rimozione file (l'app ridotta nella tray altrimenti blocca `{app}`), pulizia ricorsiva `DelTree('{app}')` in `usPostUninstall` e dialogo interattivo in `InitializeUninstall()` per scegliere se conservare o eliminare i profili utente in `{userappdata}\Econnet\DrinPhone` (default: conserva).
+2. **Eliminazione stati "squilla" appesi (`DialogInfoTracker`, `PbxConnection`, `PhoneController`):** normalizzato il parsing XML `dialog-info` (`FULL`/`PARTIAL`, `EARLY`/`TERMINATED` case-insensitive); potati i ring group `30011` rimasti senza rami vivi e accelerato il controllo periodico `call/query` a 4 s finché esistono chiamate in squillo; svuotato lo stato live al disconnect WS e riconciliato in `PhoneController._blfFresh` un eventuale `BlfStatus.ringing` SIP precedente allo snapshot `call/query` se l'interno non ha più chiamate attive.
+   - **Da rivedere se:** il PBX dovesse emettere eventi SIP BLF con clock/latenza superiori a 2 s dopo l'inizio effettivo di uno squillo rispetto allo snapshot REST.
+3. **Leggibilità CallWindow & QoS proattivo (Slice D):** aggiunto scrim opaco dietro la modale, bordi `c.line`, header ad alto contrasto con avviso `Rete instabile` cliccabile per aprire il pannello `Qualità rete (QoS)` (ultimi 20 campioni `CallAudioMetrics` + RX/TX/Jitter/Perdita/RTT), identità su card `surface` con alone di stato, e chiusura automatica di eventuali `PopupRoute` aperti quando si attiva il video nativo MSOGL (Slice G).
+4. **Workflow operatore (Slices A, B, C, H):**
+   - **Mini-HUD 2.0:** altezza `264 px`, presenza/DND rapido nell'header, timer chiamata live, mini-tastierino DTMF e trasferimento 1-clic verso i preferiti.
+   - **Post-call Wrap-up & Promemoria CDR:** mini-scheda a fine chiamata (`8 s` auto-hide, fissabile/editabile) con tag rapidi (`[Richiamare]`, `[Supporto]`, `[Preventivo]`, `[Risolto]`), nota e promemoria `15 min` / `1 ora` / `Domani 09:00`; aggiunti promemoria rapidi anche alle righe `CdrView`.
+   - **Command Palette `>` / `/` (`SearchBox`):** comandi testuali (`> disponibile`, `> dnd`, `> pausa code`, `> mini`, `> tema scuro/chiaro`, `> preferenze`, `> pickup <n>`, `> trasf <n>`) + azioni rapide Copia/Video (`Shift+Invio`).
+   - **Pannello Giornata (`HistoryView`):** aggiunti *durata media* e *picco orario* nella barra riepilogo.
+5. **Audio avanzato & Preferenze "Squillo" (Slices E, F, G):**
+   - **API verificate su `linphone-sdk 5.5.39` (`third_party/linphone-sdk/win64/include/linphone/core.h`):** `linphone_core_set_mic_gain_db`, `linphone_core_set_playback_gain_db`, `linphone_core_set_ring`, `linphone_core_play_local`, `linphone_core_stop_ringing` per scelta suoneria (SDK + `.wav` locale), prova suoneria, guadagni `-10..+15 dB` e tono discreto in cuffia su seconda chiamata entrante.
+   - **Preferenze & Token:** divisa la colonna in **Audio & Suonerie**, **Chiamate & Automazioni**, **Rete & Sicurezza**, **Video**, **Diagnostica** (mantenendo `initialTab: 3` su `Audio & Suonerie`), aggiunto selettore **Zoom interfaccia**, sostituito il dropdown rubriche con filtri a pillola in `ContactsView`, e allineati `DrinMotion.of(context, ...)` e `snackBarTheme`.
+
 ## 2026-11-16 · Azioni BLF su Interni: Pickup 1-clic & Busy Callback ("Avvisami appena si libera") (`IMPLEMENTATO`, `DA VALIDARE` su PBX reale)
 1. **Pickup BLF 1-clic da `Interni` (`PhoneController.pickupExtension`, `_ExtensionTile`):** quando un interno squilla (`BlfStatus.ringing` o `LiveState.ringing`) e il PBX espone `extPickupCode` (`feature_code/get`), la scheda/riga mostra il pulsante `squillo` (`c.squillo` / `c.onSquillo`) e la voce nel menu contestuale per rispondere subito con `<extPickupCode><interno>`.
    - **Scartato:** limitare il pickup alla sola vista `Live` (l'utente passa gran parte del tempo su `Interni`).

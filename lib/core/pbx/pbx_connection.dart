@@ -360,6 +360,11 @@ class PbxConnection {
   /// Con chiamate in corso, riallineamento periodico via `call/query`: un BYE
   /// perso o non inviato non lascia chiamate fantasma.
   static const callsCheckEvery = Duration(seconds: 15);
+
+  /// Con chiamate che squillano (nessuno ha ancora risposto), controlliamo
+  /// più spesso per ripulire subito eventuali squilli abbandonati/gruppi.
+  static const ringingCheckEvery = Duration(seconds: 4);
+  DateTime? lastCallsSnapshotAt;
   Timer? _callsTimer;
   bool _snapshotting = false;
 
@@ -1164,7 +1169,12 @@ class PbxConnection {
 
   void _onEventsClosed() {
     _heartbeat?.cancel();
+    _callsTimer?.cancel();
+    _callsTimer = null;
     _ws = null;
+    liveCalls.clear();
+    callStatus.clear();
+    lastCallsSnapshotAt = null;
     if (!_stopped && realtime) {
       eventsStatus = tr('Eventi in tempo reale: riconnessione…');
       _scheduleEvents();
@@ -1233,10 +1243,18 @@ class PbxConnection {
           if (identical(api, _api)) parkedCalls = parked;
         } catch (_) {}
       }
+      lastCallsSnapshotAt = DateTime.now();
+      final activeByExt = extensionCalls;
+      for (final ext in callStatus.keys.toList()) {
+        if (callStatus[ext] != BlfStatus.idle && !activeByExt.containsKey(ext)) {
+          callStatus[ext] = BlfStatus.idle;
+        }
+      }
       onUpdate(this, false);
     } finally {
       _snapshotting = false;
-      _scheduleCallsCheck(callsCheckEvery);
+      final hasRingingOnly = liveCalls.values.any((c) => !c.talking && !c.onHold);
+      _scheduleCallsCheck(hasRingingOnly ? ringingCheckEvery : callsCheckEvery);
     }
   }
 
@@ -1269,12 +1287,22 @@ class PbxConnection {
     if (call.talking) call.answered ??= DateTime.now();
     // `internal` descrive la tratta, non è un capo della chiamata.
     final parties = call.members.where((m) => m.kind != 'internal').length;
-    if (call.members.isEmpty || (hungUp && parties <= 1)) {
+    final onlyOrphanRing =
+        hungUp &&
+        !call.talking &&
+        !call.onHold &&
+        !call.members.any((m) => m.kind == 'inbound' || m.kind == 'outbound') &&
+        call.members.every((m) => m.status == 'RING');
+    if (call.members.isEmpty || (hungUp && parties <= 1) || onlyOrphanRing) {
       liveCalls.remove(id);
     }
-    // Chiamata nuova: tipo da call/query a breve; poi controllo periodico.
+    // Chiamata nuova: tipo da call/query a breve; se squilla o ha subito un BYE
+    // parziale, ricontrolla prima.
     if (isNew && liveCalls.containsKey(id)) {
       _scheduleCallsCheck(const Duration(seconds: 2));
+    } else if (liveCalls.containsKey(id) &&
+        (hungUp || !call.talking && !call.onHold)) {
+      _scheduleCallsCheck(ringingCheckEvery);
     } else if (_callsTimer == null) {
       _scheduleCallsCheck(callsCheckEvery);
     }
@@ -1480,6 +1508,7 @@ class PbxConnection {
     _groupMonitorAllowed = false;
     callStatus.clear();
     liveCalls.clear();
+    lastCallsSnapshotAt = null;
     callTimelines.clear();
     lastSync = null;
     _fingerprint = '';

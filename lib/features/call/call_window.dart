@@ -26,7 +26,7 @@ class CallWindow extends StatefulWidget {
 
 enum _Mode { normal, full, mini }
 
-enum _Panel { none, keypad, transfer, newCall, participant, note }
+enum _Panel { none, keypad, transfer, newCall, participant, note, stats }
 
 class _CallWindowState extends State<CallWindow> {
   Timer? _tick;
@@ -34,6 +34,7 @@ class _CallWindowState extends State<CallWindow> {
   _Panel _panel = _Panel.none;
   String _dtmf = '';
   int? _callId;
+  bool _wasVideo = false;
 
   PhoneController get p => widget.phone;
 
@@ -79,6 +80,19 @@ class _CallWindowState extends State<CallWindow> {
       _dtmf = '';
       if (_mode == _Mode.full) _mode = _Mode.normal;
     }
+    final isVideo =
+        call != null &&
+        call.video &&
+        (call.phase == CallPhase.active || call.phase == CallPhase.paused);
+    if (isVideo && !_wasVideo) {
+      // Le finestre native MSOGL coprono i popup Flutter: chiudi eventuali menu.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        FocusManager.instance.primaryFocus?.unfocus();
+        Navigator.maybeOf(context)?.popUntil((r) => r is! PopupRoute);
+      });
+    }
+    _wasVideo = isVideo;
     // Comparsa, cambio di forma (normale, ridotta, schermo intero) e chiusura
     // animati: la finestra uscente si dissolve mentre entra la nuova.
     return Positioned.fill(
@@ -135,18 +149,23 @@ class _CallWindowState extends State<CallWindow> {
     }
     final full = _mode == _Mode.full;
     return Positioned.fill(
-      child: _Grow(
-        // Una volta per chiamata: dal punto premuto alla finestra intera.
-        key: ValueKey(('grow', call.id)),
-        from: _origin(),
-        child: Padding(
-          padding: EdgeInsets.all(full ? 0 : 28),
-          child: Center(
-            child: ConstrainedBox(
-              constraints: full
-                  ? const BoxConstraints.expand()
-                  : const BoxConstraints(maxWidth: 1080, maxHeight: 720),
-              child: _window(call, full),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: Colors.black.withValues(alpha: full ? 0.88 : 0.54),
+        ),
+        child: _Grow(
+          // Una volta per chiamata: dal punto premuto alla finestra intera.
+          key: ValueKey(('grow', call.id)),
+          from: _origin(),
+          child: Padding(
+            padding: EdgeInsets.all(full ? 0 : 28),
+            child: Center(
+              child: ConstrainedBox(
+                constraints: full
+                    ? const BoxConstraints.expand()
+                    : const BoxConstraints(maxWidth: 1080, maxHeight: 720),
+                child: _window(call, full),
+              ),
             ),
           ),
         ),
@@ -335,9 +354,12 @@ class _CallWindowState extends State<CallWindow> {
         (call.phase == CallPhase.active || call.phase == CallPhase.paused);
     return Material(
       color: c.surface,
-      elevation: full ? 0 : 16,
-      shadowColor: Colors.black54,
-      borderRadius: BorderRadius.circular(full ? 0 : 16),
+      elevation: full ? 0 : 20,
+      shadowColor: Colors.black87,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(full ? 0 : DrinRadius.sheet),
+        side: full ? BorderSide.none : BorderSide(color: c.line),
+      ),
       clipBehavior: Clip.antiAlias,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -347,7 +369,7 @@ class _CallWindowState extends State<CallWindow> {
           if (p.otherCalls.isNotEmpty)
             Container(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-              color: c.card,
+              color: c.raised,
               child: Wrap(
                 spacing: 8,
                 runSpacing: 8,
@@ -368,8 +390,8 @@ class _CallWindowState extends State<CallWindow> {
                   Container(
                     width: 340,
                     decoration: BoxDecoration(
-                      color: c.card,
-                      border: Border(left: BorderSide(color: c.border)),
+                      color: c.raised,
+                      border: Border(left: BorderSide(color: c.line)),
                     ),
                     child: _sidePanel(call),
                   ),
@@ -393,11 +415,21 @@ class _CallWindowState extends State<CallWindow> {
       CallPhase.paused => tr('In attesa'),
       _ => _duration(),
     };
+    final statusColor = call.phase == CallPhase.paused
+        ? c.away
+        : call.phase == CallPhase.outgoing
+        ? c.primary
+        : c.free;
     return Container(
-      padding: const EdgeInsets.fromLTRB(20, 10, 10, 10),
+      padding: const EdgeInsets.fromLTRB(
+        DrinSpace.s5,
+        DrinSpace.s3,
+        DrinSpace.s3,
+        DrinSpace.s3,
+      ),
       decoration: BoxDecoration(
-        color: c.side,
-        border: Border(bottom: BorderSide(color: c.border)),
+        color: c.surface,
+        border: Border(bottom: BorderSide(color: c.line)),
       ),
       child: Row(
         children: [
@@ -405,61 +437,124 @@ class _CallWindowState extends State<CallWindow> {
             child: Text(
               name.isNotEmpty ? name : call.remoteNumber,
               overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w700,
-                color: c.text,
-              ),
+              style: DrinText.heading.copyWith(color: c.ink),
             ),
           ),
           if (name.isNotEmpty) ...[
             Container(
               width: 1,
               height: 16,
-              margin: const EdgeInsets.symmetric(horizontal: 10),
-              color: c.border,
+              margin: const EdgeInsets.symmetric(horizontal: DrinSpace.s3),
+              color: c.line,
             ),
-            Text(call.remoteNumber, style: mono(c.text, size: 14)),
+            Text(call.remoteNumber, style: DrinText.number.copyWith(color: c.muted)),
           ],
-          const SizedBox(width: 12),
-          Text(status, style: mono(c.muted, size: 13)),
+          const SizedBox(width: DrinSpace.s3),
+          Container(
+            padding: const EdgeInsets.symmetric(
+              horizontal: DrinSpace.s3,
+              vertical: 4,
+            ),
+            decoration: BoxDecoration(
+              color: c.panel,
+              borderRadius: BorderRadius.circular(DrinRadius.pill),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 7,
+                  height: 7,
+                  decoration: BoxDecoration(
+                    color: statusColor,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  status,
+                  style: DrinText.number.copyWith(color: c.ink),
+                ),
+              ],
+            ),
+          ),
           if (quality >= 0) ...[
-            const SizedBox(width: 12),
-            _SignalBars(quality: quality, metrics: metrics),
+            const SizedBox(width: DrinSpace.s3),
+            InkWell(
+              borderRadius: BorderRadius.circular(DrinRadius.control),
+              onTap: () => _toggle(_Panel.stats),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                child: _SignalBars(quality: quality, metrics: metrics),
+              ),
+            ),
+          ],
+          if (metrics != null &&
+              ((metrics.lossPct ?? 0) > 2.0 || (metrics.jitterMs ?? 0) > 40.0)) ...[
+            const SizedBox(width: DrinSpace.s2),
+            Tooltip(
+              message: tr('Qualità audio degradata · clicca sulle tacche per i dettagli'),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(DrinRadius.pill),
+                onTap: () => _toggle(_Panel.stats),
+                child: _Tag(text: tr('Rete instabile'), color: c.squilloLine),
+              ),
+            ),
           ],
           if (metrics != null && metrics.codec.isNotEmpty) ...[
-            const SizedBox(width: 8),
-            _Tag(text: metrics.codec, color: c.muted),
+            const SizedBox(width: DrinSpace.s2),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
+              decoration: BoxDecoration(
+                color: c.raised,
+                border: Border.all(color: c.line),
+                borderRadius: BorderRadius.circular(DrinRadius.pill),
+              ),
+              child: Text(
+                metrics.codec,
+                style: DrinText.label.copyWith(color: c.ink),
+              ),
+            ),
           ],
           if (call.inConference) ...[
-            const SizedBox(width: 12),
-            _Tag(text: tr('Conferenza'), color: c.accent),
+            const SizedBox(width: DrinSpace.s2),
+            _Tag(text: tr('Conferenza'), color: c.primary),
           ],
           if (p.isRecording(call.id)) ...[
-            const SizedBox(width: 8),
+            const SizedBox(width: DrinSpace.s2),
             _Tag(text: 'REC', color: c.busy),
           ],
           const Spacer(),
           if (p.screenPopUriFor(call.remoteNumber, name: name) != null)
-            TextButton.icon(
-              onPressed: () => p.openScreenPop(call.remoteNumber, name: name),
-              icon: const Icon(Icons.open_in_new_rounded, size: 17),
-              label: Text(tr('Apri CRM')),
+            Padding(
+              padding: const EdgeInsets.only(right: DrinSpace.s2),
+              child: OutlinedButton.icon(
+                onPressed: () => p.openScreenPop(call.remoteNumber, name: name),
+                icon: const Icon(Icons.open_in_new_rounded, size: 16),
+                label: Text(tr('Apri CRM')),
+              ),
             ),
-          TextButton.icon(
+          OutlinedButton.icon(
+            style: _panel == _Panel.note || p.noteOf(call.id).isNotEmpty
+                ? OutlinedButton.styleFrom(
+                    backgroundColor: c.primary.withValues(alpha: 0.14),
+                    side: BorderSide(color: c.primary),
+                  )
+                : null,
             onPressed: () => _toggle(_Panel.note),
             icon: Icon(
               p.noteOf(call.id).isEmpty
                   ? Icons.sticky_note_2_outlined
                   : Icons.sticky_note_2_rounded,
-              size: 18,
+              size: 16,
             ),
             label: Text(tr('Note')),
           ),
+          const SizedBox(width: DrinSpace.s2),
           IconButton(
             tooltip: tr('Riduci'),
             onPressed: () => setState(() => _mode = _Mode.mini),
-            icon: Icon(Icons.picture_in_picture_alt_outlined, color: c.text),
+            icon: Icon(Icons.picture_in_picture_alt_outlined, color: c.ink),
           ),
           IconButton(
             tooltip: full ? tr('Esci da schermo intero') : tr('Schermo intero'),
@@ -467,7 +562,7 @@ class _CallWindowState extends State<CallWindow> {
                 setState(() => _mode = full ? _Mode.normal : _Mode.full),
             icon: Icon(
               full ? Icons.fullscreen_exit_rounded : Icons.fullscreen_rounded,
-              color: c.text,
+              color: c.ink,
             ),
           ),
         ],
@@ -477,36 +572,109 @@ class _CallWindowState extends State<CallWindow> {
 
   Widget _identity(CallEvent call, String name, bool outgoing) {
     final c = context.drin;
+    final paused = call.phase == CallPhase.paused;
+    final stateColor = outgoing
+        ? c.primary
+        : paused
+        ? c.away
+        : c.free;
+    final stateText = outgoing
+        ? tr('Chiamata in corso…')
+        : paused
+        ? tr('In attesa')
+        : _duration();
     return Container(
       color: c.ground,
       alignment: Alignment.center,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _Avatar(name: name.isNotEmpty ? name : call.remoteNumber, size: 104),
-          const SizedBox(height: 18),
-          Text(
-            name.isNotEmpty ? name : call.remoteNumber,
-            style: TextStyle(
-              fontSize: 24,
-              fontWeight: FontWeight.w600,
-              color: c.text,
+      padding: const EdgeInsets.all(DrinSpace.s5),
+      child: Container(
+        constraints: const BoxConstraints(minWidth: 320, maxWidth: 460),
+        padding: const EdgeInsets.symmetric(
+          horizontal: DrinSpace.s6,
+          vertical: DrinSpace.s5,
+        ),
+        decoration: BoxDecoration(
+          color: c.surface,
+          borderRadius: BorderRadius.circular(DrinRadius.sheet),
+          border: Border.all(color: c.line),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: stateColor.withValues(alpha: 0.14),
+                border: Border.all(
+                  color: stateColor.withValues(alpha: 0.45),
+                  width: 2,
+                ),
+              ),
+              child: _Avatar(
+                name: name.isNotEmpty ? name : call.remoteNumber,
+                size: 104,
+              ),
             ),
-          ),
-          if (name.isNotEmpty) ...[
-            const SizedBox(height: 4),
-            Text(call.remoteNumber, style: mono(c.muted, size: 16)),
+            const SizedBox(height: DrinSpace.s4),
+            Text(
+              name.isNotEmpty ? name : call.remoteNumber,
+              textAlign: TextAlign.center,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: DrinText.displayStyle.copyWith(color: c.ink),
+            ),
+            if (name.isNotEmpty) ...[
+              const SizedBox(height: DrinSpace.s1),
+              Text(
+                call.remoteNumber,
+                style: DrinText.numberLarge.copyWith(color: c.muted),
+              ),
+            ],
+            const SizedBox(height: DrinSpace.s4),
+            Container(
+              padding: const EdgeInsets.symmetric(
+                horizontal: DrinSpace.s4,
+                vertical: DrinSpace.s2,
+              ),
+              decoration: BoxDecoration(
+                color: stateColor.withValues(alpha: 0.14),
+                border: Border.all(color: stateColor.withValues(alpha: 0.4)),
+                borderRadius: BorderRadius.circular(DrinRadius.pill),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    paused
+                        ? Icons.pause_rounded
+                        : outgoing
+                        ? Icons.ring_volume_rounded
+                        : Icons.call_rounded,
+                    size: 16,
+                    color: paused
+                        ? c.ink
+                        : outgoing
+                        ? c.primary
+                        : c.freeText,
+                  ),
+                  const SizedBox(width: DrinSpace.s2),
+                  Text(
+                    stateText,
+                    style: (outgoing || paused ? DrinText.label : DrinText.numberLarge)
+                        .copyWith(
+                          color: paused
+                              ? c.ink
+                              : outgoing
+                              ? c.primary
+                              : c.freeText,
+                        ),
+                  ),
+                ],
+              ),
+            ),
           ],
-          const SizedBox(height: 8),
-          Text(
-            outgoing
-                ? tr('Chiamata in corso…')
-                : (call.phase == CallPhase.paused
-                      ? tr('In attesa')
-                      : _duration()),
-            style: mono(c.muted, size: 14),
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -536,9 +704,23 @@ class _CallWindowState extends State<CallWindow> {
   Widget _toolbar(CallEvent call, bool outgoing) {
     final c = context.drin;
     final established = !outgoing;
+    final divider = Container(
+      width: 1,
+      height: 36,
+      margin: const EdgeInsets.symmetric(horizontal: DrinSpace.s2),
+      color: c.line,
+    );
     return Container(
-      padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
-      color: c.side,
+      padding: const EdgeInsets.fromLTRB(
+        DrinSpace.s3,
+        DrinSpace.s3,
+        DrinSpace.s3,
+        DrinSpace.s3,
+      ),
+      decoration: BoxDecoration(
+        color: c.surface,
+        border: Border(top: BorderSide(color: c.line)),
+      ),
       child: Row(
         children: [
           if (established) ...[
@@ -615,12 +797,12 @@ class _CallWindowState extends State<CallWindow> {
                 onTap: p.completeTransfer,
               ),
           ],
-          const SizedBox(width: 12),
+          divider,
           _ToolButton(
             icon: Icons.call_end_rounded,
             label: tr('Termina'),
             on: true,
-            onColor: context.drin.busy,
+            onColor: c.busy,
             onTap: () => p.hangup(call.id),
           ),
         ],
@@ -739,8 +921,126 @@ class _CallWindowState extends State<CallWindow> {
           ),
         ],
       ),
+      _Panel.stats => _statsPanel(call, title(tr('Qualità rete (QoS)'))),
       _Panel.none => const SizedBox.shrink(),
     };
+  }
+
+  Widget _statsPanel(CallEvent call, Widget header) {
+    final c = context.drin;
+    final m = p.callAudioMetrics(call.id);
+    final hist = p.callAudioHistory(call.id);
+    Widget statRow(String label, String value) => Padding(
+      padding: const EdgeInsets.symmetric(vertical: DrinSpace.s1),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(label, style: DrinText.detail.copyWith(color: c.muted)),
+          ),
+          Text(value, style: DrinText.number.copyWith(color: c.ink)),
+        ],
+      ),
+    );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        header,
+        Expanded(
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(
+              DrinSpace.s4,
+              0,
+              DrinSpace.s4,
+              DrinSpace.s4,
+            ),
+            children: [
+              Container(
+                padding: const EdgeInsets.all(DrinSpace.s3),
+                decoration: BoxDecoration(
+                  color: c.surface,
+                  border: Border.all(color: c.line),
+                  borderRadius: BorderRadius.circular(DrinRadius.row),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    statRow(
+                      tr('Qualità'),
+                      m != null && m.quality >= 0
+                          ? '${m.quality.toStringAsFixed(1)} / 5'
+                          : '—',
+                    ),
+                    statRow(
+                      'Codec',
+                      m != null && m.codec.isNotEmpty ? m.codec : '—',
+                    ),
+                    statRow(
+                      tr('Banda RX / TX'),
+                      m == null
+                          ? '—'
+                          : '↓ ${m.downloadKbps?.toStringAsFixed(0) ?? '-'} · ↑ ${m.uploadKbps?.toStringAsFixed(0) ?? '-'} kbps',
+                    ),
+                    statRow(
+                      'Jitter',
+                      m?.jitterMs != null
+                          ? '${m!.jitterMs!.toStringAsFixed(1)} ms'
+                          : '—',
+                    ),
+                    statRow(
+                      tr('Perdita pacchetti'),
+                      m?.lossPct != null
+                          ? '${m!.lossPct!.toStringAsFixed(1)} %'
+                          : '—',
+                    ),
+                    statRow(
+                      'RTT',
+                      m?.rttMs != null ? '${m!.rttMs!.toStringAsFixed(0)} ms' : '—',
+                    ),
+                  ],
+                ),
+              ),
+              if (hist.isNotEmpty) ...[
+                const SizedBox(height: DrinSpace.s4),
+                Text(
+                  tr('Andamento qualità (ultimi {n} s)', {'n': hist.length}),
+                  style: DrinText.label.copyWith(color: c.muted),
+                ),
+                const SizedBox(height: DrinSpace.s2),
+                Container(
+                  height: 64,
+                  padding: const EdgeInsets.all(DrinSpace.s2),
+                  decoration: BoxDecoration(
+                    color: c.surface,
+                    border: Border.all(color: c.line),
+                    borderRadius: BorderRadius.circular(DrinRadius.row),
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      for (final sample in hist)
+                        Expanded(
+                          child: Container(
+                            margin: const EdgeInsets.symmetric(horizontal: 1.5),
+                            height: ((sample.quality.clamp(0.5, 5.0)) / 5.0) * 44,
+                            decoration: BoxDecoration(
+                              color: sample.quality >= 3.5
+                                  ? c.free
+                                  : sample.quality >= 2.2
+                                  ? c.squillo
+                                  : c.busy,
+                              borderRadius: BorderRadius.circular(2),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ],
+    );
   }
 }
 
@@ -912,8 +1212,8 @@ class _Avatar extends StatelessWidget {
       height: size,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        color: c.avatar,
-        border: Border.all(color: c.border, width: size > 60 ? 6 : 2),
+        color: c.panel,
+        border: Border.all(color: c.line, width: size > 60 ? 3 : 2),
       ),
       alignment: Alignment.center,
       child: initialsOrIcon(
@@ -921,7 +1221,7 @@ class _Avatar extends StatelessWidget {
         style: TextStyle(
           fontSize: size * 0.34,
           fontWeight: FontWeight.w600,
-          color: c.text,
+          color: c.ink,
         ),
       ),
     );
@@ -946,24 +1246,28 @@ class _ToolButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = context.drin;
-    final bg = on ? (onColor ?? c.accent) : c.keyBtn;
-    final fg = on ? (onColor == c.busy ? c.onBusy : c.onPrimary) : c.text;
+    final bg = on ? (onColor ?? c.primary) : c.panel;
+    final fg = on ? (onColor == c.busy ? c.onBusy : c.onPrimary) : c.ink;
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 4),
+      padding: const EdgeInsets.symmetric(horizontal: DrinSpace.s1),
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(DrinRadius.row),
         child: SizedBox(
           width: 86,
           child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 4),
+            padding: const EdgeInsets.symmetric(vertical: DrinSpace.s1),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
                 Container(
-                  width: 44,
-                  height: 44,
-                  decoration: BoxDecoration(color: bg, shape: BoxShape.circle),
+                  width: 46,
+                  height: 46,
+                  decoration: BoxDecoration(
+                    color: bg,
+                    shape: BoxShape.circle,
+                    border: on ? null : Border.all(color: c.line),
+                  ),
                   child: Icon(icon, color: fg, size: 22),
                 ),
                 const SizedBox(height: 6),
@@ -972,7 +1276,10 @@ class _ToolButton extends StatelessWidget {
                   maxLines: 2,
                   textAlign: TextAlign.center,
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(fontSize: 11.5, color: c.text, height: 1.15),
+                  style: DrinText.label.copyWith(
+                    color: on ? c.ink : c.muted,
+                    height: 1.15,
+                  ),
                 ),
               ],
             ),
@@ -1371,13 +1678,13 @@ class _CallerContextStrip extends StatelessWidget {
         Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.history_rounded, size: 14, color: c.muted),
-            const SizedBox(width: 4),
+            Icon(Icons.history_rounded, size: 14, color: c.primary),
+            const SizedBox(width: 6),
             Flexible(
               child: Text(
                 lastLabel,
                 overflow: TextOverflow.ellipsis,
-                style: DrinText.detail.copyWith(color: c.muted),
+                style: DrinText.detail.copyWith(color: c.ink),
               ),
             ),
           ],
@@ -1387,13 +1694,13 @@ class _CallerContextStrip extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(Icons.sticky_note_2_outlined, size: 14, color: c.primary),
-            const SizedBox(width: 4),
+            const SizedBox(width: 6),
             Flexible(
               child: Text(
                 ctx.lastNote,
                 overflow: TextOverflow.ellipsis,
                 maxLines: compact ? 2 : 1,
-                style: DrinText.detail.copyWith(color: c.text),
+                style: DrinText.detail.copyWith(color: c.ink),
               ),
             ),
           ],
@@ -1433,12 +1740,12 @@ class _CallerContextStrip extends StatelessWidget {
 
     return Container(
       padding: const EdgeInsets.symmetric(
-        horizontal: DrinSpace.s4,
+        horizontal: DrinSpace.s5,
         vertical: DrinSpace.s2,
       ),
       decoration: BoxDecoration(
         color: c.raised,
-        border: Border(bottom: BorderSide(color: c.border)),
+        border: Border(bottom: BorderSide(color: c.line)),
       ),
       child: Wrap(
         spacing: DrinSpace.s3,

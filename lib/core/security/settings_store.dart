@@ -107,6 +107,10 @@ class Settings {
     this.voicemailCode = '*2',
     this.favorites = const [],
     this.audio = const ('', '', ''),
+    this.ringtone = '',
+    this.micGainDb = 0.0,
+    this.playbackGainDb = 0.0,
+    this.callWaitingTone = true,
     this.audioCodecs = const [],
     this.callOptions = const CallOptions(),
     this.video = const VideoOptions(),
@@ -167,6 +171,12 @@ class Settings {
 
   /// Dispositivi audio scelti (microfono, altoparlante, suoneria); '' = predefinito.
   final (String, String, String) audio;
+
+  /// File suoneria ('' = predefinita dell'app), guadagni audio dB, tono 2a chiamata.
+  final String ringtone;
+  final double micGainDb;
+  final double playbackGainDb;
+  final bool callWaitingTone;
 
   /// Ordine e abilitazione personalizzati dei codec audio (vuoto = predefiniti).
   final List<AudioCodecPref> audioCodecs;
@@ -249,6 +259,10 @@ class Settings {
       voicemailCode: t.voicemailCode,
       favorites: t.favorites,
       audio: audio,
+      ringtone: ringtone,
+      micGainDb: micGainDb,
+      playbackGainDb: playbackGainDb,
+      callWaitingTone: callWaitingTone,
       audioCodecs: audioCodecs,
       callOptions: callOptions,
       video: video,
@@ -289,6 +303,10 @@ class Settings {
       voicemailCode: a.voicemailCode,
       favorites: a.favorites,
       audio: audio,
+      ringtone: ringtone,
+      micGainDb: micGainDb,
+      playbackGainDb: playbackGainDb,
+      callWaitingTone: callWaitingTone,
       audioCodecs: audioCodecs,
       callOptions: callOptions,
       video: video,
@@ -321,6 +339,10 @@ class Settings {
     String? voicemailCode,
     List<String>? favorites,
     (String, String, String)? audio,
+    String? ringtone,
+    double? micGainDb,
+    double? playbackGainDb,
+    bool? callWaitingTone,
     List<AudioCodecPref>? audioCodecs,
     CallOptions? callOptions,
     VideoOptions? video,
@@ -351,6 +373,10 @@ class Settings {
     voicemailCode: voicemailCode ?? this.voicemailCode,
     favorites: favorites ?? this.favorites,
     audio: audio ?? this.audio,
+    ringtone: ringtone ?? this.ringtone,
+    micGainDb: micGainDb ?? this.micGainDb,
+    playbackGainDb: playbackGainDb ?? this.playbackGainDb,
+    callWaitingTone: callWaitingTone ?? this.callWaitingTone,
     audioCodecs: audioCodecs ?? this.audioCodecs,
     callOptions: callOptions ?? this.callOptions,
     video: video ?? this.video,
@@ -518,6 +544,10 @@ class SettingsStore {
         j['audioPlayback'] as String? ?? '',
         j['audioRinger'] as String? ?? '',
       ),
+      ringtone: j['ringtone'] as String? ?? '',
+      micGainDb: (j['micGainDb'] as num?)?.toDouble() ?? 0.0,
+      playbackGainDb: (j['playbackGainDb'] as num?)?.toDouble() ?? 0.0,
+      callWaitingTone: j['callWaitingTone'] as bool? ?? true,
       audioCodecs: [
         for (final x in (j['audioCodecs'] as List? ?? const []))
           if (x is Map && x['id'] is String)
@@ -656,6 +686,10 @@ class SettingsStore {
         'audioCapture': s.audio.$1,
         'audioPlayback': s.audio.$2,
         'audioRinger': s.audio.$3,
+        'ringtone': s.ringtone,
+        'micGainDb': s.micGainDb,
+        'playbackGainDb': s.playbackGainDb,
+        'callWaitingTone': s.callWaitingTone,
         'audioCodecs': [
           for (final c in s.audioCodecs) {'id': c.id, 'enabled': c.enabled},
         ],

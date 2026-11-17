@@ -132,7 +132,7 @@ class WindowAttention {
         if (_isIconic(hwnd) != 0) _showWindow(hwnd, _swRestore);
         final screenW = _getSystemMetrics(0); // SM_CXSCREEN
         const hudW = 420;
-        const hudH = 230;
+        const hudH = 264;
         final x = (screenW > hudW + 24) ? screenW - hudW - 24 : 24;
         const y = 24;
         _setWindowPos(

@@ -14,6 +14,7 @@ import '../../core/pbx/pbx_cdr.dart';
 import '../../core/pbx/pbx_connection.dart';
 import '../../core/pbx/yeastar_api.dart';
 import '../../core/platform/audio_player.dart';
+import '../../core/recall_reminders.dart';
 import '../shell/widgets.dart';
 import 'call_table.dart';
 
@@ -42,6 +43,7 @@ class CdrView extends StatefulWidget {
     this.player,
     this.audioCacheDir,
     this.onSaveContact,
+    this.onScheduleRecall,
   });
   final PbxConnection conn;
 
@@ -55,6 +57,12 @@ class CdrView extends StatefulWidget {
   final InAppAudioPlayer? player;
   final Directory? audioCacheDir;
   final Future<void> Function(String name, String number)? onSaveContact;
+  final Future<void> Function(
+    String number,
+    String name, {
+    Duration? delay,
+    DateTime? dueAt,
+  })? onScheduleRecall;
 
   @override
   State<CdrView> createState() => _CdrViewState();
@@ -342,6 +350,8 @@ class _CdrViewState extends State<CdrView> {
     // tutto il PBX chi ha chiamato.
     final own = widget.conn.voicemailOf;
     final other = own != null && r.src == own ? r.dst : r.src;
+    final otherName = own != null && r.src == own ? r.dstName : r.srcName;
+    final recall = widget.onScheduleRecall;
     return CallRow(
       cells: [for (final f in cells) f(r)],
       callTooltip: tr('Richiama {n}', {'n': other}),
@@ -349,6 +359,29 @@ class _CdrViewState extends State<CdrView> {
       call: widget.canDial && other.isNotEmpty
           ? () => widget.onCall(other)
           : null,
+      extraActions: recall != null && other.isNotEmpty
+          ? [
+              (
+                Icons.notifications_none_rounded,
+                tr('Richiama tra 15 min'),
+                () => recall(other, otherName, delay: const Duration(minutes: 15)),
+              ),
+              (
+                Icons.schedule_rounded,
+                tr('Richiama tra 1 ora'),
+                () => recall(other, otherName, delay: const Duration(hours: 1)),
+              ),
+              (
+                Icons.wb_sunny_outlined,
+                tr('Richiama domani alle 09:00'),
+                () => recall(
+                  other,
+                  otherName,
+                  dueAt: RecallReminder.nextMorning(DateTime.now()),
+                ),
+              ),
+            ]
+          : const [],
       onTap: () => showDialog<void>(
         context: context,
         builder: (_) => _CdrDetails(

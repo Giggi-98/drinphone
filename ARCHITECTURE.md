@@ -82,6 +82,9 @@ spikes/f0a/                         spike F0-A (non prodotto)
   `<state>unregister</state>` di Yeastar -> `offline` (Non registrato).
   Subscription terminata o rifiutata: stato sconosciuto con motivo, ritentata al
   rinnovo REGISTER successivo. Registrazione caduta: tutto sconosciuto.
+  Riconciliazione anti-stato-appeso: `DialogInfoTracker` accetta `state` case-insensitive,
+  i ring group `30011` orfani vengono potati e le estensioni `ringing` vengono
+  verificate contro lo snapshot `call/query` ogni 4 s finché ci sono squilli attivi.
   Su `Interni`: Pickup BLF 1-clic (`PhoneController.pickupExtension` quando `ringing`
   e `extPickupCode` disponibile) e Busy Callback di sessione (`BusyCallbackWatch`,
   avviso in-app + toast Windows quando un interno `busy` osservato torna `idle`).

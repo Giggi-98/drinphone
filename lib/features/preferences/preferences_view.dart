@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -79,18 +80,33 @@ class _PreferencesViewState extends State<PreferencesView> {
     final appItems = <(IconData, String, Widget)>[
       (
         Icons.headphones_rounded,
-        tr('Audio'),
+        tr('Audio & Suonerie'),
         Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             AudioSettings(phone: phone),
+            _RingtoneAndGainCard(phone: phone),
             _AudioCodecsCard(phone: phone),
             if (phone.recordingsDir.isNotEmpty)
               _LocalRecordingsCard(phone: phone),
-            _AdvancedTab(phone: phone),
+          ],
+        ),
+      ),
+      (
+        Icons.bolt_rounded,
+        tr('Chiamate & Automazioni'),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _AutoAnswerCard(phone: phone),
             _FeaturesTab(phone: phone),
           ],
         ),
+      ),
+      (
+        Icons.shield_outlined,
+        tr('Rete & Sicurezza'),
+        _NetworkSecurityCards(phone: phone),
       ),
       (Icons.videocam_rounded, tr('Video'), _VideoTab(phone: phone)),
       (
@@ -99,6 +115,7 @@ class _PreferencesViewState extends State<PreferencesView> {
         Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            _UiZoomCard(phone: phone),
             _DiagnosticsTab(phone: phone),
             if (phone.updater case final u?)
               _Card(
@@ -1257,6 +1274,163 @@ class _AudioSettingsState extends State<AudioSettings> {
   }
 }
 
+class _RingtoneAndGainCard extends StatelessWidget {
+  const _RingtoneAndGainCard({required this.phone});
+  final PhoneController phone;
+
+  Future<void> _pickCustom(BuildContext context) async {
+    final f = await openFile(
+      acceptedTypeGroups: [
+        XTypeGroup(label: 'Audio WAV', extensions: const ['wav']),
+      ],
+    );
+    if (f == null) return;
+    await phone.setRingtone(f.path);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.drin;
+    final rings = phone.builtInRingtones();
+    final cur = phone.settings.ringtone;
+    final isCustom = cur.isNotEmpty && !rings.any((r) => r.$1 == cur);
+    return _Card(
+      title: tr('Suonerie e guadagno audio'),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Wrap(
+            spacing: DrinSpace.s2,
+            runSpacing: DrinSpace.s2,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              SizedBox(
+                width: 360,
+                child: DropdownButtonFormField<String>(
+                  initialValue: cur.isEmpty || rings.any((r) => r.$1 == cur) || isCustom
+                      ? cur
+                      : '',
+                  isExpanded: true,
+                  decoration: InputDecoration(
+                    labelText: tr('Suoneria chiamata entrante'),
+                    prefixIcon: const Icon(Icons.music_note_outlined, size: 18),
+                  ),
+                  items: [
+                    DropdownMenuItem(
+                      value: '',
+                      child: Text(tr('Predefinita (telefono classico)')),
+                    ),
+                    for (final (path, label) in rings)
+                      DropdownMenuItem(
+                        value: path,
+                        child: Text(tr(label), overflow: TextOverflow.ellipsis),
+                      ),
+                    if (isCustom)
+                      DropdownMenuItem(
+                        value: cur,
+                        child: Text(
+                          cur.split(Platform.pathSeparator).last,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                  ],
+                  onChanged: (v) {
+                    if (v != null) phone.setRingtone(v);
+                  },
+                ),
+              ),
+              OutlinedButton.icon(
+                onPressed: () => _pickCustom(context),
+                icon: const Icon(Icons.folder_open_outlined, size: 17),
+                label: Text(tr('Sfoglia .wav…')),
+              ),
+              FilledButton.tonalIcon(
+                onPressed: phone.previewRingtone,
+                icon: const Icon(Icons.play_arrow_rounded, size: 18),
+                label: Text(tr('Prova suoneria')),
+              ),
+              OutlinedButton(
+                onPressed: phone.stopRingtonePreview,
+                child: Text(tr('Ferma')),
+              ),
+            ],
+          ),
+          const SizedBox(height: DrinSpace.s4),
+          Row(
+            children: [
+              SizedBox(
+                width: 190,
+                child: Text(
+                  tr('Guadagno microfono'),
+                  style: DrinText.body.copyWith(color: c.ink),
+                ),
+              ),
+              Expanded(
+                child: Slider(
+                  value: phone.settings.micGainDb.clamp(-10.0, 15.0),
+                  min: -10,
+                  max: 15,
+                  divisions: 25,
+                  label: '${phone.settings.micGainDb.toStringAsFixed(0)} dB',
+                  onChanged: (v) => phone.setAudioGains(micDb: v),
+                ),
+              ),
+              SizedBox(
+                width: 58,
+                child: Text(
+                  '${phone.settings.micGainDb >= 0 ? '+' : ''}${phone.settings.micGainDb.toStringAsFixed(0)} dB',
+                  textAlign: TextAlign.end,
+                  style: DrinText.number.copyWith(color: c.muted),
+                ),
+              ),
+            ],
+          ),
+          Row(
+            children: [
+              SizedBox(
+                width: 190,
+                child: Text(
+                  tr('Volume ascolto (dB)'),
+                  style: DrinText.body.copyWith(color: c.ink),
+                ),
+              ),
+              Expanded(
+                child: Slider(
+                  value: phone.settings.playbackGainDb.clamp(-10.0, 15.0),
+                  min: -10,
+                  max: 15,
+                  divisions: 25,
+                  label: '${phone.settings.playbackGainDb.toStringAsFixed(0)} dB',
+                  onChanged: (v) => phone.setAudioGains(playbackDb: v),
+                ),
+              ),
+              SizedBox(
+                width: 58,
+                child: Text(
+                  '${phone.settings.playbackGainDb >= 0 ? '+' : ''}${phone.settings.playbackGainDb.toStringAsFixed(0)} dB',
+                  textAlign: TextAlign.end,
+                  style: DrinText.number.copyWith(color: c.muted),
+                ),
+              ),
+            ],
+          ),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            title: Text(tr('Tono discreto in cuffia su seconda chiamata')),
+            subtitle: Text(
+              tr(
+                'Riproduce un breve avviso acustico in cuffia quando arriva una chiamata mentre sei già al telefono.',
+              ),
+            ),
+            value: phone.settings.callWaitingTone,
+            onChanged: phone.setCallWaitingTone,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _LocalRecordingsCard extends StatefulWidget {
   const _LocalRecordingsCard({required this.phone});
   final PhoneController phone;
@@ -2029,9 +2203,9 @@ class _VideoTabState extends State<_VideoTab> {
   }
 }
 
-/// Opzioni globali delle chiamate: in liblinphone 5.5 valgono per tutta l'app.
-class _AdvancedTab extends StatelessWidget {
-  const _AdvancedTab({required this.phone});
+/// Opzioni globali di rete e sicurezza chiamate (SRTP/ZRTP/DTLS, Keep-alive, DTMF).
+class _NetworkSecurityCards extends StatelessWidget {
+  const _NetworkSecurityCards({required this.phone});
   final PhoneController phone;
 
   @override
@@ -2043,17 +2217,14 @@ class _AdvancedTab extends StatelessWidget {
       bool? mandatory,
       bool? keepAlive,
       bool? dtmfInfo,
-      bool? autoAnswer,
-      int? autoAnswerDelaySeconds,
     }) => phone.setCallOptions(
       CallOptions(
         encryption: encryption ?? o.encryption,
         encryptionMandatory: mandatory ?? o.encryptionMandatory,
         keepAlive: keepAlive ?? o.keepAlive,
         dtmfInfo: dtmfInfo ?? o.dtmfInfo,
-        autoAnswer: autoAnswer ?? o.autoAnswer,
-        autoAnswerDelaySeconds:
-            autoAnswerDelaySeconds ?? o.autoAnswerDelaySeconds,
+        autoAnswer: o.autoAnswer,
+        autoAnswerDelaySeconds: o.autoAnswerDelaySeconds,
       ),
     );
     return Column(
@@ -2105,7 +2276,7 @@ class _AdvancedTab extends StatelessWidget {
                   'richiede di solito il trasporto TLS; se il PBX non usa la '
                   'stessa cifratura la chiamata cade o resta muta: provala.',
                 ),
-                style: TextStyle(fontSize: 12, color: c.muted),
+                style: DrinText.detail.copyWith(color: c.muted),
               ),
             ],
           ),
@@ -2144,51 +2315,125 @@ class _AdvancedTab extends StatelessWidget {
             ],
           ),
         ),
-        _Card(
-          title: tr('Risposta automatica'),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                title: Text(tr('Rispondi automaticamente alle chiamate')),
-                subtitle: Text(
-                  tr(
-                    'Risponde da sola alle chiamate entranti se non hai già '
-                    'un’altra conversazione attiva.',
-                  ),
-                ),
-                value: o.autoAnswer,
-                onChanged: (v) => set(autoAnswer: v),
+      ],
+    );
+  }
+}
+
+class _AutoAnswerCard extends StatelessWidget {
+  const _AutoAnswerCard({required this.phone});
+  final PhoneController phone;
+
+  @override
+  Widget build(BuildContext context) {
+    final o = phone.settings.callOptions;
+    void set({bool? autoAnswer, int? autoAnswerDelaySeconds}) =>
+        phone.setCallOptions(
+          CallOptions(
+            encryption: o.encryption,
+            encryptionMandatory: o.encryptionMandatory,
+            keepAlive: o.keepAlive,
+            dtmfInfo: o.dtmfInfo,
+            autoAnswer: autoAnswer ?? o.autoAnswer,
+            autoAnswerDelaySeconds:
+                autoAnswerDelaySeconds ?? o.autoAnswerDelaySeconds,
+          ),
+        );
+    return _Card(
+      title: tr('Risposta automatica'),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            title: Text(tr('Rispondi automaticamente alle chiamate')),
+            subtitle: Text(
+              tr(
+                'Risponde da sola alle chiamate entranti se non hai già '
+                'un’altra conversazione attiva.',
               ),
-              if (o.autoAnswer) ...[
-                const SizedBox(height: 6),
-                SizedBox(
-                  width: 380,
-                  child: DropdownButtonFormField<int>(
-                    initialValue: const [0, 2, 3, 5].contains(
-                      o.autoAnswerDelaySeconds,
-                    )
-                        ? o.autoAnswerDelaySeconds
-                        : 0,
-                    isExpanded: true,
-                    decoration: InputDecoration(
-                      labelText: tr('Ritardo prima di rispondere'),
-                    ),
-                    items: [
-                      DropdownMenuItem(value: 0, child: Text(tr('Subito (0 s)'))),
-                      DropdownMenuItem(value: 2, child: Text(tr('2 secondi'))),
-                      DropdownMenuItem(value: 3, child: Text(tr('3 secondi'))),
-                      DropdownMenuItem(value: 5, child: Text(tr('5 secondi'))),
-                    ],
-                    onChanged: (v) => set(autoAnswerDelaySeconds: v),
-                  ),
+            ),
+            value: o.autoAnswer,
+            onChanged: (v) => set(autoAnswer: v),
+          ),
+          if (o.autoAnswer) ...[
+            const SizedBox(height: 6),
+            SizedBox(
+              width: 380,
+              child: DropdownButtonFormField<int>(
+                initialValue: const [0, 2, 3, 5].contains(
+                  o.autoAnswerDelaySeconds,
+                )
+                    ? o.autoAnswerDelaySeconds
+                    : 0,
+                isExpanded: true,
+                decoration: InputDecoration(
+                  labelText: tr('Ritardo prima di rispondere'),
                 ),
-              ],
+                items: [
+                  DropdownMenuItem(value: 0, child: Text(tr('Subito (0 s)'))),
+                  DropdownMenuItem(value: 2, child: Text(tr('2 secondi'))),
+                  DropdownMenuItem(value: 3, child: Text(tr('3 secondi'))),
+                  DropdownMenuItem(value: 5, child: Text(tr('5 secondi'))),
+                ],
+                onChanged: (v) => set(autoAnswerDelaySeconds: v),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _UiZoomCard extends StatelessWidget {
+  const _UiZoomCard({required this.phone});
+  final PhoneController phone;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.drin;
+    return ValueListenableBuilder<double>(
+      valueListenable: appZoom,
+      builder: (_, zoom, _) {
+        final pct = (zoom * 100).round();
+        return _Card(
+          title: tr('Zoom interfaccia'),
+          child: Row(
+            children: [
+              IconButton.outlined(
+                tooltip: tr('Riduci zoom'),
+                onPressed: zoom <= DrinScale.zoomMin
+                    ? null
+                    : () => phone.setZoom(zoom - DrinScale.zoomStep),
+                icon: const Icon(Icons.remove_rounded, size: 18),
+              ),
+              Expanded(
+                child: Slider(
+                  value: zoom.clamp(DrinScale.zoomMin, DrinScale.zoomMax),
+                  min: DrinScale.zoomMin,
+                  max: DrinScale.zoomMax,
+                  divisions: 9,
+                  label: '$pct %',
+                  onChanged: phone.setZoom,
+                ),
+              ),
+              IconButton.outlined(
+                tooltip: tr('Aumenta zoom'),
+                onPressed: zoom >= DrinScale.zoomMax
+                    ? null
+                    : () => phone.setZoom(zoom + DrinScale.zoomStep),
+                icon: const Icon(Icons.add_rounded, size: 18),
+              ),
+              const SizedBox(width: DrinSpace.s2),
+              OutlinedButton(
+                onPressed: zoom == 1.0 ? null : () => phone.setZoom(1.0),
+                child: Text('$pct %', style: DrinText.number.copyWith(color: c.ink)),
+              ),
             ],
           ),
-        ),
-      ],
+        );
+      },
     );
   }
 }

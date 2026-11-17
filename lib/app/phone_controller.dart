@@ -119,6 +119,11 @@ class PhoneController extends ChangeNotifier {
   /// Cronologia, più recenti per prime.
   List<CallRecord> history = [];
 
+  /// Mini-scheda wrap-up subito dopo la fine di una chiamata (null = chiusa).
+  CallRecord? lastEndedWrapUp;
+  bool wrapUpPinned = false;
+  Timer? _wrapUpTimer;
+
   // Contatori SIP MWI (per PBX che inviano message-summary abbinabile).
   int _mwiNew = 0;
   int _mwiOld = 0;
@@ -211,6 +216,7 @@ class PhoneController extends ChangeNotifier {
 
   /// Stato BLF per numero interno; assente = sconosciuto.
   final blf = <String, BlfEvent>{};
+  final _blfUpdatedAt = <String, DateTime>{};
 
   /// Ultimi stati BLF di ogni profilo (in memoria): dopo il cambio profilo si
   /// mostrano attenuati, "da confermare", finché il PBX non risponde.
@@ -278,6 +284,11 @@ class PhoneController extends ChangeNotifier {
       // Dispositivi audio scelti in Preferenze > Audio ('' = predefinito).
       final (cap, play, ring) = settings.audio;
       await _engine.setAudioDevices(capture: cap, playback: play, ringer: ring);
+      await _engine.setAudioGains(
+        micDb: settings.micGainDb,
+        playbackDb: settings.playbackGainDb,
+      );
+      await _engine.setRingtone(settings.ringtone);
     } catch (e) {
       engineError = '$e';
       debugPrint('[drinphone] avvio motore fallito: $e');
@@ -569,10 +580,27 @@ class PhoneController extends ChangeNotifier {
   BlfStatus? _blfFresh(Extension e) {
     final k = _blfKey(e);
     final sip = k == null ? null : blf[k]?.status;
-    if (sip != null && sip != BlfStatus.unknown) return sip;
     final c = e.source.isEmpty
         ? primaryConnection
         : connections.where((x) => x.id == e.source).firstOrNull;
+    if (sip != null && sip != BlfStatus.unknown) {
+      // Se un NOTIFY `terminated` è andato perso ma il snapshot API `call/query`
+      // successivo conferma che l'interno non squilla più, riconcilia a libero.
+      if (sip == BlfStatus.ringing &&
+          c != null &&
+          c.eventsConnected &&
+          c.lastCallsSnapshotAt != null &&
+          !c.extensionCalls.containsKey(e.number)) {
+        final at = k == null ? null : _blfUpdatedAt[k];
+        if (at != null &&
+            at.isBefore(
+              c.lastCallsSnapshotAt!.subtract(const Duration(seconds: 2)),
+            )) {
+          return BlfStatus.idle;
+        }
+      }
+      return sip;
+    }
     final api = c?.callStatus[e.number];
     if (api != null) return api;
     // "Sconosciuto" esplicito resta tale se non c'è uno stato precedente.
@@ -1151,6 +1179,7 @@ class PhoneController extends ChangeNotifier {
       };
     }
     blf.clear();
+    _blfUpdatedAt.clear();
     _busyWatches.clear();
     _mwiNew = 0;
     _mwiOld = 0;
@@ -1276,6 +1305,7 @@ class PhoneController extends ChangeNotifier {
   }
 
   final _audioMetrics = <int, CallAudioMetrics>{};
+  final _audioHistory = <int, List<CallAudioMetrics>>{};
 
   /// Qualità della chiamata da 0 a 5 (-1 = non nota), per le tacche del segnale.
   double callQuality(int id) =>
@@ -1283,6 +1313,10 @@ class PhoneController extends ChangeNotifier {
 
   /// Metriche QoS dettagliate (banda RX/TX, perdita, jitter, RTT, codec).
   CallAudioMetrics? callAudioMetrics(int id) => _audioMetrics[id];
+
+  /// Ultimi campioni QoS della chiamata (max 20) per diagnostica live.
+  List<CallAudioMetrics> callAudioHistory(int id) =>
+      _audioHistory[id] ?? const [];
 
   /// Elenco file di registrazione locale salvati in [recordingsDir] (più recenti primi).
   Future<List<File>> listLocalRecordings() async {
@@ -1662,6 +1696,40 @@ class PhoneController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Mantiene aperta la scheda wrap-up finché l'utente non la salva o chiude.
+  void pinWrapUp() {
+    _wrapUpTimer?.cancel();
+    _wrapUpTimer = null;
+    if (!wrapUpPinned && lastEndedWrapUp != null) {
+      wrapUpPinned = true;
+      notifyListeners();
+    }
+  }
+
+  /// Chiude la scheda wrap-up post-chiamata.
+  void dismissWrapUp() {
+    _wrapUpTimer?.cancel();
+    _wrapUpTimer = null;
+    wrapUpPinned = false;
+    if (lastEndedWrapUp == null) return;
+    lastEndedWrapUp = null;
+    notifyListeners();
+  }
+
+  /// Salva la nota dalla scheda wrap-up e chiude la scheda.
+  Future<void> saveWrapUpNote(String note) async {
+    final target = lastEndedWrapUp;
+    _wrapUpTimer?.cancel();
+    _wrapUpTimer = null;
+    wrapUpPinned = false;
+    lastEndedWrapUp = null;
+    if (target != null) {
+      await updateHistoryNote(target, note);
+    } else {
+      notifyListeners();
+    }
+  }
+
   static bool _sameDay(DateTime a, DateTime b) =>
       a.year == b.year && a.month == b.month && a.day == b.day;
 
@@ -1975,6 +2043,53 @@ class PhoneController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Suonerie incluse nell'installazione (`(path, label)`).
+  List<(String, String)> builtInRingtones() =>
+      engineError == null ? _engine.builtInRingtones() : const [];
+
+  /// Imposta il file suoneria `.wav` ('' = predefinita).
+  Future<void> setRingtone(String path) async {
+    settings = settings.copyWith(ringtone: path);
+    await _store.save(settings);
+    if (engineError == null) await _engine.setRingtone(path);
+    notifyListeners();
+  }
+
+  /// Riproduce in anteprima la suoneria configurata.
+  Future<void> previewRingtone() async {
+    if (engineError != null) return;
+    final target = settings.ringtone.isNotEmpty
+        ? settings.ringtone
+        : (_engine.builtInRingtones().firstOrNull?.$1 ?? '');
+    if (target.isEmpty) return;
+    await _engine.playLocalSound(target);
+  }
+
+  /// Interrompe l'anteprima della suoneria.
+  Future<void> stopRingtonePreview() async {
+    if (engineError != null) return;
+    await _engine.stopRinging();
+  }
+
+  /// Regola guadagno microfono / ascolto (in dB, da -10 a +15).
+  Future<void> setAudioGains({double? micDb, double? playbackDb}) async {
+    final nextMic = (micDb ?? settings.micGainDb).clamp(-10.0, 15.0);
+    final nextPlay = (playbackDb ?? settings.playbackGainDb).clamp(-10.0, 15.0);
+    settings = settings.copyWith(micGainDb: nextMic, playbackGainDb: nextPlay);
+    await _store.save(settings);
+    if (engineError == null) {
+      await _engine.setAudioGains(micDb: nextMic, playbackDb: nextPlay);
+    }
+    notifyListeners();
+  }
+
+  /// Attiva/disattiva il tono discreto in cuffia su seconda chiamata entrante.
+  Future<void> setCallWaitingTone(bool on) async {
+    settings = settings.copyWith(callWaitingTone: on);
+    await _store.save(settings);
+    notifyListeners();
+  }
+
   /// Incrementato solo quando cambia l'elenco dei dispositivi audio di sistema.
   int audioDeviceRevision = 0;
   bool _syncingAudio = false;
@@ -2213,6 +2328,7 @@ class PhoneController extends ChangeNotifier {
           .firstOrNull
           ?.host;
       blf.removeWhere((k, _) => host != null && k.endsWith('@$host'));
+      _blfUpdatedAt.removeWhere((k, _) => host != null && k.endsWith('@$host'));
     }
     notifyListeners();
   }
@@ -2220,6 +2336,7 @@ class PhoneController extends ChangeNotifier {
   void _onDialog(BlfEvent e) {
     debugPrint('[drinphone] blf ${e.number} ${e.status.name} ${e.reason}');
     blf[e.number] = e;
+    _blfUpdatedAt[e.number] = _clock();
     if (_checkBusyWatches()) {
       notifyListeners();
     } else {
@@ -2252,12 +2369,16 @@ class PhoneController extends ChangeNotifier {
       }
       _silentFor.removeWhere((id, _) => !active.any((c) => c.id == id));
       _audioMetrics.removeWhere((id, _) => !calls.containsKey(id));
+      _audioHistory.removeWhere((id, _) => !calls.containsKey(id));
       for (final c in active) {
         double? kbps;
         try {
           final m = await _engine.callAudioMetrics(c.id);
           if (m != null) {
             _audioMetrics[c.id] = m;
+            final hist = _audioHistory.putIfAbsent(c.id, () => []);
+            hist.add(m);
+            if (hist.length > 20) hist.removeAt(0);
             kbps = m.downloadKbps ?? await _engine.inboundAudioKbps(c.id);
             notifyListeners();
           } else {
@@ -2306,9 +2427,25 @@ class PhoneController extends ChangeNotifier {
     final isNew = !calls.containsKey(e.id);
     if (isNew && e.phase == CallPhase.incoming) {
       onIncomingCall?.call();
+      if (settings.callWaitingTone &&
+          calls.values.any(
+            (c) =>
+                c.phase == CallPhase.active ||
+                c.phase == CallPhase.paused ||
+                c.phase == CallPhase.outgoing,
+          )) {
+        final tone = _engine.callWaitingTonePath();
+        if (tone != null) unawaited(_engine.playLocalSound(tone));
+      }
       if (settings.crmAutoOpen && e.remoteNumber.isNotEmpty) {
         unawaited(openScreenPop(e.remoteNumber, name: e.remoteName));
       }
+    }
+    if (isNew && e.phase != CallPhase.ended && e.phase != CallPhase.error) {
+      _wrapUpTimer?.cancel();
+      _wrapUpTimer = null;
+      wrapUpPinned = false;
+      lastEndedWrapUp = null;
     }
     if (e.phase != CallPhase.incoming) _cancelAutoAnswer(e.id);
     final m =
@@ -2324,6 +2461,7 @@ class PhoneController extends ChangeNotifier {
       _meta.remove(e.id);
       _recording.remove(e.id);
       _audioMetrics.remove(e.id);
+      _audioHistory.remove(e.id);
       if (e.id == _consultFrom || e.id == _consultTo) {
         _consultFrom = null;
         _consultTo = null;
@@ -2402,20 +2540,27 @@ class PhoneController extends ChangeNotifier {
         ? e.remoteName
         : (last?.remoteName ?? '');
     final connected = m.connected;
-    history = [
-      CallRecord(
-        number: number,
-        name: sipName.isNotEmpty ? sipName : nameFor(number),
-        direction: e.direction,
-        start: m.start,
-        seconds: connected == null
-            ? 0
-            : DateTime.now().difference(connected).inSeconds,
-        answered: m.answered,
-        note: _notes.remove(e.id) ?? '',
-      ),
-      ...history,
-    ].take(CallHistoryStore.maxRecords).toList();
+    final rec = CallRecord(
+      number: number,
+      name: sipName.isNotEmpty ? sipName : nameFor(number),
+      direction: e.direction,
+      start: m.start,
+      seconds: connected == null
+          ? 0
+          : DateTime.now().difference(connected).inSeconds,
+      answered: m.answered,
+      note: _notes.remove(e.id) ?? '',
+    );
+    history = [rec, ...history].take(CallHistoryStore.maxRecords).toList();
+    // Mostra la mini-scheda Wrap-up solo quando non ci sono altre chiamate in
+    // corso e il numero remoto è noto.
+    final othersLive = calls.keys.any((id) => id != e.id);
+    if (!othersLive && number.isNotEmpty) {
+      _wrapUpTimer?.cancel();
+      wrapUpPinned = false;
+      lastEndedWrapUp = rec;
+      _wrapUpTimer = Timer(const Duration(seconds: 8), dismissWrapUp);
+    }
     final store = historyStore;
     final snapshot = history;
     if (store != null) {
@@ -2439,6 +2584,7 @@ class PhoneController extends ChangeNotifier {
     _cancelAutoAnswer();
     _reminderTimer?.cancel();
     _autoDndTimer?.cancel();
+    _wrapUpTimer?.cancel();
     if (settings.globalHotkeys) {
       await GlobalHotkeys.instance.apply(false);
     }
@@ -2455,6 +2601,7 @@ class PhoneController extends ChangeNotifier {
     _cancelAutoAnswer();
     _reminderTimer?.cancel();
     _autoDndTimer?.cancel();
+    _wrapUpTimer?.cancel();
     _notifyTimer?.cancel();
     _zoomSave?.cancel();
     _watchdog?.cancel();

@@ -827,6 +827,28 @@ class LinphoneFfiEngine implements SipEngine {
     'linphone_core_add_all_to_conference',
   );
 
+  late final _setMicGainDb = _lib
+      .lookupFunction<
+        Void Function(Pointer<Void>, Float),
+        void Function(Pointer<Void>, double)
+      >('linphone_core_set_mic_gain_db');
+  late final _setPlaybackGainDb = _lib
+      .lookupFunction<
+        Void Function(Pointer<Void>, Float),
+        void Function(Pointer<Void>, double)
+      >('linphone_core_set_playback_gain_db');
+  late final _setRing = _lib.lookupFunction<_VoidPS, _VoidPSDart>(
+    'linphone_core_set_ring',
+  );
+  late final _playLocal = _lib
+      .lookupFunction<
+        Int32 Function(Pointer<Void>, Pointer<Utf8>),
+        int Function(Pointer<Void>, Pointer<Utf8>)
+      >('linphone_core_play_local');
+  late final _stopRinging = _lib.lookupFunction<_VoidP, _VoidPDart>(
+    'linphone_core_stop_ringing',
+  );
+
   // --- opzioni globali delle chiamate.
   late final _setMediaEncryption = _lib
       .lookupFunction<
@@ -1431,6 +1453,66 @@ class LinphoneFfiEngine implements SipEngine {
   @override
   Future<void> setMicMuted(bool muted) async =>
       _enableMic(_core, muted ? 0 : 1);
+
+  String get _soundsDir {
+    final exeDir = File(Platform.resolvedExecutable).parent.path;
+    final sep = Platform.pathSeparator;
+    return '$exeDir${sep}linphone${sep}share${sep}sounds${sep}linphone';
+  }
+
+  String _defaultRingPath() {
+    final sep = Platform.pathSeparator;
+    return '$_soundsDir${sep}rings${sep}oldphone-mono.wav';
+  }
+
+  @override
+  List<(String, String)> builtInRingtones() {
+    final sep = Platform.pathSeparator;
+    final candidates = [
+      ('$_soundsDir${sep}rings${sep}oldphone-mono.wav', 'Telefono classico'),
+      ('$_soundsDir${sep}toy-mono.wav', 'Suoneria morbida'),
+      ('$_soundsDir${sep}incoming_chat.wav', 'Avviso breve'),
+      ('$_soundsDir${sep}ringback.wav', 'Tono libero'),
+    ];
+    return [
+      for (final item in candidates)
+        if (File(item.$1).existsSync()) item,
+    ];
+  }
+
+  @override
+  String? callWaitingTonePath() {
+    final sep = Platform.pathSeparator;
+    final f = '$_soundsDir${sep}incoming_chat.wav';
+    return File(f).existsSync() ? f : null;
+  }
+
+  @override
+  Future<void> setAudioGains({double micDb = 0, double playbackDb = 0}) async {
+    _setMicGainDb(_core, micDb.clamp(-10.0, 15.0));
+    _setPlaybackGainDb(_core, playbackDb.clamp(-10.0, 15.0));
+  }
+
+  @override
+  Future<void> setRingtone(String path) async {
+    final trimmed = path.trim();
+    final target = trimmed.isNotEmpty && File(trimmed).existsSync()
+        ? trimmed
+        : _defaultRingPath();
+    if (!File(target).existsSync()) return;
+    using((a) => _setRing(_core, target.toNativeUtf8(allocator: a)));
+  }
+
+  @override
+  Future<void> playLocalSound(String path) async {
+    final trimmed = path.trim();
+    final target = trimmed.isNotEmpty ? trimmed : _defaultRingPath();
+    if (!File(target).existsSync()) return;
+    using((a) => _playLocal(_core, target.toNativeUtf8(allocator: a)));
+  }
+
+  @override
+  Future<void> stopRinging() async => _stopRinging(_core);
 
   @override
   Future<double?> inboundAudioKbps(int id) async {
