@@ -60,7 +60,8 @@ class Updater extends ChangeNotifier {
   static const publicKey =
       '9d88fa95b589922ffcf27ab0b774ca193effa75022201788d41f61d68b99aacd';
 
-  static const checkEvery = Duration(hours: 6);
+  static const checkEvery = Duration(minutes: 15);
+  static const resumeCheckGap = Duration(minutes: 2);
 
   UpdateInfo? available;
   bool checking = false;
@@ -74,10 +75,10 @@ class Updater extends ChangeNotifier {
 
   bool get isDevBuild => _parse(current) == null;
 
-  /// Primo controllo dopo l'avvio (senza rallentarlo), poi ogni 6 ore.
+  /// Primo controllo rapido dopo l'avvio (3 s), poi ogni 15 minuti.
   void startPeriodic() {
     if (isDevBuild) return;
-    _timer = Timer(const Duration(seconds: 30), () async {
+    _timer = Timer(const Duration(seconds: 3), () async {
       // Installer di un aggiornamento già fatto.
       try {
         await Directory(downloadDir).delete(recursive: true);
@@ -85,6 +86,14 @@ class Updater extends ChangeNotifier {
       check();
       _timer = Timer.periodic(checkEvery, (_) => check());
     });
+  }
+
+  /// Verifica subito al rientro nell'app se l'ultimo controllo è più vecchio di [maxAge].
+  Future<void> checkIfStale([Duration maxAge = resumeCheckGap]) async {
+    if (isDevBuild || checking || progress != null) return;
+    final last = lastCheck;
+    if (last != null && DateTime.now().difference(last) < maxAge) return;
+    await check();
   }
 
   @override
@@ -116,6 +125,11 @@ class Updater extends ChangeNotifier {
     } catch (_) {}
   }
 
+  /// URL manifest con cache-buster così il CDN GitHub restituisce subito nuove release.
+  static Uri manifestRequestUri(Uri base, int stampMs) => base.replace(
+    queryParameters: {...base.queryParameters, '_t': '$stampMs'},
+  );
+
   Future<void> check() async {
     if (checking || progress != null) return;
     checking = true;
@@ -124,7 +138,12 @@ class Updater extends ChangeNotifier {
     final client = HttpClient()
       ..connectionTimeout = const Duration(seconds: 15);
     try {
-      final res = await (await client.getUrl(manifestUrl)).close();
+      final req = await client.getUrl(
+        manifestRequestUri(manifestUrl, DateTime.now().millisecondsSinceEpoch),
+      );
+      req.headers.set(HttpHeaders.cacheControlHeader, 'no-cache, no-store');
+      req.headers.set(HttpHeaders.pragmaHeader, 'no-cache');
+      final res = await req.close();
       // 404 = nessuna release pubblicata ancora.
       if (res.statusCode == 404) {
         available = null;

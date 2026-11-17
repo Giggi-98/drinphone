@@ -16,6 +16,12 @@ void main() {
     expect(Updater.isNewer('1.0.0', 'dev'), isFalse);
   });
 
+  test('Updater: URL manifest aggiunge cache-buster per bypassare CDN', () {
+    final uri = Updater.manifestRequestUri(Updater.manifestUrl, 123456);
+    expect(uri.queryParameters['_t'], '123456');
+    expect(uri.path, Updater.manifestUrl.path);
+  });
+
   test('Updater: manifest accettato solo con la firma della chiave', () async {
     final algo = Ed25519();
     final pair = await algo.newKeyPairFromSeed(List.filled(32, 7));

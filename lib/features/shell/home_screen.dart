@@ -150,8 +150,11 @@ class _HomeScreenState extends State<HomeScreen> {
     );
     HardwareKeyboard.instance.addHandler(_onKey);
     _lifecycle = AppLifecycleListener(
-      // Rientro nella finestra: riallinea i dati PBX (saltato se letti da < 10 s).
-      onResume: () => p.resync(force: false),
+      // Rientro nella finestra: riallinea PBX e controlla eventuali release.
+      onResume: () {
+        p.resync(force: false);
+        p.updater?.checkIfStale();
+      },
       // Chiudendo la finestra: revoca token API, un-REGISTER, flush del log.
       onExitRequested: () async {
         // Chiudendo la finestra l'app resta nella barra di sistema (se
@@ -235,8 +238,31 @@ class _HomeScreenState extends State<HomeScreen> {
     setState(() {});
   }
 
-  /// Voce "Aggiorna a …" nella barra laterale.
-  void _onUpdater() => setState(() {});
+  String? _announcedUpdate;
+
+  /// Voce "Aggiorna a …" nella barra laterale + avviso immediato alla prima rilevazione.
+  void _onUpdater() {
+    final v = p.updater?.available?.version;
+    if (v != null && v != _announcedUpdate && mounted) {
+      _announcedUpdate = v;
+      final u = p.updater!;
+      ScaffoldMessenger.maybeOf(context)
+        ?..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(
+            duration: const Duration(seconds: 8),
+            content: Text(
+              tr('Disponibile DrinPhone {v}', {'v': v}),
+            ),
+            action: SnackBarAction(
+              label: tr('Aggiorna'),
+              onPressed: () => showUpdateDialog(context, p, u),
+            ),
+          ),
+        );
+    }
+    setState(() {});
+  }
 
   void _call(String number) => p.dial(number);
 

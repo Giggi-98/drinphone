@@ -981,4 +981,6 @@ const en = <String, String>{
   'Aumenta zoom': 'Zoom in',
   'durata media': 'avg duration',
   'picco': 'peak hour',
+  'Controllo ogni 15 min e al rientro': 'Checks every 15 min and on focus',
+  'Disponibile DrinPhone {v}': 'DrinPhone {v} available',
 };

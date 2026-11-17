@@ -38,7 +38,7 @@ class UpdatePanel extends StatelessWidget {
               })
             : u.isDevBuild
             ? tr('Build di sviluppo: nessun controllo automatico')
-            : tr('Controllo automatico ogni 6 ore');
+            : tr('Controllo ogni 15 min e al rientro');
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
