@@ -6,6 +6,18 @@ aggiungi una voce nuova in cima che cita la vecchia. Il campo chiave è
 
 ---
 
+## 2026-11-19 · Auto-DND reale (WASAPI + popup finestra/Windows) e gruppo `Non disturbare` separato da `Al telefono` (`IMPLEMENTATO`, `DA VALIDARE` su Windows/PBX reale)
+Aggiorna e ribalta parzialmente `2026-11-16 · Auto-DND intelligente & Mini-HUD compatto Always-on-top`:
+1. **Rilevamento microfono esterno (`lib/core/platform/mic_busy_monitor.dart`):** oltre al Registro Privacy (`CapabilityAccessManager\ConsentStore\microphone`, ora anche con `LastUsedTimeStop == null || == 0`), usa le API COM Windows Core Audio **WASAPI** (`IMMDeviceEnumerator` -> `eCapture` -> `IAudioSessionManager2` -> `IAudioSessionControl2` con `AudioSessionStateActive` e `pid != GetCurrentProcessId()`) tramite `package:win32` già presente in repo (licenza BSD-3, nessuna dipendenza C++). Polling ogni 3 s + valutazione immediata su avvio e sincronizzazione `ownDetail`; sui profili solo SIP senza OpenAPI rifiuta le chiamate entranti mentre `autoDndActive`.
+2. **Doppio popup di avviso (`PhoneController.autoDndAlertId`, `HomeScreen`, `DesktopShell`):** ad ogni attivazione dell'Auto-DND vengono mostrati sia un popup `SnackBar` nella finestra dell'app sia una notifica toast di Windows (`LocalNotification`).
+3. **Gruppo interni `Non disturbare` distinto da `Al telefono` (`_ExtensionsView._stateRank` in `home_screen.dart`):** se un interno ha presenza `do_not_disturb` e nessuna chiamata live (`live == null`), viene raggruppato sotto **Non disturbare** anziché **Al telefono**, anche se il PBX espone lo stato BLF `busy`.
+   - **Da rivedere se:** un futuro driver audio virtuale mantiene sempre aperta una sessione `AudioSessionStateActive` su `eCapture` anche a microfono spento.
+
+## 2026-11-17 · Tolleranza `thinfo="..."` nei parametri URI SIP (`sip_grammar.belr`) (`IMPLEMENTATO`, `DA VALIDARE` su PBX reale)
+1. **Problema osservato (`linphone.log` su `magnani.drin.cloud`, `YSBC 1.7.21.6`):** il proxy SBC Yeastar/OpenSIPS restituisce `200 OK` alla `SUBSCRIBE` con `Contact: <sip:185.127.134.24;thinfo="VG9...">`. La grammatica RFC 3261 di `belle-sip` non ammette `"` dentro `uri-parameter` (`param-unreserved`), scarta il `Contact` (`Missing contact header in resp`) e lascia il dialogo non confermato, facendo rispondere `481 Call/transaction does not exist` al `NOTIFY` valido che arriva subito dopo.
+2. **Scelta (`tool/patch_sip_grammar.cpp`, `windows/CMakeLists.txt`):** strumento eseguito **solo a tempo di build** (non collegato a `drinphone.exe` e mai installato nel pacchetto finale) che estende il solo file dati `linphone/share/belr/grammars/sip_grammar.belr` con `param-unreserved =/ %x22` (`belr-parse` confermato su `Release`). I binari di `linphone-sdk` restano invariati.
+   - **Da rivedere se:** si aggiorna `linphone-sdk` a una versione che integra già la tolleranza alle virgolette nei parametri URI o il PBX aggiorna YSBC >= 2.12.
+
 ## 2026-11-17 · Selezione BLF unica e impegno diretto al clic (`IMPLEMENTATO`, `DA VALIDARE` su PBX reale)
 Ribalta/semplifica la voce precedente `2026-11-17 · Estensione BLF: Trunk logici (VoIP/FXO/ISDN)`:
 1. **Selezione BLF unica (`FunctionKeyKind.blf`):** rimosso il tipo separato `trunk` dall'interfaccia (in `FunctionKey.fromJson` i vecchi `'trunk'` migrano automaticamente a `blf`). Un unico tasto BLF riconosce in automatico interni, codici funzione `*8XX`/`*9XX` e nomi di linea/trunk (compresi trunk numerici riconosciuti da `knownTrunkNames` o con `dialCode`), dando priorita' in `_watched` ai tasti BLF configurati prima della griglia interni fino a `maxBlf`.

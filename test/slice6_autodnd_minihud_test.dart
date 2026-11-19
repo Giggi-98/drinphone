@@ -53,8 +53,13 @@ void main() {
     );
 
     expect(phone.autoDndActive, isTrue);
+    expect(phone.autoDndAlertId, 1);
+    expect(
+      phone.autoDndAlertMessage,
+      'Microfono in uso da un’altra app: Non disturbare attivo.',
+    );
 
-    // Con Auto-DND attivo la chiamata in arrivo non deve avere risposta automatica.
+    // Con Auto-DND attivo (senza OpenAPI) la chiamata entrante viene rifiutata e mai risposta.
     engine.callsCtl.add(
       const CallEvent(
         id: 19,
@@ -65,6 +70,7 @@ void main() {
     );
     await Future<void>.delayed(const Duration(milliseconds: 30));
     expect(engine.log.where((e) => e.startsWith('answer')), isEmpty);
+    expect(engine.log, contains('hangup 19'));
     engine.callsCtl.add(
       const CallEvent(
         id: 19,
@@ -161,6 +167,66 @@ void main() {
       await tester.tap(find.text('Espandi'));
       await tester.pump();
       expect(find.text('DrinPhone HUD'), findsNothing);
+
+      await phone.shutdown();
+      phone.dispose();
+      await dir.delete(recursive: true);
+    });
+  });
+
+  test('isExternalMicInUseWindows esegue probe WASAPI e registro senza eccezioni', () {
+    expect(isExternalMicInUseWindows(), isA<bool>());
+  });
+
+  testWidgets('HomeScreen mostra popup in finestra quando scatta Auto-DND', (
+    tester,
+  ) async {
+    await tester.runAsync(() async {
+      FlutterSecureStorage.setMockInitialValues({});
+      final dir = await Directory.systemTemp.createTemp('drin_s6_pop_');
+      final store = SettingsStore(
+        '${dir.path}${Platform.pathSeparator}settings.json',
+      );
+      await store.save(
+        const Settings(
+          accounts: [
+            SipAccount(username: '301', password: 'pw', domain: 'pbx.local'),
+          ],
+        ),
+      );
+      final engine = FakeSipEngine();
+      var micBusy = false;
+      final phone = PhoneController(
+        engine,
+        store,
+        engineDataDir: dir.path,
+        logDir: dir.path,
+        externalMicBusyProbe: () => micBusy,
+      );
+      await phone.init();
+
+      tester.view.physicalSize = const Size(1100, 700);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildTheme(Brightness.light),
+          home: HomeScreen(phone: phone),
+        ),
+      );
+      await tester.pump();
+
+      micBusy = true;
+      await phone.setAutoDndPreferences(onExternalMic: true);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+
+      expect(find.text('Auto-DND'), findsOneWidget);
+      expect(
+        find.text('Microfono in uso da un’altra app: Non disturbare attivo.'),
+        findsOneWidget,
+      );
 
       await phone.shutdown();
       phone.dispose();

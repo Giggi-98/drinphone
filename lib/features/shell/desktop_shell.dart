@@ -25,6 +25,8 @@ class DesktopShell with TrayListener {
   final _toasts = <int, LocalNotification>{};
   final _reminderToasts = <String, LocalNotification>{};
   final _busyToasts = <String, LocalNotification>{};
+  LocalNotification? _autoDndToast;
+  int _lastAutoDndAlertId = 0;
   String _tooltip = '';
 
   static Future<void> start(PhoneController phone) async {
@@ -164,6 +166,21 @@ class DesktopShell with TrayListener {
         }
       };
       _busyToasts[w.key] = n;
+      n.show();
+    }
+    if (!p.autoDndActive) {
+      _autoDndToast?.destroy();
+      _autoDndToast = null;
+    } else if (p.autoDndAlertId != _lastAutoDndAlertId &&
+        p.autoDndAlertMessage.isNotEmpty) {
+      _lastAutoDndAlertId = p.autoDndAlertId;
+      _autoDndToast?.destroy();
+      final n = LocalNotification(
+        title: tr('Non disturbare automatico'),
+        body: p.autoDndAlertMessage,
+      );
+      n.onClick = WindowAttention.instance.show;
+      _autoDndToast = n;
       n.show();
     }
   }

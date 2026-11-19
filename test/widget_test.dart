@@ -1223,4 +1223,67 @@ void main() {
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());
   });
+
+  testWidgets('Impegno linea BLF apre CallWindow con tastierino DTMF automatico', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1366, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    late PhoneController p;
+    await tester.runAsync(() async {
+      await store.save(
+        const Settings(
+          accounts: [_account],
+          functionKeys: [
+            FunctionKey(
+              id: 'tr_direct',
+              kind: FunctionKeyKind.blf,
+              label: 'Linea Principale',
+              target: '051444754',
+            ),
+          ],
+        ),
+      );
+      p = PhoneController(
+        engine,
+        store,
+        engineDataDir: tmp.path,
+        logDir: tmp.path,
+      );
+      await p.init();
+    });
+    engine.registrationsCtl.add(const RegistrationEvent(RegistrationStatus.ok));
+
+    await tester.pumpWidget(DrinPhoneApp(phone: p));
+    await tester.pump(const Duration(milliseconds: 300));
+
+    await tester.tap(find.byTooltip('Tasti funzione / BLF'));
+    await tester.pump(const Duration(milliseconds: 300));
+
+    await tester.tap(find.text('Linea Principale'));
+    await tester.pump();
+    expect(engine.log, contains('dial 051444754'));
+    expect(p.openKeypadOnCall, isTrue);
+
+    // Quando il centralino risponde con il prompt, CallWindow apre il tastierino DTMF.
+    engine.callsCtl.add(
+      const CallEvent(
+        id: 88,
+        phase: CallPhase.active,
+        direction: CallDirection.outgoing,
+        remoteNumber: '051444754',
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.text('Tastiera'), findsNWidgets(2));
+
+    // Digitazione cifre anche da tastiera fisica invia DTMF.
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.digit3);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.digit3);
+    await tester.pump();
+    expect(engine.log, contains('dtmf 88 3'));
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+  });
 }

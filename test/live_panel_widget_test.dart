@@ -7,6 +7,7 @@ import 'package:drinphone/core/security/api_credential_store.dart';
 import 'package:drinphone/core/security/settings_store.dart';
 import 'package:drinphone/core/sip/sip_engine.dart';
 import 'package:drinphone/features/live/live_calls_view.dart';
+import 'package:drinphone/features/shell/home_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -133,6 +134,87 @@ void main() {
         await tester.pump(const Duration(milliseconds: 150));
         expect(conn.pausedQueueIds, {2});
         expect(find.text('In pausa coda'), findsOneWidget);
+
+        await phone.shutdown();
+        phone.dispose();
+      });
+    },
+    skip: !Platform.isWindows,
+  );
+
+  testWidgets(
+    'Interni per stato: DND senza chiamata va in Non disturbare, non Al telefono',
+    (tester) async {
+      tester.view.physicalSize = const Size(1440, 900);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+
+      await tester.runAsync(() async {
+        FlutterSecureStorage.setMockInitialValues({});
+        final sep = Platform.pathSeparator;
+        final engine = FakeSipEngine();
+        ApiCredentialStore storeFor(String id) =>
+            ApiCredentialStore('${tmp.path}${sep}api-$id.dpapi');
+        await storeFor('a').save(
+          ApiCredentials(
+            baseUrl: pbx.baseUrl,
+            clientId: 'CLIENT-ID-123',
+            clientSecret: 'CLIENT-SECRET-xyz',
+            ownExtension: '305',
+          ),
+        );
+        final settings = SettingsStore('${tmp.path}${sep}s_dnd.json');
+        await settings.save(
+          const Settings(
+            accounts: [
+              SipAccount(username: '305', password: 'p', domain: '127.0.0.1'),
+            ],
+            pbx: [PbxConnectionInfo('a', 'PBX')],
+            view: {'ext.byState': '1'},
+          ),
+        );
+        final phone = PhoneController(
+          engine,
+          settings,
+          engineDataDir: tmp.path,
+          logDir: tmp.path,
+          apiStoreFor: storeFor,
+        );
+        await phone.init();
+        await phone.connectionsStarted;
+
+        final conn = phone.connections.single;
+        conn.directory = const [
+          PbxExtension(
+            id: 20,
+            number: '320',
+            name: 'Roberto DND',
+            presence: 'do_not_disturb',
+          ),
+          PbxExtension(
+            id: 21,
+            number: '301',
+            name: 'Mario Libero',
+            presence: 'available',
+          ),
+        ];
+        conn.callStatus['320'] = BlfStatus.busy;
+        conn.callStatus['301'] = BlfStatus.idle;
+        conn.extensionCalls.clear();
+
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: buildTheme(Brightness.dark),
+            home: HomeScreen(phone: phone),
+          ),
+        );
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 200));
+
+        expect(find.text('Non disturbare'), findsAtLeastNWidgets(1));
+        expect(find.text('Al telefono'), findsNothing);
+        expect(find.text('Roberto DND'), findsOneWidget);
+        expect(find.text('Liberi'), findsOneWidget);
 
         await phone.shutdown();
         phone.dispose();

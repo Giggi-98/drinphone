@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../app/l10n.dart';
 import '../../app/phone_controller.dart';
@@ -35,12 +36,14 @@ class _CallWindowState extends State<CallWindow> {
   String _dtmf = '';
   int? _callId;
   bool _wasVideo = false;
+  bool _autoKeypadDone = false;
 
   PhoneController get p => widget.phone;
 
   @override
   void initState() {
     super.initState();
+    HardwareKeyboard.instance.addHandler(_onDtmfKey);
     // Durata e qualità del segnale.
     _tick = Timer.periodic(const Duration(seconds: 1), (_) {
       if (mounted && p.call != null) setState(() {});
@@ -49,8 +52,54 @@ class _CallWindowState extends State<CallWindow> {
 
   @override
   void dispose() {
+    HardwareKeyboard.instance.removeHandler(_onDtmfKey);
     _tick?.cancel();
     super.dispose();
+  }
+
+  static const _dtmfChars = {
+    '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '*', '#',
+  };
+
+  bool _onDtmfKey(KeyEvent e) {
+    if (e is! KeyDownEvent) return false;
+    final call = p.call;
+    if (call == null ||
+        (call.phase != CallPhase.active && call.phase != CallPhase.paused)) {
+      return false;
+    }
+    final kb = HardwareKeyboard.instance;
+    if (kb.isControlPressed || kb.isAltPressed || kb.isMetaPressed) {
+      return false;
+    }
+    if (FocusManager.instance.primaryFocus?.context?.widget is EditableText) {
+      return false;
+    }
+    final ch = e.character;
+    final k = e.logicalKey;
+    final digit = (ch != null && _dtmfChars.contains(ch))
+        ? ch
+        : switch (k) {
+            LogicalKeyboardKey.numpad0 => '0',
+            LogicalKeyboardKey.numpad1 => '1',
+            LogicalKeyboardKey.numpad2 => '2',
+            LogicalKeyboardKey.numpad3 => '3',
+            LogicalKeyboardKey.numpad4 => '4',
+            LogicalKeyboardKey.numpad5 => '5',
+            LogicalKeyboardKey.numpad6 => '6',
+            LogicalKeyboardKey.numpad7 => '7',
+            LogicalKeyboardKey.numpad8 => '8',
+            LogicalKeyboardKey.numpad9 => '9',
+            LogicalKeyboardKey.numpadMultiply => '*',
+            _ => null,
+          };
+    if (digit == null) return false;
+    setState(() {
+      if (_panel == _Panel.none) _panel = _Panel.keypad;
+      _dtmf += digit;
+    });
+    p.sendDtmf(digit);
+    return true;
   }
 
   String _duration() {
@@ -78,7 +127,15 @@ class _CallWindowState extends State<CallWindow> {
       _callId = call.id;
       _panel = _Panel.none;
       _dtmf = '';
+      _autoKeypadDone = false;
       if (_mode == _Mode.full) _mode = _Mode.normal;
+    }
+    if (call != null &&
+        !_autoKeypadDone &&
+        p.openKeypadOnCall &&
+        (call.phase == CallPhase.active || call.phase == CallPhase.paused)) {
+      _autoKeypadDone = true;
+      _panel = _Panel.keypad;
     }
     final isVideo =
         call != null &&

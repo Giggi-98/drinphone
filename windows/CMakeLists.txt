@@ -124,6 +124,29 @@ foreach(share_dir belr linphone sounds)
   install(DIRECTORY "${LINPHONE_SDK_DIR}/share/${share_dir}"
     DESTINATION "${CMAKE_INSTALL_PREFIX}/linphone/share" COMPONENT Runtime)
 endforeach()
+# Patch a tempo di build della sola grammatica dati sip_grammar.belr: accetta
+# parametri URI con virgolette (es. `thinfo="..."` da SBC OpenSIPS/Yeastar).
+set(SIP_GRAMMAR_IN "${LINPHONE_SDK_DIR}/share/belr/grammars/sip_grammar.belr")
+set(SIP_GRAMMAR_OUT "${CMAKE_CURRENT_BINARY_DIR}/sip_grammar.belr")
+add_executable(patch_sip_grammar "${CMAKE_CURRENT_SOURCE_DIR}/../tool/patch_sip_grammar.cpp")
+target_compile_features(patch_sip_grammar PRIVATE cxx_std_17)
+target_include_directories(patch_sip_grammar PRIVATE "${LINPHONE_SDK_DIR}/include")
+target_link_libraries(patch_sip_grammar PRIVATE
+  "${LINPHONE_SDK_DIR}/lib/belr.lib"
+  "${LINPHONE_SDK_DIR}/lib/bctoolbox.lib"
+)
+add_custom_command(
+  OUTPUT "${SIP_GRAMMAR_OUT}"
+  COMMAND $<TARGET_FILE:patch_sip_grammar> "${SIP_GRAMMAR_IN}" "${SIP_GRAMMAR_OUT}"
+  DEPENDS patch_sip_grammar "${SIP_GRAMMAR_IN}"
+  WORKING_DIRECTORY "${LINPHONE_SDK_DIR}/bin"
+  COMMENT "Patch sip_grammar.belr (param-unreserved =/ %x22)"
+  VERBATIM
+)
+add_custom_target(sip_grammar_patched ALL DEPENDS "${SIP_GRAMMAR_OUT}")
+install(FILES "${SIP_GRAMMAR_OUT}"
+  DESTINATION "${CMAKE_INSTALL_PREFIX}/linphone/share/belr/grammars"
+  COMPONENT Runtime)
 install(FILES
     "${LINPHONE_SDK_DIR}/lib/mediastreamer/plugins/libmswasapi.dll"
     "${LINPHONE_SDK_DIR}/lib/mediastreamer/plugins/libmswebrtc.dll"

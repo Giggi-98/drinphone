@@ -657,74 +657,86 @@ class _SearchBoxState extends State<SearchBox> {
                 ),
                 borderRadius: BorderRadius.circular(10),
               ),
-              child: Row(
-                children: [
-                  Icon(
-                    Icons.search_rounded,
-                    size: 18,
-                    color: _focus.hasFocus ? c.accent : c.muted,
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Focus(
-                      onKeyEvent: _key,
-                      child: TextField(
-                        controller: _text,
-                        focusNode: _focus,
-                        onChanged: _changed,
-                        onTap: () {
-                          _typed.isNotEmpty ? _results.show() : _showQuick();
-                        },
-                        onSubmitted: (_) {
-                          _activate(_selected);
-                          _focus.requestFocus();
-                        },
-                        style: mono(c.text, size: 15),
-                        decoration: InputDecoration(
-                          hintText: tr('Numero, interno o nome'),
-                          // Il segnaposto non eredita il monospazio del testo digitato.
-                          hintStyle: DrinText.body.copyWith(color: c.muted),
-                          border: InputBorder.none,
-                          enabledBorder: InputBorder.none,
-                          focusedBorder: InputBorder.none,
-                          filled: false,
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final showSearchIcon = constraints.maxWidth >= 150;
+                  final showKeypad = constraints.maxWidth >= 120;
+                  return Row(
+                    children: [
+                      if (showSearchIcon) ...[
+                        Icon(
+                          Icons.search_rounded,
+                          size: 18,
+                          color: _focus.hasFocus ? c.accent : c.muted,
+                        ),
+                        const SizedBox(width: 8),
+                      ],
+                      Expanded(
+                        child: Focus(
+                          onKeyEvent: _key,
+                          child: TextField(
+                            controller: _text,
+                            focusNode: _focus,
+                            onChanged: _changed,
+                            onTap: () {
+                              _typed.isNotEmpty
+                                  ? _results.show()
+                                  : _showQuick();
+                            },
+                            onSubmitted: (_) {
+                              _activate(_selected);
+                              _focus.requestFocus();
+                            },
+                            style: mono(c.text, size: 15),
+                            decoration: InputDecoration(
+                              hintText: tr('Numero, interno o nome'),
+                              // Il segnaposto non eredita il monospazio del testo digitato.
+                              hintStyle: DrinText.body.copyWith(color: c.muted),
+                              border: InputBorder.none,
+                              enabledBorder: InputBorder.none,
+                              focusedBorder: InputBorder.none,
+                              filled: false,
+                            ),
+                          ),
                         ),
                       ),
-                    ),
-                  ),
-                  IconButton(
-                    tooltip: tr('Tastierino'),
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints.tightFor(
-                      width: 36,
-                      height: 36,
-                    ),
-                    style: IconButton.styleFrom(
-                      backgroundColor: c.keyBtn,
-                      foregroundColor: c.accent,
-                    ),
-                    onPressed: _keypad.toggle,
-                    icon: const Icon(Icons.dialpad_rounded, size: 18),
-                  ),
-                  const SizedBox(width: 4),
-                  IconButton(
-                    tooltip: tr('Chiama'),
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints.tightFor(
-                      width: 36,
-                      height: 36,
-                    ),
-                    style: IconButton.styleFrom(
-                      backgroundColor: context.drin.free,
-                      foregroundColor: context.drin.onFree,
-                      disabledBackgroundColor: c.keyBtn,
-                    ),
-                    onPressed: p.canDial && _rows > 0
-                        ? () => _activate(_selected)
-                        : null,
-                    icon: const Icon(Icons.call_rounded, size: 18),
-                  ),
-                ],
+                      if (showKeypad) ...[
+                        IconButton(
+                          tooltip: tr('Tastierino'),
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints.tightFor(
+                            width: 36,
+                            height: 36,
+                          ),
+                          style: IconButton.styleFrom(
+                            backgroundColor: c.keyBtn,
+                            foregroundColor: c.accent,
+                          ),
+                          onPressed: _keypad.toggle,
+                          icon: const Icon(Icons.dialpad_rounded, size: 18),
+                        ),
+                        const SizedBox(width: 4),
+                      ],
+                      IconButton(
+                        tooltip: tr('Chiama'),
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints.tightFor(
+                          width: 36,
+                          height: 36,
+                        ),
+                        style: IconButton.styleFrom(
+                          backgroundColor: context.drin.free,
+                          foregroundColor: context.drin.onFree,
+                          disabledBackgroundColor: c.keyBtn,
+                        ),
+                        onPressed: p.canDial && _rows > 0
+                            ? () => _activate(_selected)
+                            : null,
+                        icon: const Icon(Icons.call_rounded, size: 18),
+                      ),
+                    ],
+                  );
+                },
               ),
             ),
           ),

@@ -418,6 +418,9 @@ class PhoneController extends ChangeNotifier {
     // credenziali: si riassegna qui (arriva a inizio sync, prima delle letture).
     _assignVoicemail();
     final busyChanged = _checkBusyWatches();
+    if (autoDndActive && !_autoDndPbxApplied && ownDetail != null) {
+      unawaited(evaluateAutoDnd());
+    }
     if (!c.syncing && (!c.ok || c.optionalErrors.isNotEmpty)) {
       debugPrint(
         '[drinphone] pbx ${c.id}: ${c.status} ${c.optionalErrors.join('; ')}',
@@ -1907,7 +1910,18 @@ class PhoneController extends ChangeNotifier {
 
   /// Auto-DND attivo in questo momento (microfono esterno o fascia oraria).
   bool autoDndActive = false;
+
+  /// Motivo corrente dell'Auto-DND (`mic`, `schedule` oppure ``).
+  String autoDndReason = '';
+
+  /// Incrementato ogni volta che Auto-DND passa a attivo per notificare UI/OS.
+  int autoDndAlertId = 0;
+
+  /// Messaggio descrittivo dell'ultimo Auto-DND attivato.
+  String autoDndAlertMessage = '';
+
   String _autoDndSavedPresence = '';
+  bool _autoDndPbxApplied = false;
   Timer? _autoDndTimer;
   bool _autoDndBusy = false;
 
@@ -1934,9 +1948,10 @@ class PhoneController extends ChangeNotifier {
     _autoDndTimer = null;
     if (settings.autoDndOnExternalMic || settings.autoDndScheduleEnabled) {
       _autoDndTimer = Timer.periodic(
-        const Duration(seconds: 10),
+        const Duration(seconds: 3),
         (_) => unawaited(evaluateAutoDnd()),
       );
+      Future.microtask(evaluateAutoDnd);
     }
   }
 
@@ -1960,20 +1975,51 @@ class PhoneController extends ChangeNotifier {
       if (wantDnd && !autoDndActive) {
         final cur = ownPresence;
         _autoDndSavedPresence = cur;
+        _autoDndPbxApplied = false;
         autoDndActive = true;
+        autoDndReason = micOn ? 'mic' : 'schedule';
+        autoDndAlertId++;
+        autoDndAlertMessage = micOn
+            ? tr('Microfono in uso da un’altra app: Non disturbare attivo.')
+            : tr('Fascia oraria attiva: Non disturbare attivo.');
         final d = ownDetail;
-        if (d != null && cur != 'do_not_disturb') {
-          try {
-            await updateOwnExtension(d.withPresence('do_not_disturb'));
-          } catch (_) {}
+        if (d != null) {
+          if (cur == 'do_not_disturb') {
+            _autoDndPbxApplied = true;
+          } else {
+            try {
+              await updateOwnExtension(d.withPresence('do_not_disturb'));
+              _autoDndPbxApplied = true;
+            } catch (_) {}
+          }
         }
         notifyListeners();
+      } else if (wantDnd && autoDndActive && !_autoDndPbxApplied) {
+        final d = ownDetail;
+        if (d != null) {
+          final cur = ownPresence;
+          if (_autoDndSavedPresence.isEmpty) _autoDndSavedPresence = cur;
+          if (cur == 'do_not_disturb') {
+            _autoDndPbxApplied = true;
+          } else {
+            try {
+              await updateOwnExtension(d.withPresence('do_not_disturb'));
+              _autoDndPbxApplied = true;
+              notifyListeners();
+            } catch (_) {}
+          }
+        }
       } else if (!wantDnd && autoDndActive) {
         autoDndActive = false;
+        autoDndReason = '';
+        autoDndAlertMessage = '';
+        final wasApplied = _autoDndPbxApplied;
+        _autoDndPbxApplied = false;
         final restore = _autoDndSavedPresence;
         _autoDndSavedPresence = '';
         final d = ownDetail;
-        if (d != null &&
+        if (wasApplied &&
+            d != null &&
             ownPresence == 'do_not_disturb' &&
             restore.isNotEmpty &&
             restore != 'do_not_disturb') {
@@ -2358,6 +2404,10 @@ class PhoneController extends ChangeNotifier {
     return added.length;
   }
 
+  /// Apre automaticamente il tastierino DTMF nella finestra chiamata quando
+  /// questa chiamata nasce dall'impegno di una linea o codice funzione sul PBX.
+  bool openKeypadOnCall = false;
+
   /// Impegna una linea / trunk sul PBX: usa l'eventuale `dialCode` accessorio
   /// (con o senza [number]), oppure impegna direttamente [FunctionKey.target]
   /// se non è stato configurato alcun prefisso.
@@ -2370,6 +2420,7 @@ class PhoneController extends ChangeNotifier {
         ? '$prefix$n'
         : (n.isNotEmpty ? n : target);
     if (toDial.isEmpty) return;
+    openKeypadOnCall = n.isEmpty;
     await dial(toDial);
   }
 
@@ -2394,7 +2445,10 @@ class PhoneController extends ChangeNotifier {
         if (target.isEmpty) return;
         // Codici funzione BLF Yeastar (*8XX, *9XX…): invia sempre il codice.
         if (target.startsWith('*')) {
-          if (canDial) await dial(target);
+          if (canDial) {
+            openKeypadOnCall = true;
+            await dial(target);
+          }
           return;
         }
         // Linea / trunk: al clic impegna il prefisso accessorio se presente,
@@ -2403,11 +2457,11 @@ class PhoneController extends ChangeNotifier {
           await seizeTrunk(key, number: trunkDialNumber);
           return;
         }
-        final ext =
-            allExtensions.where((e) => e.number == target).firstOrNull ??
-            Extension(key.label.isNotEmpty ? key.label : target, target);
-        if (canPickupExtension(ext, live: liveOfNumber(target))) {
-          await pickupExtension(ext);
+        final ext = allExtensions.where((e) => e.number == target).firstOrNull;
+        final extOrSynthetic =
+            ext ?? Extension(key.label.isNotEmpty ? key.label : target, target);
+        if (canPickupExtension(extOrSynthetic, live: liveOfNumber(target))) {
+          await pickupExtension(extOrSynthetic);
           return;
         }
         if (call?.phase == CallPhase.active) {
@@ -2416,7 +2470,10 @@ class PhoneController extends ChangeNotifier {
           if (key.dialCode.trim().isNotEmpty) {
             await seizeTrunk(key, number: trunkDialNumber);
           } else {
-            await dial(target, via: ext.source.isNotEmpty ? ext : null);
+            // Se non corrisponde a un interno noto (es. nome trunk numerico come
+            // 051444754), apre il tastierino DTMF per inserire le cifre al prompt.
+            openKeypadOnCall = ext == null && target.length > 5;
+            await dial(target, via: ext != null && ext.source.isNotEmpty ? ext : null);
           }
         }
       case FunctionKeyKind.speedDial:
@@ -2771,9 +2828,12 @@ class PhoneController extends ChangeNotifier {
         _consultFrom = null;
         _consultTo = null;
       }
-      if (calls.isEmpty && muted) {
-        muted = false;
-        _engine.setMicMuted(false);
+      if (calls.isEmpty) {
+        openKeypadOnCall = false;
+        if (muted) {
+          muted = false;
+          _engine.setMicMuted(false);
+        }
       }
     } else {
       final active = e.phase == CallPhase.active;
@@ -2804,8 +2864,13 @@ class PhoneController extends ChangeNotifier {
           : e;
     }
     notifyListeners();
+    if (isNew && e.phase == CallPhase.incoming && autoDndActive && !_autoDndPbxApplied) {
+      unawaited(_engine.hangup(e.id));
+      return;
+    }
     if (isNew &&
         e.phase == CallPhase.incoming &&
+        !autoDndActive &&
         e.remoteVideo &&
         videoEnabled &&
         settings.video.autoPreviewIncoming) {

@@ -1040,4 +1040,10 @@ const en = <String, String>{
   'Funzione disponibile con integrazione PBX attiva':
       'Available with PBX integration enabled',
   'Nessuna coda agente associata': 'No agent queue assigned',
+  'OK': 'OK',
+  'Non disturbare automatico': 'Automatic Do not disturb',
+  'Microfono in uso da un’altra app: Non disturbare attivo.':
+      'Microphone in use by another app: Do not disturb active.',
+  'Fascia oraria attiva: Non disturbare attivo.':
+      'Schedule active: Do not disturb active.',
 };

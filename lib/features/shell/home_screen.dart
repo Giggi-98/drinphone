@@ -229,6 +229,38 @@ class _HomeScreenState extends State<HomeScreen> {
     if (_section == _Section.voicemail) p.markVoicemailSeen();
   }
 
+  int _lastAutoDndAlertId = 0;
+
+  void _maybeShowAutoDndPopup() {
+    if (!mounted ||
+        !p.autoDndActive ||
+        p.autoDndAlertId == _lastAutoDndAlertId ||
+        p.autoDndAlertMessage.isEmpty) {
+      return;
+    }
+    _lastAutoDndAlertId = p.autoDndAlertId;
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    if (messenger == null) return;
+    messenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          duration: const Duration(seconds: 8),
+          content: Row(
+            children: [
+              const Icon(Icons.do_not_disturb_on_rounded, size: 18),
+              const SizedBox(width: 10),
+              Expanded(child: Text(p.autoDndAlertMessage)),
+            ],
+          ),
+          action: SnackBarAction(
+            label: tr('OK'),
+            onPressed: messenger.hideCurrentSnackBar,
+          ),
+        ),
+      );
+  }
+
   void _onPhone() {
     _markSeen();
     final n = p.notice;
@@ -236,6 +268,7 @@ class _HomeScreenState extends State<HomeScreen> {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(n)));
       p.clearNotice();
     }
+    _maybeShowAutoDndPopup();
     setState(() {});
   }
 
@@ -1302,20 +1335,21 @@ class _ExtensionsViewState extends State<_ExtensionsView> {
     return a.number.compareTo(b.number);
   }
 
-  /// Gruppo di stato: 0 al telefono, 1 squilla, 2 libero, 3 altro,
-  /// 4 non registrato. Prima gli eventi dal vivo (30011), poi il BLF.
+  /// Gruppo di stato: 0 al telefono (chiamata attiva), 1 squilla, 2 libero,
+  /// 3 in Non disturbare (senza chiamata attiva), 4 altro, 5 non registrato.
   int _stateRank(Extension e, ExtensionLive? live) {
     if (live != null) {
       return live.state == LiveState.ringing || live.state == LiveState.calling
           ? 1
           : 0;
     }
+    if (phone.presenceOf(e) == 'do_not_disturb') return 3;
     return switch (phone.blfOf(e)) {
       BlfStatus.busy => 0,
       BlfStatus.ringing => 1,
       BlfStatus.idle => 2,
-      BlfStatus.offline => 4,
-      _ => 3,
+      BlfStatus.offline => 5,
+      _ => 4,
     };
   }
 
@@ -1323,6 +1357,7 @@ class _ExtensionsViewState extends State<_ExtensionsView> {
     tr('Al telefono'),
     tr('Squillano'),
     tr('Liberi'),
+    tr('Non disturbare'),
     tr('Stato sconosciuto'),
     tr('Non registrati'),
   ];
@@ -1462,15 +1497,16 @@ class _ExtensionsViewState extends State<_ExtensionsView> {
     Widget Function(Extension) tile,
     ExtensionLive? Function(Extension) liveOf,
   ) {
-    final groups = List.generate(5, (_) => <Extension>[]);
+    final groups = List.generate(6, (_) => <Extension>[]);
     for (final e in list) {
       groups[_stateRank(e, liveOf(e))].add(e);
     }
-    final colors = [c.busy, c.squilloLine, c.ok, c.muted, c.away];
+    final colors = [c.busy, c.squilloLine, c.ok, c.busy, c.muted, c.away];
     final icons = [
       Icons.call_rounded,
       Icons.ring_volume_rounded,
       Icons.check_circle_outline_rounded,
+      Icons.do_not_disturb_on_rounded,
       Icons.help_outline_rounded,
       Icons.cloud_off_rounded,
     ];
