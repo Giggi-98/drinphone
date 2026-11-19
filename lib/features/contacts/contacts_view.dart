@@ -296,12 +296,17 @@ class _ContactsViewState extends State<ContactsView> {
               ),
               IconButton.filledTonal(
                 tooltip: tr('Nuovo contatto'),
-                style: IconButton.styleFrom(
+                style: DrinButtons.iconStyle(
+                  context,
+                  size: DrinButtonSize.md,
                   backgroundColor: c.keyBtn,
                   foregroundColor: c.accent,
                 ),
                 onPressed: () => _edit(context),
-                icon: const Icon(Icons.person_add_alt_1_rounded, size: 20),
+                icon: Icon(
+                  Icons.person_add_alt_1_rounded,
+                  size: DrinButtons.iconOf(DrinButtonSize.md),
+                ),
               ),
             ],
           ),

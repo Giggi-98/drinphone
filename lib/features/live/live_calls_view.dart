@@ -2081,16 +2081,16 @@ class _BlfRow extends StatelessWidget {
                           tooltip: tr('Rispondi per {n}', {'n': ext.number}),
                           onPressed: () =>
                               phone.dial('${conn.extPickupCode}${ext.number}'),
-                          style: IconButton.styleFrom(
+                          style: DrinButtons.iconStyle(
+                            context,
+                            size: DrinButtonSize.xs,
                             backgroundColor: c.ok.withValues(alpha: 0.16),
                             foregroundColor: c.okText,
-                            minimumSize: const Size(24, 24),
-                            fixedSize: const Size(24, 24),
-                            padding: EdgeInsets.zero,
+                            shrinkWrap: true,
                           ),
-                          icon: const Icon(
+                          icon: Icon(
                             Icons.phone_in_talk_rounded,
-                            size: 14,
+                            size: DrinButtons.iconOf(DrinButtonSize.xs),
                           ),
                         ),
                       ),

@@ -273,6 +273,8 @@ class CallIconButton extends StatelessWidget {
     this.icon = Icons.call_rounded,
     this.backgroundColor,
     this.foregroundColor,
+    this.size = DrinButtonSize.md,
+    this.shrinkWrap = false,
   });
   final VoidCallback? onPressed;
   final String? tooltip;
@@ -281,6 +283,10 @@ class CallIconButton extends StatelessWidget {
   final IconData icon;
   final Color? backgroundColor;
   final Color? foregroundColor;
+
+  /// Taglia adattiva da token (`sm` 32 px nelle righe dense, `md` 36 px standard).
+  final DrinButtonSize size;
+  final bool shrinkWrap;
 
   @override
   Widget build(BuildContext context) {
@@ -291,14 +297,16 @@ class CallIconButton extends StatelessWidget {
       enabled: onPressed != null,
       child: IconButton.filledTonal(
         tooltip: tooltip ?? tr('Chiama'),
-        style: IconButton.styleFrom(
+        style: DrinButtons.iconStyle(
+          context,
+          size: size,
           backgroundColor: bg,
           foregroundColor: fg,
           disabledBackgroundColor: bg.withValues(alpha: 0.4),
-          minimumSize: const Size(40, 40),
+          shrinkWrap: shrinkWrap,
         ),
         onPressed: onPressed,
-        icon: Icon(icon, size: 18),
+        icon: Icon(icon, size: DrinButtons.iconOf(size)),
       ),
     );
   }
@@ -938,13 +946,12 @@ class _InlineAudioPlayerBarState extends State<InlineAudioPlayerBar> {
                   widget.trackKey,
                   widget.resolveFile,
                 ),
-          style: IconButton.styleFrom(
+          style: DrinButtons.iconStyle(
+            context,
+            size: DrinButtonSize.sm,
             backgroundColor: c.primary.withValues(alpha: 0.14),
             foregroundColor: c.primary,
-            minimumSize: const Size(34, 34),
-            fixedSize: const Size(34, 34),
-            padding: EdgeInsets.zero,
-            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            shrinkWrap: true,
           ),
           icon: loading
               ? SizedBox(
@@ -957,7 +964,7 @@ class _InlineAudioPlayerBarState extends State<InlineAudioPlayerBar> {
                 )
               : Icon(
                   playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
-                  size: 19,
+                  size: DrinButtons.iconOf(DrinButtonSize.sm) + 2,
                 ),
         );
 
@@ -989,12 +996,15 @@ class _InlineAudioPlayerBarState extends State<InlineAudioPlayerBar> {
         final stopBtn = IconButton(
           tooltip: tr('Ferma'),
           onPressed: widget.player.stop,
-          icon: Icon(Icons.stop_rounded, size: 17, color: c.muted),
-          style: IconButton.styleFrom(
-            minimumSize: const Size(30, 30),
-            fixedSize: const Size(30, 30),
-            padding: EdgeInsets.zero,
-            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          icon: Icon(
+            Icons.stop_rounded,
+            size: DrinButtons.iconOf(DrinButtonSize.sm),
+            color: c.muted,
+          ),
+          style: DrinButtons.iconStyle(
+            context,
+            size: DrinButtonSize.sm,
+            shrinkWrap: true,
           ),
         );
 
@@ -1003,11 +1013,10 @@ class _InlineAudioPlayerBarState extends State<InlineAudioPlayerBar> {
             : IconButton(
                 tooltip: tr('Scarica audio'),
                 onPressed: _downloading ? null : _download,
-                style: IconButton.styleFrom(
-                  minimumSize: const Size(32, 32),
-                  fixedSize: const Size(32, 32),
-                  padding: EdgeInsets.zero,
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                style: DrinButtons.iconStyle(
+                  context,
+                  size: DrinButtonSize.sm,
+                  shrinkWrap: true,
                 ),
                 icon: _downloading
                     ? const SizedBox(
@@ -1015,7 +1024,11 @@ class _InlineAudioPlayerBarState extends State<InlineAudioPlayerBar> {
                         height: 14,
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
-                    : Icon(Icons.download_rounded, size: 18, color: c.muted),
+                    : Icon(
+                        Icons.download_rounded,
+                        size: DrinButtons.iconOf(DrinButtonSize.sm),
+                        color: c.muted,
+                      ),
               );
 
         if (widget.compact) {

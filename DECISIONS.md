@@ -6,6 +6,11 @@ aggiungi una voce nuova in cima che cita la vecchia. Il campo chiave è
 
 ---
 
+## 2026-11-19 · Scala unica e adattiva per i pulsanti (`DrinButtonSize` / `DrinButtons`) (`IMPLEMENTATO`)
+1. **Problema osservato:** i pulsanti a icona usavano misure sparse (`24`, `30`, `32`, `34`, `36`, `40`) e `MaterialTapTargetSize.padded` di default (`48×48` in layout); nelle righe compatte da `52 px` con 3 azioni (`Pickup` + `Chiama` + `Video`), `CallIconButton` a `40×40` (ingombro `48×48`) schiacciava nome e `LiveChip` facendo collidere il testo col pulsante di pickup.
+2. **Scelta (`lib/app/theme.dart`, `DESIGN.md` §3, `CallIconButton`, `home_screen.dart`, `call_window.dart`, `search_box.dart`, `widgets.dart`):** introdotti `DrinButtonSize` (`xs`/`sm`/`md`/`lg`: `24/32/36/44` px su puntatore, `24/36/40/48` su touch) e `DrinButtons` (`sizeOf`, `iconOf`, `gapOf`, `iconStyle`, `adaptiveForWidth`) con `shrinkWrap` su puntatore e `padded` su touch (`!mouseIsConnected && width < 600`). `_ExtensionTile` e la toolbar di `CallWindow` adattano automaticamente taglia e spaziatura allo spazio disponibile tramite `LayoutBuilder`.
+   - **Da rivedere se:** in futuro viene introdotto un profilo di accessibilità esplicito con pulsanti maggiorati anche su desktop con mouse.
+
 ## 2026-11-19 · Auto-DND reale (WASAPI + popup finestra/Windows) e gruppo `Non disturbare` separato da `Al telefono` (`IMPLEMENTATO`, `DA VALIDARE` su Windows/PBX reale)
 Aggiorna e ribalta parzialmente `2026-11-16 · Auto-DND intelligente & Mini-HUD compatto Always-on-top`:
 1. **Rilevamento microfono esterno (`lib/core/platform/mic_busy_monitor.dart`):** oltre al Registro Privacy (`CapabilityAccessManager\ConsentStore\microphone`, ora anche con `LastUsedTimeStop == null || == 0`), usa le API COM Windows Core Audio **WASAPI** (`IMMDeviceEnumerator` -> `eCapture` -> `IAudioSessionManager2` -> `IAudioSessionControl2` con `AudioSessionStateActive` e `pid != GetCurrentProcessId()`) tramite `package:win32` già presente in repo (licenza BSD-3, nessuna dipendenza C++). Polling ogni 3 s + valutazione immediata su avvio e sincronizzazione `ownDetail`; sui profili solo SIP senza OpenAPI rifiuta le chiamate entranti mentre `autoDndActive`.

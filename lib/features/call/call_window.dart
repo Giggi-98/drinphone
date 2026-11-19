@@ -400,25 +400,48 @@ class _CallWindowState extends State<CallWindow> {
             const SizedBox(width: 8),
             IconButton(
               tooltip: p.muted ? tr('Riattiva') : tr('Muto'),
+              style: DrinButtons.iconStyle(
+                context,
+                size: DrinButtonSize.sm,
+                shrinkWrap: true,
+              ),
               onPressed: p.toggleMute,
               icon: Icon(
                 p.muted ? Icons.mic_off_rounded : Icons.mic_none_rounded,
+                size: DrinButtons.iconOf(DrinButtonSize.sm),
                 color: p.muted ? c.busy : c.text,
               ),
             ),
+            const SizedBox(width: DrinSpace.s1),
             IconButton(
               tooltip: tr('Espandi'),
+              style: DrinButtons.iconStyle(
+                context,
+                size: DrinButtonSize.sm,
+                shrinkWrap: true,
+              ),
               onPressed: () => setState(() => _mode = _Mode.normal),
-              icon: Icon(Icons.open_in_full_rounded, color: c.text, size: 20),
+              icon: Icon(
+                Icons.open_in_full_rounded,
+                color: c.text,
+                size: DrinButtons.iconOf(DrinButtonSize.sm),
+              ),
             ),
+            const SizedBox(width: DrinSpace.s1),
             IconButton.filled(
               tooltip: tr('Riaggancia'),
-              style: IconButton.styleFrom(
+              style: DrinButtons.iconStyle(
+                context,
+                size: DrinButtonSize.sm,
                 backgroundColor: context.drin.busy,
                 foregroundColor: context.drin.onBusy,
+                shrinkWrap: true,
               ),
               onPressed: () => p.hangup(call.id),
-              icon: const Icon(Icons.call_end_rounded, size: 20),
+              icon: Icon(
+                Icons.call_end_rounded,
+                size: DrinButtons.iconOf(DrinButtonSize.sm),
+              ),
             ),
           ],
         ),
@@ -787,6 +810,88 @@ class _CallWindowState extends State<CallWindow> {
   Widget _toolbar(CallEvent call, bool outgoing) {
     final c = context.drin;
     final established = !outgoing;
+    final leftSpec = <(IconData, String, bool, Color?, VoidCallback)>[
+      if (established) ...[
+        (
+          Icons.add_call,
+          tr('Nuova chiamata'),
+          _panel == _Panel.newCall,
+          null,
+          () => _toggle(_Panel.newCall),
+        ),
+        (
+          Icons.group_add_outlined,
+          tr('Aggiungi partecipante'),
+          _panel == _Panel.participant,
+          null,
+          () => _toggle(_Panel.participant),
+        ),
+        if (p.canMergeConference)
+          (
+            Icons.call_merge_rounded,
+            tr('Unisci in conferenza'),
+            true,
+            null,
+            p.mergeConference,
+          ),
+      ],
+    ];
+    final rightSpec = <(IconData, String, bool, Color?, VoidCallback)>[
+      if (established && p.videoEnabled)
+        (
+          call.video ? Icons.videocam_rounded : Icons.videocam_off_outlined,
+          tr('Video'),
+          call.video,
+          null,
+          p.toggleCallVideo,
+        ),
+      (
+        p.muted ? Icons.mic_off_rounded : Icons.mic_none_rounded,
+        p.muted ? tr('Riattiva') : tr('Muto'),
+        p.muted,
+        null,
+        p.toggleMute,
+      ),
+      if (established) ...[
+        (
+          Icons.pause_rounded,
+          p.onHold ? tr('Riprendi') : tr('Attesa'),
+          p.onHold,
+          null,
+          p.toggleHold,
+        ),
+        (
+          Icons.dialpad_rounded,
+          tr('Tastiera'),
+          _panel == _Panel.keypad,
+          null,
+          () => _toggle(_Panel.keypad),
+        ),
+        if (p.canRecord(call))
+          (
+            Icons.fiber_manual_record_outlined,
+            p.isRecording(call.id) ? tr('Ferma registrazione') : tr('Registra'),
+            p.isRecording(call.id),
+            c.busy,
+            p.toggleRecording,
+          ),
+        (
+          Icons.phone_forwarded_rounded,
+          tr('Trasferisci'),
+          _panel == _Panel.transfer,
+          null,
+          () => _toggle(_Panel.transfer),
+        ),
+        if (p.canCompleteTransfer)
+          (
+            Icons.call_split_rounded,
+            tr('Completa trasferimento'),
+            true,
+            null,
+            p.completeTransfer,
+          ),
+      ],
+    ];
     final divider = Container(
       width: 1,
       height: 36,
@@ -794,101 +899,64 @@ class _CallWindowState extends State<CallWindow> {
       color: c.line,
     );
     return Container(
-      padding: const EdgeInsets.fromLTRB(
-        DrinSpace.s3,
-        DrinSpace.s3,
-        DrinSpace.s3,
-        DrinSpace.s3,
-      ),
+      padding: const EdgeInsets.all(DrinSpace.s3),
       decoration: BoxDecoration(
         color: c.surface,
         border: Border(top: BorderSide(color: c.line)),
       ),
-      child: Row(
-        children: [
-          if (established) ...[
-            _ToolButton(
-              icon: Icons.add_call,
-              label: tr('Nuova chiamata'),
-              on: _panel == _Panel.newCall,
-              onTap: () => _toggle(_Panel.newCall),
-            ),
-            _ToolButton(
-              icon: Icons.group_add_outlined,
-              label: tr('Aggiungi partecipante'),
-              on: _panel == _Panel.participant,
-              onTap: () => _toggle(_Panel.participant),
-            ),
-            if (p.canMergeConference)
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final count = leftSpec.length + rightSpec.length + 1;
+          final available = (constraints.maxWidth - 20).clamp(0.0, 2000.0);
+          final slotWidth = count == 0
+              ? 86.0
+              : (available / count).clamp(62.0, 86.0);
+          final buttonSize = slotWidth < 74
+              ? DrinButtonSize.md
+              : DrinButtonSize.lg;
+          final row = Row(
+            children: [
+              for (final s in leftSpec)
+                _ToolButton(
+                  icon: s.$1,
+                  label: s.$2,
+                  on: s.$3,
+                  onColor: s.$4,
+                  onTap: s.$5,
+                  slotWidth: slotWidth,
+                  buttonSize: buttonSize,
+                ),
+              if (available >= count * slotWidth + 20) const Spacer(),
+              for (final s in rightSpec)
+                _ToolButton(
+                  icon: s.$1,
+                  label: s.$2,
+                  on: s.$3,
+                  onColor: s.$4,
+                  onTap: s.$5,
+                  slotWidth: slotWidth,
+                  buttonSize: buttonSize,
+                ),
+              divider,
               _ToolButton(
-                icon: Icons.call_merge_rounded,
-                label: tr('Unisci in conferenza'),
+                icon: Icons.call_end_rounded,
+                label: tr('Termina'),
                 on: true,
-                onTap: p.mergeConference,
-              ),
-          ],
-          const Spacer(),
-          if (established && p.videoEnabled)
-            _ToolButton(
-              icon: call.video
-                  ? Icons.videocam_rounded
-                  : Icons.videocam_off_outlined,
-              label: tr('Video'),
-              on: call.video,
-              onTap: p.toggleCallVideo,
-            ),
-          _ToolButton(
-            icon: p.muted ? Icons.mic_off_rounded : Icons.mic_none_rounded,
-            label: p.muted ? tr('Riattiva') : tr('Muto'),
-            on: p.muted,
-            onTap: p.toggleMute,
-          ),
-          if (established) ...[
-            _ToolButton(
-              icon: Icons.pause_rounded,
-              label: p.onHold ? tr('Riprendi') : tr('Attesa'),
-              on: p.onHold,
-              onTap: p.toggleHold,
-            ),
-            _ToolButton(
-              icon: Icons.dialpad_rounded,
-              label: tr('Tastiera'),
-              on: _panel == _Panel.keypad,
-              onTap: () => _toggle(_Panel.keypad),
-            ),
-            if (p.canRecord(call))
-              _ToolButton(
-                icon: Icons.fiber_manual_record_outlined,
-                label: p.isRecording(call.id)
-                    ? tr('Ferma registrazione')
-                    : tr('Registra'),
-                on: p.isRecording(call.id),
                 onColor: c.busy,
-                onTap: p.toggleRecording,
+                onTap: () => p.hangup(call.id),
+                slotWidth: slotWidth,
+                buttonSize: buttonSize,
               ),
-            _ToolButton(
-              icon: Icons.phone_forwarded_rounded,
-              label: tr('Trasferisci'),
-              on: _panel == _Panel.transfer,
-              onTap: () => _toggle(_Panel.transfer),
-            ),
-            if (p.canCompleteTransfer)
-              _ToolButton(
-                icon: Icons.call_split_rounded,
-                label: tr('Completa trasferimento'),
-                on: true,
-                onTap: p.completeTransfer,
-              ),
-          ],
-          divider,
-          _ToolButton(
-            icon: Icons.call_end_rounded,
-            label: tr('Termina'),
-            on: true,
-            onColor: c.busy,
-            onTap: () => p.hangup(call.id),
-          ),
-        ],
+            ],
+          );
+          if (constraints.maxWidth < count * slotWidth + 20) {
+            return SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: row,
+            );
+          }
+          return row;
+        },
       ),
     );
   }
@@ -1254,26 +1322,45 @@ class _OtherCall extends StatelessWidget {
           if (incoming)
             IconButton(
               tooltip: tr('Rispondi (la chiamata attuale va in attesa)'),
+              style: DrinButtons.iconStyle(
+                context,
+                size: DrinButtonSize.sm,
+                shrinkWrap: true,
+              ),
               onPressed: () => phone.answer(call.id),
               icon: Icon(
                 Icons.call_rounded,
                 color: context.drin.free,
-                size: 18,
+                size: DrinButtons.iconOf(DrinButtonSize.sm),
               ),
             )
           else
             IconButton(
               tooltip: tr('Riprendi (scambia)'),
+              style: DrinButtons.iconStyle(
+                context,
+                size: DrinButtonSize.sm,
+                shrinkWrap: true,
+              ),
               onPressed: () => phone.resumeCall(call.id),
-              icon: Icon(Icons.swap_calls_rounded, color: c.accent, size: 18),
+              icon: Icon(
+                Icons.swap_calls_rounded,
+                color: c.accent,
+                size: DrinButtons.iconOf(DrinButtonSize.sm),
+              ),
             ),
           IconButton(
             tooltip: incoming ? tr('Rifiuta') : tr('Riaggancia'),
+            style: DrinButtons.iconStyle(
+              context,
+              size: DrinButtonSize.sm,
+              shrinkWrap: true,
+            ),
             onPressed: () => phone.hangup(call.id),
             icon: Icon(
               Icons.call_end_rounded,
               color: context.drin.busy,
-              size: 18,
+              size: DrinButtons.iconOf(DrinButtonSize.sm),
             ),
           ),
         ],
@@ -1319,39 +1406,47 @@ class _ToolButton extends StatelessWidget {
     required this.onTap,
     this.on = false,
     this.onColor,
+    this.slotWidth = 86,
+    this.buttonSize = DrinButtonSize.lg,
   });
   final IconData icon;
   final String label;
   final VoidCallback onTap;
   final bool on;
   final Color? onColor;
+  final double slotWidth;
+  final DrinButtonSize buttonSize;
 
   @override
   Widget build(BuildContext context) {
     final c = context.drin;
     final bg = on ? (onColor ?? c.primary) : c.panel;
     final fg = on ? (onColor == c.busy ? c.onBusy : c.onPrimary) : c.ink;
+    final diameter = DrinButtons.sizeOf(context, buttonSize);
+    final iconPx = DrinButtons.iconOf(buttonSize) + 2;
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: DrinSpace.s1),
+      padding: EdgeInsets.symmetric(
+        horizontal: DrinButtons.gapOf(buttonSize) / 2,
+      ),
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(DrinRadius.row),
         child: SizedBox(
-          width: 86,
+          width: slotWidth - DrinButtons.gapOf(buttonSize),
           child: Padding(
             padding: const EdgeInsets.symmetric(vertical: DrinSpace.s1),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
                 Container(
-                  width: 46,
-                  height: 46,
+                  width: diameter,
+                  height: diameter,
                   decoration: BoxDecoration(
                     color: bg,
                     shape: BoxShape.circle,
                     border: on ? null : Border.all(color: c.line),
                   ),
-                  child: Icon(icon, color: fg, size: 22),
+                  child: Icon(icon, color: fg, size: iconPx),
                 ),
                 const SizedBox(height: 6),
                 Text(

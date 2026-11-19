@@ -286,6 +286,8 @@ class _VoicemailViewState extends State<VoicemailView> {
                                         const SizedBox(width: DrinSpace.s1),
                                       ],
                                       CallIconButton(
+                                        size: DrinButtonSize.sm,
+                                        shrinkWrap: true,
                                         tooltip: tr('Richiama {n}', {
                                           'n': m.callerNumber,
                                         }),

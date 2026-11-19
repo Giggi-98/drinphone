@@ -254,6 +254,8 @@ class _HoverRowState extends State<_HoverRow> {
                 duration: fast,
                 opacity: _hover || !mouse ? 1 : 0,
                 child: CallIconButton(
+                  size: DrinButtonSize.sm,
+                  shrinkWrap: true,
                   tooltip: row.callTooltip,
                   onPressed: row.call,
                 ),

@@ -417,32 +417,30 @@ class _SearchBoxState extends State<SearchBox> {
               if (on && copyNumber != null && copyNumber.isNotEmpty)
                 IconButton(
                   tooltip: tr('Copia numero'),
-                  visualDensity: VisualDensity.compact,
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints.tightFor(
-                    width: 28,
-                    height: 28,
+                  style: DrinButtons.iconStyle(
+                    context,
+                    size: DrinButtonSize.xs,
+                    shrinkWrap: true,
                   ),
                   onPressed: () => copyWithToast(context, copyNumber),
                   icon: Icon(
                     Icons.content_copy_rounded,
-                    size: 15,
+                    size: DrinButtons.iconOf(DrinButtonSize.xs),
                     color: c.muted,
                   ),
                 ),
               if (on && onVideo != null && enabled)
                 IconButton(
                   tooltip: tr('Videochiamata'),
-                  visualDensity: VisualDensity.compact,
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints.tightFor(
-                    width: 28,
-                    height: 28,
+                  style: DrinButtons.iconStyle(
+                    context,
+                    size: DrinButtonSize.xs,
+                    shrinkWrap: true,
                   ),
                   onPressed: onVideo,
                   icon: Icon(
                     Icons.videocam_rounded,
-                    size: 16,
+                    size: DrinButtons.iconOf(DrinButtonSize.xs) + 2,
                     color: c.primary,
                   ),
                 ),
@@ -659,8 +657,8 @@ class _SearchBoxState extends State<SearchBox> {
               ),
               child: LayoutBuilder(
                 builder: (context, constraints) {
-                  final showSearchIcon = constraints.maxWidth >= 150;
-                  final showKeypad = constraints.maxWidth >= 120;
+                  final showSearchIcon = constraints.maxWidth >= 140;
+                  final showKeypad = constraints.maxWidth >= 96;
                   return Row(
                     children: [
                       if (showSearchIcon) ...[
@@ -703,36 +701,38 @@ class _SearchBoxState extends State<SearchBox> {
                       if (showKeypad) ...[
                         IconButton(
                           tooltip: tr('Tastierino'),
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints.tightFor(
-                            width: 36,
-                            height: 36,
-                          ),
-                          style: IconButton.styleFrom(
+                          style: DrinButtons.iconStyle(
+                            context,
+                            size: DrinButtonSize.md,
                             backgroundColor: c.keyBtn,
                             foregroundColor: c.accent,
+                            shrinkWrap: true,
                           ),
                           onPressed: _keypad.toggle,
-                          icon: const Icon(Icons.dialpad_rounded, size: 18),
+                          icon: Icon(
+                            Icons.dialpad_rounded,
+                            size: DrinButtons.iconOf(DrinButtonSize.md),
+                          ),
                         ),
                         const SizedBox(width: 4),
                       ],
                       IconButton(
                         tooltip: tr('Chiama'),
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints.tightFor(
-                          width: 36,
-                          height: 36,
-                        ),
-                        style: IconButton.styleFrom(
+                        style: DrinButtons.iconStyle(
+                          context,
+                          size: DrinButtonSize.md,
                           backgroundColor: context.drin.free,
                           foregroundColor: context.drin.onFree,
                           disabledBackgroundColor: c.keyBtn,
+                          shrinkWrap: true,
                         ),
                         onPressed: p.canDial && _rows > 0
                             ? () => _activate(_selected)
                             : null,
-                        icon: const Icon(Icons.call_rounded, size: 18),
+                        icon: Icon(
+                          Icons.call_rounded,
+                          size: DrinButtons.iconOf(DrinButtonSize.md),
+                        ),
                       ),
                     ],
                   );

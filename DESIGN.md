@@ -75,6 +75,7 @@ Regole:
 ## 3. Spazio, densità, forme
 
 - Griglia da 4: `s1`=4, `s2`=8, `s3`=12, `s4`=16, `s5`=24, `s6`=32 (`DrinSpace`).
+- **Taglie pulsanti (`DrinButtonSize` / `DrinButtons`):** quattro ruoli sulla griglia da 4 con icone proporzionate (`xs` 24/14, `sm` 32/16, `md` 36/18, `lg` 44/20 con puntatore; salgono a `24/36/40/48` su touch senza mouse) e spaziatura coerente (`s1` per `xs`/`sm`, `s2` per `md`/`lg`). Su puntatore i pulsanti a icona usano `tapTargetSize: shrinkWrap` per evitare ingombri invisibili 48×48; nelle tessere/toolbar strette scalano automaticamente (`adaptiveForWidth`) così i bottoni affiancati hanno identico diametro.
 - **Densità Centralino** con il puntatore (desktop): righe da 40, spaziatura
   `s2`. **Al tocco** (telefono, tablet): righe da 52 e bersagli da almeno 48
   (Material) / 44 pt (Apple). La densità si sceglie dal tipo di input, non

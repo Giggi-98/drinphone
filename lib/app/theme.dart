@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 
 /// Token dello stile "Squillo": valori e regole in DESIGN.md, riferimento
 /// grafico in docs/design/drin-design-system.html. Mai colori, misure di
@@ -180,6 +181,103 @@ abstract final class DrinText {
 /// Griglia da 4 (DESIGN.md §3).
 abstract final class DrinSpace {
   static const s1 = 4.0, s2 = 8.0, s3 = 12.0, s4 = 16.0, s5 = 24.0, s6 = 32.0;
+}
+
+/// Taglie semantiche per pulsanti e comandi a icona (sulla griglia da 4).
+enum DrinButtonSize { xs, sm, md, lg }
+
+/// Dimensioni e densità adattive dei pulsanti per tutta l'interfaccia.
+///
+/// Su puntatore (desktop / tablet con mouse) evita l'ingombro invisibile 48×48
+/// di Material (`shrinkWrap`); su tocco (schermi < 600 px senza mouse)
+/// espande i bersagli per garantire l'usabilità touch (DESIGN.md §3).
+abstract final class DrinButtons {
+  /// Vero quando il dispositivo usa input touch senza puntatore mouse attivo.
+  static bool isTouch(BuildContext context) {
+    if (RendererBinding.instance.mouseTracker.mouseIsConnected) return false;
+    final size = MediaQuery.maybeSizeOf(context);
+    return size != null && size.width < 600;
+  }
+
+  /// Diametro o altezza del pulsante sulla griglia da 4 (`24/32/36/44` desktop).
+  static double sizeOf(
+    BuildContext context,
+    DrinButtonSize size, {
+    bool? touch,
+  }) {
+    final t = touch ?? isTouch(context);
+    return switch (size) {
+      DrinButtonSize.xs => 24.0,
+      DrinButtonSize.sm => t ? 36.0 : 32.0,
+      DrinButtonSize.md => t ? 40.0 : 36.0,
+      DrinButtonSize.lg => t ? 48.0 : 44.0,
+    };
+  }
+
+  /// Dimensione dell'icona proporzionata alla taglia del pulsante.
+  static double iconOf(DrinButtonSize size) => switch (size) {
+    DrinButtonSize.xs => 14.0,
+    DrinButtonSize.sm => 16.0,
+    DrinButtonSize.md => 18.0,
+    DrinButtonSize.lg => 20.0,
+  };
+
+  /// Spaziatura coerente fra bottoni adiacenti della stessa fila.
+  static double gapOf(DrinButtonSize size) => switch (size) {
+    DrinButtonSize.xs || DrinButtonSize.sm => DrinSpace.s1,
+    DrinButtonSize.md || DrinButtonSize.lg => DrinSpace.s2,
+  };
+
+  /// Target di tocco adattivo: compatto su puntatore, ampio al tocco.
+  static MaterialTapTargetSize tapTargetOf(
+    BuildContext context, {
+    bool shrinkWrap = false,
+  }) => (!shrinkWrap && isTouch(context))
+      ? MaterialTapTargetSize.padded
+      : MaterialTapTargetSize.shrinkWrap;
+
+  /// Sceglie la taglia ideale in base allo spazio reale e al numero di azioni.
+  static DrinButtonSize adaptiveForWidth(
+    double width, {
+    int count = 1,
+    bool compact = false,
+  }) {
+    if (compact) {
+      if (count >= 3 && width < 260) return DrinButtonSize.xs;
+      return DrinButtonSize.sm;
+    }
+    if ((count >= 3 && width < 260) || width < 210) {
+      return DrinButtonSize.sm;
+    }
+    return DrinButtonSize.md;
+  }
+
+  /// Stile uniforme per `IconButton`, `IconButton.filled`, `filledTonal`, `outlined`.
+  static ButtonStyle iconStyle(
+    BuildContext context, {
+    DrinButtonSize size = DrinButtonSize.md,
+    Color? backgroundColor,
+    Color? foregroundColor,
+    Color? disabledBackgroundColor,
+    Color? disabledForegroundColor,
+    BorderSide? side,
+    bool shrinkWrap = false,
+  }) {
+    final d = sizeOf(context, size);
+    return IconButton.styleFrom(
+      backgroundColor: backgroundColor,
+      foregroundColor: foregroundColor,
+      disabledBackgroundColor: disabledBackgroundColor,
+      disabledForegroundColor: disabledForegroundColor,
+      side: side,
+      minimumSize: Size(d, d),
+      maximumSize: Size(d, d),
+      fixedSize: Size(d, d),
+      iconSize: iconOf(size),
+      padding: EdgeInsets.zero,
+      tapTargetSize: tapTargetOf(context, shrinkWrap: shrinkWrap),
+    );
+  }
 }
 
 /// Raggi per ruolo (DESIGN.md §3).

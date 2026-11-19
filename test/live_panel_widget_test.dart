@@ -2,12 +2,15 @@ import 'dart:io';
 
 import 'package:drinphone/app/phone_controller.dart';
 import 'package:drinphone/app/theme.dart';
+import 'package:drinphone/core/pbx/pbx_connection.dart';
 import 'package:drinphone/core/pbx/yeastar_api.dart';
 import 'package:drinphone/core/security/api_credential_store.dart';
 import 'package:drinphone/core/security/settings_store.dart';
 import 'package:drinphone/core/sip/sip_engine.dart';
+import 'package:drinphone/features/call/call_window.dart';
 import 'package:drinphone/features/live/live_calls_view.dart';
 import 'package:drinphone/features/shell/home_screen.dart';
+import 'package:drinphone/features/shell/widgets.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -183,6 +186,11 @@ void main() {
         await phone.init();
         await phone.connectionsStarted;
 
+        engine.registrationsCtl.add(
+          const RegistrationEvent(RegistrationStatus.ok),
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+
         final conn = phone.connections.single;
         conn.directory = const [
           PbxExtension(
@@ -215,6 +223,123 @@ void main() {
         expect(find.text('Al telefono'), findsNothing);
         expect(find.text('Roberto DND'), findsOneWidget);
         expect(find.text('Liberi'), findsOneWidget);
+
+        await phone.shutdown();
+        phone.dispose();
+      });
+    },
+    skip: !Platform.isWindows,
+  );
+
+  testWidgets(
+    'DrinButtons: taglie coerenti e adattive su righe compatte (3 bottoni) e CallWindow',
+    (tester) async {
+      tester.view.physicalSize = const Size(1280, 800);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+
+      expect(
+        DrinButtons.adaptiveForWidth(360, count: 3, compact: true),
+        DrinButtonSize.sm,
+      );
+      expect(
+        DrinButtons.adaptiveForWidth(240, count: 3, compact: true),
+        DrinButtonSize.xs,
+      );
+      expect(
+        DrinButtons.adaptiveForWidth(290, count: 2, compact: false),
+        DrinButtonSize.md,
+      );
+
+      await tester.runAsync(() async {
+        FlutterSecureStorage.setMockInitialValues({});
+        final sep = Platform.pathSeparator;
+        final engine = FakeSipEngine();
+        ApiCredentialStore storeFor(String id) =>
+            ApiCredentialStore('${tmp.path}${sep}api-$id.dpapi');
+        await storeFor('a').save(
+          ApiCredentials(
+            baseUrl: pbx.baseUrl,
+            clientId: 'CLIENT-ID-123',
+            clientSecret: 'CLIENT-SECRET-xyz',
+            ownExtension: '305',
+          ),
+        );
+        final settings = SettingsStore('${tmp.path}${sep}settings_btns.json');
+        await settings.save(
+          const Settings(
+            accounts: [
+              SipAccount(username: '305', password: 'p', domain: '127.0.0.1'),
+            ],
+            pbx: [PbxConnectionInfo('a', 'PBX')],
+            view: {'ext.rows': '1'},
+          ),
+        );
+        final phone = PhoneController(
+          engine,
+          settings,
+          engineDataDir: tmp.path,
+          logDir: tmp.path,
+          apiStoreFor: storeFor,
+        );
+        await phone.init();
+        await phone.connectionsStarted;
+
+        engine.registrationsCtl.add(
+          const RegistrationEvent(RegistrationStatus.ok),
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+
+        final conn = phone.connections.single;
+        conn.directory = const [
+          PbxExtension(id: 1, number: '250', name: 'Max Sartini'),
+        ];
+        conn.callStatus['250'] = BlfStatus.ringing;
+        conn.extensionCalls['250'] = ExtensionLive(
+          LiveState.ringing,
+          '306',
+          DateTime.now().subtract(const Duration(seconds: 12)),
+        );
+
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: buildTheme(Brightness.dark),
+            home: HomeScreen(phone: phone),
+          ),
+        );
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 200));
+
+        // Tutti e 3 i bottoni nella riga compatta (Pickup, Chiama, Video)
+        // devono avere esattamente la stessa misura compatta (32x32).
+        final btns = find.byType(CallIconButton);
+        expect(btns, findsNWidgets(3));
+        for (var i = 0; i < 3; i++) {
+          final size = tester.getSize(btns.at(i));
+          expect(size, const Size(32, 32));
+        }
+
+        // Toolbar di CallWindow stretta (640 px) con tutti i comandi attivi:
+        // nessun overflow RenderFlex.
+        engine.callsCtl.add(
+          const CallEvent(
+            id: 77,
+            remoteName: 'Max Sartini',
+            remoteNumber: '250',
+            direction: CallDirection.outgoing,
+            phase: CallPhase.active,
+            video: true,
+          ),
+        );
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: buildTheme(Brightness.dark),
+            home: Scaffold(body: Stack(children: [CallWindow(phone: phone)])),
+          ),
+        );
+        tester.view.physicalSize = const Size(640, 520);
+        await tester.pump();
+        expect(find.text('Termina'), findsOneWidget);
 
         await phone.shutdown();
         phone.dispose();

@@ -922,12 +922,11 @@ class _HomeScreenState extends State<HomeScreen> {
           const SizedBox(width: 6),
           IconButton(
             tooltip: tr('Mini-HUD compatto'),
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints.tightFor(width: 34, height: 34),
+            style: DrinButtons.iconStyle(context, size: DrinButtonSize.md),
             onPressed: () => _setMiniHud(true),
             icon: Icon(
               Icons.picture_in_picture_alt_rounded,
-              size: 18,
+              size: DrinButtons.iconOf(DrinButtonSize.md),
               color: c.muted,
             ),
           ),
@@ -1839,12 +1838,17 @@ class _ExtensionsViewState extends State<_ExtensionsView> {
               if (phone.selectedGroup == null)
                 IconButton.filledTonal(
                   tooltip: tr('Aggiungi interno'),
-                  style: IconButton.styleFrom(
+                  style: DrinButtons.iconStyle(
+                    context,
+                    size: DrinButtonSize.md,
                     backgroundColor: c.keyBtn,
                     foregroundColor: c.accent,
                   ),
                   onPressed: () => _add(context),
-                  icon: const Icon(Icons.person_add_alt_1_rounded, size: 20),
+                  icon: Icon(
+                    Icons.person_add_alt_1_rounded,
+                    size: DrinButtons.iconOf(DrinButtonSize.md),
+                  ),
                 ),
             ],
           ),
@@ -2137,54 +2141,78 @@ class _ExtensionTileState extends State<_ExtensionTile> {
                   (Icons.delete_outline_rounded, tr('Rimuovi'), onRemove),
                 ],
               ]),
-          child: Padding(
-            padding: w.compact
-                ? const EdgeInsets.fromLTRB(10, 0, 6, 0)
-                : const EdgeInsets.fromLTRB(12, 10, 8, 10),
-            child: Flex(
-              direction: w.compact ? Axis.horizontal : Axis.vertical,
-              crossAxisAlignment: w.compact
-                  ? CrossAxisAlignment.center
-                  : CrossAxisAlignment.stretch,
-              children: [
-                // Riga: l'identità occupa lo spazio fino alle azioni; scheda:
-                // alta quanto serve, i pulsanti vanno in fondo (Spacer).
-                if (w.compact) Expanded(child: identity) else identity,
-                if (!w.compact) const Spacer(),
-                // Pulsanti su una riga a parte: pickup (se squilla), chiamata e video.
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final actionCount =
+                  1 +
+                  (w.onPickup != null ? 1 : 0) +
+                  (w.onVideoCall != null ? 1 : 0);
+              final actionSize = DrinButtons.adaptiveForWidth(
+                constraints.maxWidth,
+                count: actionCount,
+                compact: w.compact,
+              );
+              final actionGap = DrinButtons.gapOf(actionSize);
+              return Padding(
+                padding: w.compact
+                    ? const EdgeInsets.fromLTRB(10, 0, 6, 0)
+                    : const EdgeInsets.fromLTRB(12, 10, 8, 10),
+                child: Flex(
+                  direction: w.compact ? Axis.horizontal : Axis.vertical,
+                  crossAxisAlignment: w.compact
+                      ? CrossAxisAlignment.center
+                      : CrossAxisAlignment.stretch,
                   children: [
-                    if (w.onPickup != null) ...[
-                      CallIconButton(
-                        icon: Icons.phone_in_talk_rounded,
-                        backgroundColor: c.squillo,
-                        foregroundColor: c.onSquillo,
-                        tooltip: tr('Rispondi per {n}', {'n': ext.number}),
-                        onPressed: w.onPickup,
-                      ),
-                      const SizedBox(width: DrinSpace.s2),
-                    ],
-                    CallIconButton(
-                      tooltip: callable
-                          ? tr('Chiama {n}', {'n': ext.number})
-                          : tr('Nessun account SIP su questo PBX'),
-                      onPressed: canDial && callable ? onCall : null,
+                    // Riga: l'identità occupa lo spazio fino alle azioni; scheda:
+                    // alta quanto serve, i pulsanti vanno in fondo (Spacer).
+                    if (w.compact) Expanded(child: identity) else identity,
+                    if (!w.compact) const Spacer(),
+                    // Pulsanti su una riga a parte: pickup (se squilla), chiamata e video.
+                    if (w.compact) SizedBox(width: actionGap),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (w.onPickup != null) ...[
+                          CallIconButton(
+                            size: actionSize,
+                            shrinkWrap: w.compact,
+                            icon: Icons.phone_in_talk_rounded,
+                            backgroundColor: c.squillo,
+                            foregroundColor: c.onSquillo,
+                            tooltip: tr('Rispondi per {n}', {'n': ext.number}),
+                            onPressed: w.onPickup,
+                          ),
+                          SizedBox(width: actionGap),
+                        ],
+                        CallIconButton(
+                          size: actionSize,
+                          shrinkWrap: w.compact,
+                          tooltip: callable
+                              ? tr('Chiama {n}', {'n': ext.number})
+                              : tr('Nessun account SIP su questo PBX'),
+                          onPressed: canDial && callable ? onCall : null,
+                        ),
+                        if (w.onVideoCall != null) ...[
+                          SizedBox(width: actionGap),
+                          CallIconButton(
+                            size: actionSize,
+                            shrinkWrap: w.compact,
+                            icon: Icons.videocam_rounded,
+                            tooltip: callable
+                                ? tr('Videochiamata a {n}', {'n': ext.number})
+                                : tr('Nessun account SIP su questo PBX'),
+                            onPressed: canDial && callable
+                                ? w.onVideoCall
+                                : null,
+                          ),
+                        ],
+                      ],
                     ),
-                    if (w.onVideoCall != null) ...[
-                      const SizedBox(width: 8),
-                      CallIconButton(
-                        icon: Icons.videocam_rounded,
-                        tooltip: callable
-                            ? tr('Videochiamata a {n}', {'n': ext.number})
-                            : tr('Nessun account SIP su questo PBX'),
-                        onPressed: canDial && callable ? w.onVideoCall : null,
-                      ),
-                    ],
                   ],
                 ),
-              ],
-            ),
+              );
+            },
           ),
         ),
       ),
@@ -2944,6 +2972,12 @@ class _MiniHudViewState extends State<_MiniHudView> {
                                 if (call.phase == CallPhase.active) ...[
                                   IconButton.outlined(
                                     tooltip: tr('Tastiera'),
+                                    style: DrinButtons.iconStyle(
+                                      context,
+                                      size: DrinButtonSize.sm,
+                                      side: BorderSide(color: c.line),
+                                      shrinkWrap: true,
+                                    ),
                                     onPressed: () => setState(
                                       () => _panel = _panel == _HudPanel.dtmf
                                           ? _HudPanel.none
@@ -2951,7 +2985,9 @@ class _MiniHudViewState extends State<_MiniHudView> {
                                     ),
                                     icon: Icon(
                                       Icons.dialpad_rounded,
-                                      size: 16,
+                                      size: DrinButtons.iconOf(
+                                        DrinButtonSize.sm,
+                                      ),
                                       color: _panel == _HudPanel.dtmf
                                           ? c.primary
                                           : c.ink,
@@ -2960,6 +2996,12 @@ class _MiniHudViewState extends State<_MiniHudView> {
                                   if (favs.isNotEmpty)
                                     IconButton.outlined(
                                       tooltip: tr('Trasferisci'),
+                                      style: DrinButtons.iconStyle(
+                                        context,
+                                        size: DrinButtonSize.sm,
+                                        side: BorderSide(color: c.line),
+                                        shrinkWrap: true,
+                                      ),
                                       onPressed: () => setState(
                                         () => _panel =
                                             _panel == _HudPanel.transfer
@@ -2968,7 +3010,9 @@ class _MiniHudViewState extends State<_MiniHudView> {
                                       ),
                                       icon: Icon(
                                         Icons.phone_forwarded_rounded,
-                                        size: 16,
+                                        size: DrinButtons.iconOf(
+                                          DrinButtonSize.sm,
+                                        ),
                                         color: _panel == _HudPanel.transfer
                                             ? c.primary
                                             : c.ink,
@@ -3022,6 +3066,13 @@ class _MiniHudViewState extends State<_MiniHudView> {
                             const SizedBox(width: DrinSpace.s2),
                             IconButton.filled(
                               tooltip: tr('Chiama'),
+                              style: DrinButtons.iconStyle(
+                                context,
+                                size: DrinButtonSize.md,
+                                backgroundColor: c.primary,
+                                foregroundColor: c.onPrimary,
+                                shrinkWrap: true,
+                              ),
                               onPressed: p.canDial
                                   ? () {
                                       final n = widget.dialCtl.text.trim();
@@ -3031,7 +3082,10 @@ class _MiniHudViewState extends State<_MiniHudView> {
                                       }
                                     }
                                   : null,
-                              icon: const Icon(Icons.call_rounded, size: 18),
+                              icon: Icon(
+                                Icons.call_rounded,
+                                size: DrinButtons.iconOf(DrinButtonSize.md),
+                              ),
                             ),
                           ],
                         ),
